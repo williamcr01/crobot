@@ -4,8 +4,9 @@ import "context"
 
 // Message is a chat message in the conversation.
 type Message struct {
-	Role    string `json:"role"`    // "system", "user", "assistant", "tool"
-	Content string `json:"content"` // Message text or tool result
+	Role      string         `json:"role"`    // "system", "user", "assistant", "tool"
+	Content   string         `json:"content"` // Message text or tool result
+	ToolCalls []ToolCall     `json:"tool_calls,omitempty"` // For assistant messages that made tool calls
 }
 
 // ToolDefinition describes a tool available to the model.
