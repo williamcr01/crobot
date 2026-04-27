@@ -7,6 +7,12 @@
 - No fluff or cheerful filler text
 - Technical prose only, be kind but direct (e.g., "Thanks @user" not "Thanks so much @user!")
 
+## Tests
+- Always write tests for new features and bug fixes
+- If possible, write tests before implementing a new feature
+- Tests should be thorough but concise, covering edge cases
+- Do not change tests that were not created by you
+
 ## **CRITICAL** Git Rules for Parallel Agents **CRITICAL**
 
 Multiple agents may work on different files in the same worktree simultaneously. You MUST follow these rules:
@@ -18,6 +24,7 @@ Multiple agents may work on different files in the same worktree simultaneously.
 - ALWAYS use `git add <specific-file-paths>` listing only files you modified
 - Before committing, run `git status` and verify you are only staging YOUR files
 - Track which files you created/modified/deleted during the session
+- Only commit once all tests pass
 
 ### Forbidden Git Operations
 
