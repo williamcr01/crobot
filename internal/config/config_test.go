@@ -14,12 +14,6 @@ func TestDefaults(t *testing.T) {
 	if cfg.Model != "anthropic/claude-opus-4.7" {
 		t.Errorf("expected default model, got %s", cfg.Model)
 	}
-	if cfg.MaxSteps != 20 {
-		t.Errorf("expected maxSteps 20, got %d", cfg.MaxSteps)
-	}
-	if cfg.MaxCost != 1.0 {
-		t.Errorf("expected maxCost 1.0, got %f", cfg.MaxCost)
-	}
 	if cfg.SessionDir != ".sessions" {
 		t.Errorf("expected sessionDir .sessions, got %s", cfg.SessionDir)
 	}
@@ -79,12 +73,8 @@ func TestLoadConfig_WithEnvAPIKey(t *testing.T) {
 func TestLoadConfig_WithEnvOverrides(t *testing.T) {
 	os.Setenv("OPENROUTER_API_KEY", "sk-or-v1-testkey")
 	os.Setenv("AGENT_MODEL", "openai/gpt-4")
-	os.Setenv("AGENT_MAX_STEPS", "5")
-	os.Setenv("AGENT_MAX_COST", "0.5")
 	defer os.Unsetenv("OPENROUTER_API_KEY")
 	defer os.Unsetenv("AGENT_MODEL")
-	defer os.Unsetenv("AGENT_MAX_STEPS")
-	defer os.Unsetenv("AGENT_MAX_COST")
 
 	cfg, err := LoadConfig()
 	if err != nil {
@@ -92,12 +82,6 @@ func TestLoadConfig_WithEnvOverrides(t *testing.T) {
 	}
 	if cfg.Model != "openai/gpt-4" {
 		t.Errorf("expected model override, got %s", cfg.Model)
-	}
-	if cfg.MaxSteps != 5 {
-		t.Errorf("expected maxSteps 5, got %d", cfg.MaxSteps)
-	}
-	if cfg.MaxCost != 0.5 {
-		t.Errorf("expected maxCost 0.5, got %f", cfg.MaxCost)
 	}
 }
 
@@ -111,7 +95,6 @@ func TestLoadConfig_WithConfigFile(t *testing.T) {
 
 	configContent := `{
 		"model": "anthropic/claude-3-5-sonnet",
-		"maxSteps": 10,
 		"display": {
 			"toolDisplay": "emoji",
 			"inputStyle": "bordered"

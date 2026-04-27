@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 )
 
@@ -29,8 +28,6 @@ type AgentConfig struct {
 	APIKey        string        `json:"apiKey"`
 	Model         string        `json:"model"`
 	SystemPrompt  string        `json:"systemPrompt"`
-	MaxSteps      int           `json:"maxSteps"`
-	MaxCost       float64       `json:"maxCost"`
 	SessionDir    string        `json:"sessionDir"`
 	ShowBanner    bool          `json:"showBanner"`
 	SlashCommands bool          `json:"slashCommands"`
@@ -56,8 +53,6 @@ var DEFAULTS = AgentConfig{
 		"- Prefer file tools over shell commands for file search.",
 		"- When editing code, make minimal targeted changes consistent with the existing style.",
 	}, "\n"),
-	MaxSteps:      20,
-	MaxCost:       1.0,
 	SessionDir:    ".sessions",
 	ShowBanner:    true,
 	SlashCommands: true,
@@ -94,12 +89,6 @@ func LoadConfig() (*AgentConfig, error) {
 		}
 		if file.SystemPrompt != "" {
 			cfg.SystemPrompt = file.SystemPrompt
-		}
-		if file.MaxSteps > 0 {
-			cfg.MaxSteps = file.MaxSteps
-		}
-		if file.MaxCost > 0 {
-			cfg.MaxCost = file.MaxCost
 		}
 		if file.SessionDir != "" {
 			cfg.SessionDir = file.SessionDir
@@ -140,16 +129,6 @@ func LoadConfig() (*AgentConfig, error) {
 	}
 	if v := os.Getenv("AGENT_MODEL"); v != "" {
 		cfg.Model = v
-	}
-	if v := os.Getenv("AGENT_MAX_STEPS"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil {
-			cfg.MaxSteps = n
-		}
-	}
-	if v := os.Getenv("AGENT_MAX_COST"); v != "" {
-		if n, err := strconv.ParseFloat(v, 64); err == nil {
-			cfg.MaxCost = n
-		}
 	}
 
 	if cfg.APIKey == "" {

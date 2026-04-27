@@ -36,19 +36,12 @@ type toolRenderItem struct {
 type messageItem struct {
 	role      string // "user", "assistant", "system", "error"
 	content   string
+	usage     string
 	toolCalls []toolRenderItem
 }
 
 // tea messages from the agent goroutine.
-type (
-	textMsg    string
-	toolMsg    agent.ToolCallEvent
-	toolResult agent.ToolCallResult
-	doneMsg    struct {
-		result *agent.Result
-		err    error
-	}
-)
+type agentEventMsg agent.Event
 
 // sessionWriter is the subset of session.Manager used by the TUI.
 type sessionWriter interface {
@@ -75,6 +68,7 @@ type Model struct {
 	width       int
 	height      int
 	agentCancel context.CancelFunc
+	agentEvents chan agent.Event
 }
 
 // NewModel creates a fully initialized TUI model.
@@ -98,15 +92,16 @@ func NewModel(
 	s := NewLoaderSpinner()
 
 	return &Model{
-		config:   cfg,
-		provider: prov,
-		toolReg:  toolReg,
-		events:   ev,
-		cmdReg:   cmdReg,
-		session:  sess,
-		textarea: ta,
-		spinner:  s,
-		messages: []messageItem{},
+		config:      cfg,
+		provider:    prov,
+		toolReg:     toolReg,
+		events:      ev,
+		cmdReg:      cmdReg,
+		session:     sess,
+		textarea:    ta,
+		spinner:     s,
+		messages:    []messageItem{},
+		agentEvents: make(chan agent.Event, 64),
 	}
 }
 
@@ -193,56 +188,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.pending = true
 			ctx, cancel := context.WithCancel(context.Background())
 			m.agentCancel = cancel
-			go runAgentLoop(ctx, &m, input)
-			return m, m.spinner.Tick
+			go m.startAgent(ctx, input)
+
+			return m, tea.Batch(m.spinner.Tick, m.waitForEvents())
+
+			// textarea handles this natively via its own keybindings.
 		}
 
-	case textMsg:
-		if len(m.messages) > 0 && m.messages[len(m.messages)-1].role == "assistant" {
-			m.messages[len(m.messages)-1].content += string(msg)
-			m.refreshViewport()
-		}
-		return m, nil
-
-	case toolMsg:
-		ev := agent.ToolCallEvent(msg)
-		if len(m.messages) > 0 && m.messages[len(m.messages)-1].role == "assistant" {
-			last := &m.messages[len(m.messages)-1]
-			if !ev.Start {
-				last.toolCalls = append(last.toolCalls, toolRenderItem{
-					name: ev.Name,
-					args: summarizeArgs(ev.Name, ev.Args),
-				})
-				m.refreshViewport()
-			}
-		}
-		return m, nil
-
-	case toolResult:
-		ev := agent.ToolCallResult(msg)
-		if len(m.messages) > 0 && m.messages[len(m.messages)-1].role == "assistant" {
-			last := &m.messages[len(m.messages)-1]
-			if len(last.toolCalls) > 0 {
-				tc := &last.toolCalls[len(last.toolCalls)-1]
-				tc.output = truncateDisplay(ev.Output, 500)
-				tc.success = ev.Success
-				m.refreshViewport()
-			}
-		}
-		return m, nil
-
-	case doneMsg:
-		m.pending = false
-		m.textarea.Focus()
-		if msg.err != nil {
-			m.messages = append(m.messages, messageItem{role: "error", content: msg.err.Error()})
-		} else if msg.result != nil {
-			if m.session != nil {
-				_ = m.session.Append(session.Record{Role: "assistant", Content: msg.result.Text, Timestamp: time.Now()})
-			}
-		}
-		m.refreshViewport()
-		return m, nil
+	case agentEventMsg:
+		return m.handleAgentEvent(agent.Event(msg))
 
 	case spinner.TickMsg:
 		if m.pending {
@@ -256,6 +210,106 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.textarea, cmd = m.textarea.Update(msg)
 	return m, cmd
+}
+
+// waitForEvents returns a tea.Cmd that reads from the agentEvents channel.
+func (m Model) waitForEvents() tea.Cmd {
+	return func() tea.Msg {
+		ev, ok := <-m.agentEvents
+		if !ok {
+			return nil
+		}
+		return agentEventMsg(ev)
+	}
+}
+
+// handleAgentEvent routes an agent event to update the UI state.
+func (m Model) handleAgentEvent(ev agent.Event) (tea.Model, tea.Cmd) {
+	switch ev.Type {
+	case "message_start":
+		if ev.MessageStart != nil {
+			if ev.MessageStart.Role == "assistant" {
+				m.messages = append(m.messages, messageItem{role: "assistant"})
+				m.refreshViewport()
+			}
+		}
+
+	case "text_delta":
+		if ev.TextDelta != "" {
+			if len(m.messages) > 0 && m.messages[len(m.messages)-1].role == "assistant" {
+				m.messages[len(m.messages)-1].content += ev.TextDelta
+				m.refreshViewport()
+			}
+		}
+
+	case "tool_call_start":
+		// Tool calls are handled by tool_call_end.
+
+	case "tool_call_end":
+		if ev.ToolCallEnd != nil {
+			if len(m.messages) > 0 && m.messages[len(m.messages)-1].role == "assistant" {
+				last := &m.messages[len(m.messages)-1]
+				last.toolCalls = append(last.toolCalls, toolRenderItem{
+					name: ev.ToolCallEnd.Name,
+					args: summarizeArgs(ev.ToolCallEnd.Name, ev.ToolCallEnd.Args),
+				})
+				m.refreshViewport()
+			}
+		}
+
+	case "tool_exec_result":
+		if ev.ToolExecResult != nil {
+			ter := ev.ToolExecResult
+			if len(m.messages) > 0 && m.messages[len(m.messages)-1].role == "assistant" {
+				last := &m.messages[len(m.messages)-1]
+				if len(last.toolCalls) > 0 {
+					tc := &last.toolCalls[len(last.toolCalls)-1]
+					tc.output = truncateDisplay(ter.Output, 500)
+					tc.success = ter.Success
+					tc.duration = time.Duration(ter.Duration) * time.Millisecond
+					m.refreshViewport()
+				}
+			}
+		}
+
+	case "turn_end", "message_end":
+		m.pending = false
+		m.textarea.Focus()
+
+		if ev.MessageEnd != nil {
+			usage := ""
+			if ev.MessageEnd.Usage != nil {
+				usage = fmt.Sprintf("  %d in / %d out",
+					ev.MessageEnd.Usage.InputTokens, ev.MessageEnd.Usage.OutputTokens)
+			}
+			if len(m.messages) > 0 && m.messages[len(m.messages)-1].role == "assistant" {
+				m.messages[len(m.messages)-1].usage = usage
+			}
+
+			if m.session != nil && ev.MessageEnd.Text != "" {
+				_ = m.session.Append(session.Record{
+					Role:      "assistant",
+					Content:   ev.MessageEnd.Text,
+					Timestamp: time.Now(),
+				})
+			}
+		}
+		m.refreshViewport()
+
+	case "error":
+		if ev.Error != nil {
+			m.pending = false
+			m.textarea.Focus()
+			m.messages = append(m.messages, messageItem{role: "error", content: ev.Error.Error()})
+			m.refreshViewport()
+		}
+	}
+
+	// Keep reading events while pending.
+	if m.pending {
+		return m, m.waitForEvents()
+	}
+	return m, nil
 }
 
 // View renders the full terminal UI.
@@ -313,6 +367,10 @@ func (m Model) renderMessages() string {
 				b.WriteString(RenderToolBox(tc.name, tc.args, tc.output, tc.duration.Milliseconds(), tc.success, m.width-4))
 				b.WriteString("\n")
 			}
+			if msg.usage != "" {
+				b.WriteString(Gray.Render(msg.usage))
+				b.WriteString("\n")
+			}
 		case "system":
 			b.WriteString(Dim.Render(msg.content))
 			b.WriteString("\n\n")
@@ -331,49 +389,51 @@ func (m *Model) refreshViewport() {
 
 // --- Agent runner goroutine ---
 
-func runAgentLoop(ctx context.Context, m *Model, input string) {
+func (m *Model) startAgent(ctx context.Context, input string) {
+	defer close(m.agentEvents)
+
 	sysPrompt := prompt.Build(*m.config, getCwd())
 
-	// Build conversation history.
-	var msgs []provider.Message
+	// Build conversation history for the LLM.
+	var llmMsgs []provider.Message
 	for _, msg := range m.messages {
-		msgs = append(msgs, provider.Message{Role: msg.role, Content: msg.content})
+		if msg.role == "user" || msg.role == "assistant" || msg.role == "system" {
+			llmMsgs = append(llmMsgs, provider.Message{Role: msg.role, Content: msg.content})
+		}
 	}
 
-	// We reset config.SystemPrompt to what Build() returns so the runner uses it.
-	m.config.SystemPrompt = sysPrompt
+	// Add tool result messages from previous turns.
+	for _, msg := range m.messages {
+		if msg.role == "assistant" {
+			for _, tc := range msg.toolCalls {
+				if tc.output != "" {
+					llmMsgs = append(llmMsgs, provider.Message{
+						Role:    "tool",
+						Content: tc.output,
+					})
+				}
+			}
+		}
+	}
 
-	_ = input // the messages already contain the input
-
-	result, err := agent.Run(
+	// The latest user message is already in m.messages.
+	// Run the agent loop.
+	_, _ = agent.Run(
 		ctx,
 		m.provider,
-		m.config,
-		msgs,
+		m.config.Model,
+		sysPrompt,
+		llmMsgs,
 		m.toolReg,
-		nil,
+		nil, // plugins
 		func(ev agent.Event) {
-			switch {
-			case ev.Text != "":
-				sendMsg(ctx, textMsg(ev.Text))
-			case ev.ToolCall != nil:
-				sendMsg(ctx, toolMsg(*ev.ToolCall))
-			case ev.ToolResult != nil:
-				sendMsg(ctx, toolResult(*ev.ToolResult))
+			select {
+			case m.agentEvents <- ev:
+			case <-ctx.Done():
+				return
 			}
 		},
 	)
-	sendMsg(ctx, doneMsg{result: result, err: err})
-}
-
-func sendMsg[T tea.Msg](ctx context.Context, msg T) {
-	// Send to program via tea.Batch or a channel. We use tea.Printf as fallback,
-	// but ideally should use a proper channel mechanism.
-	// For now, we rely on the agent.Run callback being synchronous with event processing.
-	// This is a simplified version; a production implementation would use
-	// a channel and a separate goroutine feeding into the Bubble Tea program.
-	_ = ctx
-	_ = msg
 }
 
 // --- Input preprocessors ---
