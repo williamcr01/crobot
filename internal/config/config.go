@@ -129,6 +129,11 @@ func LoadConfig() (*AgentConfig, error) {
 		}
 	}
 
+	// Load .env file if present.
+	if err := loadDotEnv(); err != nil {
+		return nil, fmt.Errorf("load .env: %w", err)
+	}
+
 	// Override from environment variables.
 	if v := os.Getenv("OPENROUTER_API_KEY"); v != "" {
 		cfg.APIKey = v
@@ -196,4 +201,33 @@ func boolFieldSet(val bool, field string) (bool, bool) {
 	_ = val
 	_ = field
 	return true, true
+}
+
+// loadDotEnv reads a .env file and sets environment variables.
+func loadDotEnv() error {
+	data, err := os.ReadFile(".env")
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("reading .env: %w", err)
+	}
+
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(parts[0])
+		val := strings.TrimSpace(parts[1])
+		// Only set if not already set.
+		if os.Getenv(key) == "" {
+			os.Setenv(key, val)
+		}
+	}
+	return nil
 }
