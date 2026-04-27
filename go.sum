@@ -1,0 +1,4 @@
+github.com/OpenRouterTeam/go-sdk v0.4.1 h1:GLmxtjFWuro6RbHzxZZF6tN6ZkzfY6RXKUHxrs0m8+w=
+github.com/OpenRouterTeam/go-sdk v0.4.1/go.mod h1:GRqEs3Twjnq1GekyuZCxHi55X8rBiHYK860wc3IvyUE=
+github.com/spyzhov/ajson v0.8.0 h1:sFXyMbi4Y/BKjrsfkUZHSjA2JM1184enheSjjoT/zCc=
+github.com/spyzhov/ajson v0.8.0/go.mod h1:63V+CGM6f1Bu/p4nLIN8885ojBdt88TbLoSFzyqMuVA=
