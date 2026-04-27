@@ -106,27 +106,12 @@ func (p *OpenRouterProvider) buildChatRequest(req Request) components.ChatReques
 			))
 		case "assistant":
 			assistantContent := components.CreateChatAssistantMessageContentStr(m.Content)
-			assistantMsg := components.ChatAssistantMessage{
-				Content: optionalnullable.From(&assistantContent),
-				Role:    components.ChatAssistantMessageRoleAssistant,
-			}
-			// Attach tool calls if present.
-			if len(m.ToolCalls) > 0 {
-				var sdkCalls []components.ChatToolCall
-				for _, tc := range m.ToolCalls {
-					argsJSON, _ := json.Marshal(tc.Args)
-					sdkCalls = append(sdkCalls, components.ChatToolCall{
-						Function: components.ChatToolCallFunction{
-							Name:      tc.Name,
-							Arguments: string(argsJSON),
-						},
-						ID:   tc.ID,
-						Type: components.ChatToolCallTypeFunction,
-					})
-				}
-				assistantMsg.ToolCalls = sdkCalls
-			}
-			messages = append(messages, components.CreateChatMessagesAssistant(assistantMsg))
+			messages = append(messages, components.CreateChatMessagesAssistant(
+				components.ChatAssistantMessage{
+					Content: optionalnullable.From(&assistantContent),
+					Role:    components.ChatAssistantMessageRoleAssistant,
+				},
+			))
 		case "tool":
 			messages = append(messages, components.CreateChatMessagesTool(
 				components.ChatToolMessage{

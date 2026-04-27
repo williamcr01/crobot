@@ -158,15 +158,11 @@ func (r *runner) run(ctx context.Context) (*Result, error) {
 			return nil, err
 		}
 
-				// Add assistant message with tool calls.
-		assistantMsg := provider.Message{
+		// Add assistant message.
+		r.messages = append(r.messages, provider.Message{
 			Role:    "assistant",
 			Content: step.Text,
-		}
-		if len(step.ToolCalls) > 0 {
-			assistantMsg.ToolCalls = step.ToolCalls
-		}
-		r.messages = append(r.messages, assistantMsg)
+		})
 
 		// If there are NO tool calls, we're done.
 		if len(step.ToolCalls) == 0 {
@@ -256,17 +252,17 @@ func (r *runner) streamWithRetry(ctx context.Context, req provider.Request) (*st
 }
 
 func (r *runner) processStream(ctx context.Context, evCh <-chan provider.StreamEvent) (*streamStep, error) {
-	type pendingCall struct {
-		name string
-		id   string
-		buf  strings.Builder
+	type toolCallAccum struct {
+		name    string
+		id      string
+		argsBuf strings.Builder
 	}
 
 	var (
-		currentText strings.Builder
-		toolCalls   []provider.ToolCall
-		usage       *provider.Usage
-		pending     []*pendingCall
+		currentText      strings.Builder
+		toolCalls        []provider.ToolCall
+		usage            *provider.Usage
+		toolCallsPending = make(map[int64]*toolCallAccum)
 	)
 
 	r.emit(Event{
@@ -294,8 +290,10 @@ func (r *runner) processStream(ctx context.Context, evCh <-chan provider.StreamE
 
 		if event.ToolCallStart != nil {
 			tc := event.ToolCallStart
-			pc := &pendingCall{name: tc.Name, id: tc.ID}
-			pending = append(pending, pc)
+			toolCallsPending[tc.IDNumber()] = &toolCallAccum{
+				name: tc.Name,
+				id:   tc.ID,
+			}
 			r.emit(Event{
 				Type: "tool_call_start",
 				ToolCallStart: &ToolCallEvent{
@@ -306,29 +304,37 @@ func (r *runner) processStream(ctx context.Context, evCh <-chan provider.StreamE
 		}
 
 		if event.ToolCallArgsDelta != "" {
-			if len(pending) > 0 {
-				last := pending[len(pending)-1]
-				last.buf.WriteString(event.ToolCallArgsDelta)
+			// Accumulate into the active tool call (last in accumulator map).
+			// SDK streams tool calls sequentially.
+			var maxIdx int64
+			for idx := range toolCallsPending {
+				if idx > maxIdx {
+					maxIdx = idx
+				}
+			}
+			if acc, ok := toolCallsPending[maxIdx]; ok {
+				acc.argsBuf.WriteString(event.ToolCallArgsDelta)
 				r.emit(Event{ToolCallArgs: event.ToolCallArgsDelta})
 			}
 		}
 
 		if event.ToolCallEnd != nil {
 			tc := event.ToolCallEnd
-			// Find the matching pending call by name.
-			for _, pc := range pending {
-				if pc.name == tc.Name {
-					args := parseArgs(pc.buf.String())
+			// Find the matching pending tool call by name.
+			for idx, acc := range toolCallsPending {
+				if acc.name == tc.Name {
+					args := parseArgs(acc.argsBuf.String())
 					toolCalls = append(toolCalls, provider.ToolCall{
 						Name: tc.Name,
-						ID:   pc.id,
+						ID:   acc.id,
 						Args: args,
 					})
+					delete(toolCallsPending, idx)
 					r.emit(Event{
 						Type: "tool_call_end",
 						ToolCallEnd: &ToolCallEvent{
 							Name:   tc.Name,
-							CallID: pc.id,
+							CallID: acc.id,
 							Args:   args,
 						},
 					})
@@ -339,25 +345,6 @@ func (r *runner) processStream(ctx context.Context, evCh <-chan provider.StreamE
 
 		if event.Done != nil {
 			usage = event.Done
-		}
-	}
-
-	// Flush any remaining pending tool calls (in case ToolCallEnd was missed).
-	for _, pc := range pending {
-		found := false
-		for _, tc := range toolCalls {
-			if tc.ID == pc.id || tc.Name == pc.name {
-				found = true
-				break
-			}
-		}
-		if !found && pc.name != "" {
-			args := parseArgs(pc.buf.String())
-			toolCalls = append(toolCalls, provider.ToolCall{
-				Name: pc.name,
-				ID:   pc.id,
-				Args: args,
-			})
 		}
 	}
 
