@@ -14,28 +14,38 @@ import (
 func init() {
 	Register("openai", NewOpenAI)
 	Register("openai-oauth", NewOpenAIOAuth)
+	Register("deepseek", NewDeepSeek)
 }
 
 const openAIBaseURL = "https://api.openai.com/v1"
+const deepSeekBaseURL = "https://api.deepseek.com"
 
 type OpenAIProvider struct {
-	name   string
-	apiKey string
-	client *http.Client
+	name    string
+	apiKey  string
+	baseURL string
+	client  *http.Client
 }
 
 func NewOpenAI(apiKey string) (Provider, error) {
 	if strings.TrimSpace(apiKey) == "" {
 		return nil, fmt.Errorf("openai: missing API key or OAuth access token")
 	}
-	return &OpenAIProvider{name: "openai", apiKey: apiKey, client: http.DefaultClient}, nil
+	return &OpenAIProvider{name: "openai", apiKey: apiKey, baseURL: openAIBaseURL, client: http.DefaultClient}, nil
 }
 
 func NewOpenAIOAuth(apiKey string) (Provider, error) {
 	if strings.TrimSpace(apiKey) == "" {
 		return nil, fmt.Errorf("openai-oauth: missing OAuth access token")
 	}
-	return &OpenAIProvider{name: "openai-oauth", apiKey: apiKey, client: http.DefaultClient}, nil
+	return &OpenAIProvider{name: "openai-oauth", apiKey: apiKey, baseURL: openAIBaseURL, client: http.DefaultClient}, nil
+}
+
+func NewDeepSeek(apiKey string) (Provider, error) {
+	if strings.TrimSpace(apiKey) == "" {
+		return nil, fmt.Errorf("deepseek: missing API key")
+	}
+	return &OpenAIProvider{name: "deepseek", apiKey: apiKey, baseURL: deepSeekBaseURL, client: http.DefaultClient}, nil
 }
 
 func (p *OpenAIProvider) Name() string { return p.name }
@@ -55,7 +65,7 @@ func (p *OpenAIProvider) Stream(ctx context.Context, req Request) (<-chan Stream
 	if err != nil {
 		return nil, err
 	}
-	hreq, err := http.NewRequestWithContext(ctx, http.MethodPost, openAIBaseURL+"/chat/completions", bytes.NewReader(data))
+	hreq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+"/chat/completions", bytes.NewReader(data))
 	if err != nil {
 		return nil, err
 	}
@@ -74,6 +84,9 @@ func (p *OpenAIProvider) Stream(ctx context.Context, req Request) (<-chan Stream
 }
 
 func (p *OpenAIProvider) ListModels(ctx context.Context) ([]string, error) {
+	if p.name == "deepseek" {
+		return []string{"deepseek-v4-pro", "deepseek-v4-flash"}, nil
+	}
 	if p.name == "openai-oauth" || isOpenAIOAuthToken(p.apiKey) {
 		return openAIOAuthModels(), nil
 	}
@@ -121,7 +134,7 @@ func (p *OpenAIProvider) doJSON(ctx context.Context, method, path string, body a
 		}
 		r = bytes.NewReader(data)
 	}
-	req, err := http.NewRequestWithContext(ctx, method, openAIBaseURL+path, r)
+	req, err := http.NewRequestWithContext(ctx, method, p.baseURL+path, r)
 	if err != nil {
 		return err
 	}
@@ -167,10 +180,30 @@ func (p *OpenAIProvider) buildChatRequest(req Request, stream bool) map[string]a
 		}
 		body["tools"] = tools
 	}
-	if effort, ok := openAIReasoningEffort(req.Model, req.Thinking); ok {
+	if p.name == "deepseek" {
+		if effort, ok := deepSeekReasoningEffort(req.Thinking); ok {
+			body["thinking"] = map[string]any{"type": "enabled"}
+			body["reasoning_effort"] = effort
+		}
+	} else if effort, ok := openAIReasoningEffort(req.Model, req.Thinking); ok {
 		body["reasoning_effort"] = effort
 	}
 	return body
+}
+
+func deepSeekReasoningEffort(thinking string) (string, bool) {
+	switch thinking {
+	case "", "none":
+		return "", false
+	case "minimal", "low":
+		return "low", true
+	case "medium":
+		return "medium", true
+	case "high", "xhigh":
+		return "high", true
+	default:
+		return thinking, true
+	}
 }
 
 func openAIReasoningEffort(modelID, thinking string) (string, bool) {

@@ -32,6 +32,19 @@ func TestCreateOpenAI(t *testing.T) {
 	}
 }
 
+func TestCreateDeepSeek(t *testing.T) {
+	prov, err := Create("deepseek", "sk-test")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if prov == nil {
+		t.Fatal("expected non-nil provider")
+	}
+	if prov.Name() != "deepseek" {
+		t.Errorf("expected name deepseek, got %s", prov.Name())
+	}
+}
+
 func TestCreateOpenAIOAuth(t *testing.T) {
 	prov, err := Create("openai-oauth", "oauth-token")
 	if err != nil {
@@ -78,6 +91,20 @@ func TestMessageToolCallID(t *testing.T) {
 	}
 }
 
+func TestDeepSeekListModelsUsesStaticModels(t *testing.T) {
+	prov, err := NewDeepSeek("sk-test")
+	if err != nil {
+		t.Fatalf("NewDeepSeek: %v", err)
+	}
+	models, err := prov.ListModels(context.Background())
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	if len(models) != 2 || models[0] != "deepseek-v4-pro" || models[1] != "deepseek-v4-flash" {
+		t.Fatalf("unexpected deepseek models: %#v", models)
+	}
+}
+
 func TestOpenAIOAuthListModelsUsesStaticFallback(t *testing.T) {
 	prov, err := NewOpenAI("oauth.jwt.token")
 	if err != nil {
@@ -118,6 +145,26 @@ func TestOpenAIRequestMapsThinkingEffortLikePiCodex(t *testing.T) {
 				t.Fatalf("expected reasoning_effort %q, got %#v", tt.want, got)
 			}
 		})
+	}
+}
+
+func TestDeepSeekRequestMapsThinkingEffort(t *testing.T) {
+	prov := &OpenAIProvider{name: "deepseek", apiKey: "sk-test", baseURL: deepSeekBaseURL}
+	body := prov.buildChatRequest(Request{Model: "deepseek-v4-pro", Thinking: "xhigh"}, true)
+	if got := body["reasoning_effort"]; got != "high" {
+		t.Fatalf("expected reasoning_effort high, got %#v", got)
+	}
+	thinking, ok := body["thinking"].(map[string]any)
+	if !ok || thinking["type"] != "enabled" {
+		t.Fatalf("expected thinking enabled, got %#v", body["thinking"])
+	}
+
+	body = prov.buildChatRequest(Request{Model: "deepseek-v4-pro", Thinking: "none"}, true)
+	if _, ok := body["reasoning_effort"]; ok {
+		t.Fatalf("expected no reasoning_effort for none, got %#v", body["reasoning_effort"])
+	}
+	if _, ok := body["thinking"]; ok {
+		t.Fatalf("expected no thinking for none, got %#v", body["thinking"])
 	}
 }
 

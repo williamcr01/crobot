@@ -893,7 +893,7 @@ func (m *Model) reloadAuthorizedProviders() error {
 	if err != nil {
 		return err
 	}
-	for _, providerName := range []string{"openrouter", "openai", "openai-oauth"} {
+	for _, providerName := range []string{"openrouter", "openai", "openai-oauth", "deepseek"} {
 		apiKey := auth.APIKey(providerName)
 		if apiKey == "" {
 			continue

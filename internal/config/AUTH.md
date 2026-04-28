@@ -74,6 +74,33 @@ Then select OpenAI in `~/.crobot/agent.config.json`:
 }
 ```
 
+## DeepSeek
+
+Add a DeepSeek API key like this:
+
+```json
+{
+  "deepseek": {
+    "type": "apiKey",
+    "apiKey": "sk-your-key-here"
+  }
+}
+```
+
+Then select DeepSeek in `~/.crobot/agent.config.json` or via `/model`:
+
+```json
+{
+  "provider": "deepseek",
+  "model": "deepseek-v4-pro"
+}
+```
+
+Crobot lists two DeepSeek models:
+
+- `deepseek-v4-pro`
+- `deepseek-v4-flash`
+
 ## File format
 
 `auth.json` is a JSON object keyed by provider ID.
@@ -104,6 +131,7 @@ Currently supported:
 - `openrouter`
 - `openai` (API key)
 - `openai-oauth` (ChatGPT/Codex OAuth)
+- `deepseek`
 
 ## Notes
 
