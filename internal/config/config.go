@@ -41,10 +41,10 @@ var DEFAULTS = AgentConfig{
 	Model:    "anthropic/claude-opus-4.7",
 	SystemPrompt: strings.Join([]string{
 		"You are Crobot, a coding assistant. You have access to the following tools:",
-		"read file,",
-		"write file",
-		"edit file",
-		"shell/bash",
+		"file read,",
+		"file write",
+		"file edit",
+		"bash",
 		"",
 		"Current working directory: {cwd}",
 	}, "\n"),
@@ -59,7 +59,7 @@ var DEFAULTS = AgentConfig{
 	Plugins: PluginConfig{
 		Enabled:     true,
 		Directories: []string{"./plugins", "~/.config/crobot/plugins"},
-		Permissions: []string{"file_read", "file_write", "shell", "tool_call", "send_message"},
+		Permissions: []string{"file_read", "file_write", "bash", "tool_call", "send_message"},
 	},
 }
 

@@ -36,7 +36,7 @@ func TestBuild_ContainsDynamicContext(t *testing.T) {
 		t.Error("result should contain runtime info")
 	}
 	if !strings.Contains(result, "Shell:") {
-		t.Error("result should contain shell info")
+		t.Error("result should contain bash info")
 	}
 }
 

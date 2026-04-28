@@ -40,7 +40,7 @@ func main() {
 	toolReg.Register(tools.FileReadTool)
 	toolReg.Register(tools.FileWriteTool)
 	toolReg.Register(tools.FileEditTool)
-	toolReg.Register(tools.ShellTool)
+	toolReg.Register(tools.BashTool)
 
 	// Register native commands.
 	registerCommands(cmdReg)

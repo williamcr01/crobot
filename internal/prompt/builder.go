@@ -28,8 +28,8 @@ func Build(cfg config.AgentConfig, cwd string) string {
 	b.WriteString(time.Now().Format("2006-01-02 15:04 MST"))
 	b.WriteString("\n")
 	b.WriteString("Shell: ")
-	if shell := os.Getenv("SHELL"); shell != "" {
-		b.WriteString(shell)
+	if bash := os.Getenv("SHELL"); bash != "" {
+		b.WriteString(bash)
 	} else {
 		b.WriteString("unknown")
 	}

@@ -13,6 +13,6 @@
   "plugins": {
     "enabled": true,
     "directories": ["./plugins", "~/.config/crobot/plugins"],
-    "permissions": ["file_read", "file_write", "shell", "tool_call", "send_message"]
+    "permissions": ["file_read", "file_write", "bash", "tool_call", "send_message"]
   }
 }

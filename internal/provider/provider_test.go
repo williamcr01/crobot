@@ -43,23 +43,10 @@ func TestErrStreamClosed(t *testing.T) {
 	}
 }
 
-func TestMessageExtractToolCallID(t *testing.T) {
-	m := Message{Role: "tool", Content: "call_abc123: some result"}
-	id := m.extractToolCallID()
-	if id != "call_abc123" {
-		t.Errorf("expected call_abc123, got %s", id)
-	}
-
-	m2 := Message{Role: "tool", Content: "no prefix"}
-	id2 := m2.extractToolCallID()
-	if id2 != "" {
-		t.Errorf("expected empty, got %s", id2)
-	}
-
-	m3 := Message{Role: "tool", Content: "call_123: one: two"}
-	id3 := m3.extractToolCallID()
-	if id3 != "call_123" {
-		t.Errorf("expected call_123, got %s", id3)
+func TestMessageToolCallID(t *testing.T) {
+	m := Message{Role: "tool", ToolCallID: "call_abc123", Content: "some result"}
+	if m.ToolCallID != "call_abc123" {
+		t.Errorf("expected call_abc123, got %s", m.ToolCallID)
 	}
 }
 

@@ -26,7 +26,9 @@ import (
 // toolRenderItem holds rendered state for one tool call in the view.
 type toolRenderItem struct {
 	name     string
+	callID   string
 	args     string
+	rawArgs  map[string]any
 	output   string
 	success  bool
 	duration time.Duration
@@ -123,15 +125,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.ready = true
 
-		headerHeight := 0
-		if m.config.ShowBanner {
-			headerHeight = 9
-		}
 		footerHeight := 4
 		if m.pending {
 			footerHeight = 5
 		}
-		vpHeight := msg.Height - headerHeight - footerHeight
+		vpHeight := msg.Height - footerHeight
 		if vpHeight < 10 {
 			vpHeight = 10
 		}
@@ -290,8 +288,10 @@ func (m Model) handleAgentEvent(ev agent.Event) (tea.Model, tea.Cmd) {
 			if len(m.messages) > 0 && m.messages[len(m.messages)-1].role == "assistant" {
 				last := &m.messages[len(m.messages)-1]
 				last.toolCalls = append(last.toolCalls, toolRenderItem{
-					name: ev.ToolCallEnd.Name,
-					args: summarizeArgs(ev.ToolCallEnd.Name, ev.ToolCallEnd.Args),
+					name:    ev.ToolCallEnd.Name,
+					callID:  ev.ToolCallEnd.CallID,
+					args:    summarizeArgs(ev.ToolCallEnd.Name, ev.ToolCallEnd.Args),
+					rawArgs: ev.ToolCallEnd.Args,
 				})
 				m.refreshViewport()
 			}
@@ -312,7 +312,10 @@ func (m Model) handleAgentEvent(ev agent.Event) (tea.Model, tea.Cmd) {
 			}
 		}
 
-	case "turn_end", "message_end":
+	case "turn_end":
+		m.refreshViewport()
+
+	case "message_end":
 		m.pending = false
 		m.textarea.Focus()
 
@@ -358,11 +361,6 @@ func (m Model) View() string {
 		return "Loading...\n"
 	}
 	var b strings.Builder
-
-	if m.config.ShowBanner {
-		b.WriteString(Render(m.config.Model))
-		b.WriteString("\n")
-	}
 
 	viewport := m.viewport
 	if m.height > 0 {
@@ -532,15 +530,11 @@ func (m Model) commandSuggestionHeight() int {
 }
 
 func (m Model) dynamicViewportHeight() int {
-	headerHeight := 0
-	if m.config.ShowBanner {
-		headerHeight = 9
-	}
 	footerHeight := 4 + m.commandSuggestionHeight()
 	if m.pending {
 		footerHeight++
 	}
-	vpHeight := m.height - headerHeight - footerHeight
+	vpHeight := m.height - footerHeight
 	if vpHeight < 3 {
 		vpHeight = 3
 	}
@@ -549,6 +543,10 @@ func (m Model) dynamicViewportHeight() int {
 
 func (m Model) renderMessages() string {
 	var b strings.Builder
+	if m.config.ShowBanner {
+		b.WriteString(Render(m.config.Model))
+		b.WriteString("\n")
+	}
 	for _, msg := range m.messages {
 		switch msg.role {
 		case "user":
@@ -596,22 +594,31 @@ func (m *Model) startAgent(ctx context.Context, input string) {
 
 	sysPrompt := prompt.Build(*m.config, getCwd())
 
-	// Build conversation history for the LLM.
+	// Build conversation history for the LLM, preserving assistant tool calls
+	// immediately followed by their matching tool results.
 	var llmMsgs []provider.Message
 	for _, msg := range m.messages {
-		if msg.role == "user" || msg.role == "assistant" || msg.role == "system" {
+		switch msg.role {
+		case "user", "system":
 			llmMsgs = append(llmMsgs, provider.Message{Role: msg.role, Content: msg.content})
-		}
-	}
-
-	// Add tool result messages from previous turns.
-	for _, msg := range m.messages {
-		if msg.role == "assistant" {
+		case "assistant":
+			llmMsg := provider.Message{Role: "assistant", Content: msg.content}
+			for _, tc := range msg.toolCalls {
+				if tc.callID != "" {
+					llmMsg.ToolCalls = append(llmMsg.ToolCalls, provider.ToolCall{
+						Name: tc.name,
+						ID:   tc.callID,
+						Args: tc.rawArgs,
+					})
+				}
+			}
+			llmMsgs = append(llmMsgs, llmMsg)
 			for _, tc := range msg.toolCalls {
 				if tc.output != "" {
 					llmMsgs = append(llmMsgs, provider.Message{
-						Role:    "tool",
-						Content: tc.output,
+						Role:       "tool",
+						ToolCallID: tc.callID,
+						Content:    tc.output,
 					})
 				}
 			}
@@ -642,9 +649,9 @@ func (m *Model) startAgent(ctx context.Context, input string) {
 
 func expandShellShortcut(reg *tools.Registry, input string) string {
 	cmd := input[1:]
-	result, err := reg.Execute(context.Background(), "shell", map[string]any{"command": cmd})
+	result, err := reg.Execute(context.Background(), "bash", map[string]any{"command": cmd})
 	if err != nil {
-		return fmt.Sprintf("shell error: %v", err)
+		return fmt.Sprintf("bash error: %v", err)
 	}
 	if r, ok := result.(map[string]any); ok {
 		stdout, _ := r["stdout"].(string)
@@ -750,7 +757,7 @@ func summarizeArgs(name string, args map[string]any) string {
 
 func summarizeKey(name string) string {
 	switch name {
-	case "shell":
+	case "bash":
 		return "command"
 	case "file_read", "file_write", "file_edit":
 		return "path"

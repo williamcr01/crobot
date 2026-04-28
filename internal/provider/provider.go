@@ -4,8 +4,10 @@ import "context"
 
 // Message is a chat message in the conversation.
 type Message struct {
-	Role    string `json:"role"`    // "system", "user", "assistant", "tool"
-	Content string `json:"content"` // Message text or tool result
+	Role       string     `json:"role"`                   // "system", "user", "assistant", "tool"
+	Content    string     `json:"content"`                // Message text or tool result
+	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`   // Assistant tool calls
+	ToolCallID string     `json:"tool_call_id,omitempty"` // Tool result call ID
 }
 
 // ToolDefinition describes a tool available to the model.
@@ -52,13 +54,13 @@ type Response struct {
 
 // StreamEvent is emitted during streaming. Exactly one field is set.
 type StreamEvent struct {
-	TextDelta        string     // Partial text chunk
-	ReasoningDelta   string     // Partial reasoning chunk
-	ToolCallStart    *ToolCall  // Tool call identified (name + ID known)
+	TextDelta         string    // Partial text chunk
+	ReasoningDelta    string    // Partial reasoning chunk
+	ToolCallStart     *ToolCall // Tool call identified (name + ID known)
 	ToolCallArgsDelta string    // Partial JSON args for current tool call
-	ToolCallEnd      *ToolCall  // Tool call complete with full parsed args
-	Done             *Usage     // Stream finished with final usage
-	Error            error      // Stream error
+	ToolCallEnd       *ToolCall // Tool call complete with full parsed args
+	Done              *Usage    // Stream finished with final usage
+	Error             error     // Stream error
 }
 
 // Provider abstracts an LLM backend.

@@ -43,7 +43,7 @@ func TestLogger_EventTypes(t *testing.T) {
 	var buf bytes.Buffer
 	l := &Logger{w: &buf, mu: sync.Mutex{}}
 
-	l.ToolCall("shell", map[string]any{"command": "ls"})
+	l.ToolCall("bash", map[string]any{"command": "ls"})
 	l.Error("parser", errors.New("syntax error"))
 
 	lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
@@ -53,8 +53,8 @@ func TestLogger_EventTypes(t *testing.T) {
 	if ev1.Type != EventToolCall {
 		t.Errorf("expected tool_call, got %s", ev1.Type)
 	}
-	if ev1.Data["name"] != "shell" {
-		t.Errorf("expected name shell, got %v", ev1.Data["name"])
+	if ev1.Data["name"] != "bash" {
+		t.Errorf("expected name bash, got %v", ev1.Data["name"])
 	}
 
 	var ev2 Event
@@ -109,7 +109,7 @@ func TestLogger_ToolResultError(t *testing.T) {
 	var buf bytes.Buffer
 	l := &Logger{w: &buf, mu: sync.Mutex{}}
 
-	l.ToolResult("shell", 200, 0, errors.New("exit code 1"))
+	l.ToolResult("bash", 200, 0, errors.New("exit code 1"))
 
 	var ev Event
 	json.Unmarshal(buf.Bytes(), &ev)

@@ -9,15 +9,15 @@ import (
 	"unicode/utf8"
 )
 
-var ShellTool = Tool{
-	Name:        "shell",
-	Description: "Execute a shell command with timeout and output capture",
+var BashTool = Tool{
+	Name:        "bash",
+	Description: "Execute a bash command with timeout and output capture",
 	InputSchema: map[string]any{
 		"type": "object",
 		"properties": map[string]any{
 			"command": map[string]any{
 				"type":        "string",
-				"description": "Shell command to execute",
+				"description": "Bash command to execute",
 			},
 			"timeout": map[string]any{
 				"type":        "integer",
@@ -46,7 +46,7 @@ var ShellTool = Tool{
 		cmdCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
 		defer cancel()
 
-		cmd := exec.CommandContext(cmdCtx, "sh", "-c", command)
+		cmd := exec.CommandContext(cmdCtx, "bash", "-lc", command)
 		var stdout, stderr bytes.Buffer
 		cmd.Stdout = &stdout
 		cmd.Stderr = &stderr

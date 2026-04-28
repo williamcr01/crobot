@@ -158,10 +158,11 @@ func (r *runner) run(ctx context.Context) (*Result, error) {
 			return nil, err
 		}
 
-		// Add assistant message.
+		// Add assistant message, preserving tool-call metadata for the follow-up request.
 		r.messages = append(r.messages, provider.Message{
-			Role:    "assistant",
-			Content: step.Text,
+			Role:      "assistant",
+			Content:   step.Text,
+			ToolCalls: step.ToolCalls,
 		})
 
 		// If there are NO tool calls, we're done.
@@ -211,10 +212,11 @@ func (r *runner) run(ctx context.Context) (*Result, error) {
 				},
 			})
 
-			// Add tool result message.
+			// Add tool result message with the matching tool call ID.
 			r.messages = append(r.messages, provider.Message{
-				Role:    "tool",
-				Content: fmt.Sprintf("%s: %s", tc.ID, output),
+				Role:       "tool",
+				ToolCallID: tc.ID,
+				Content:    output,
 			})
 		}
 

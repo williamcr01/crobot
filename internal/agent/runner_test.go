@@ -15,6 +15,7 @@ type mockProvider struct {
 	name      string
 	responses []responseStep
 	stepIdx   int
+	requests  []provider.Request
 }
 
 type responseStep struct {
@@ -31,6 +32,7 @@ func (m *mockProvider) Send(ctx context.Context, req provider.Request) (*provide
 }
 
 func (m *mockProvider) Stream(ctx context.Context, req provider.Request) (<-chan provider.StreamEvent, error) {
+	m.requests = append(m.requests, req)
 	ch := make(chan provider.StreamEvent, 10)
 	go func() {
 		defer close(ch)
@@ -142,6 +144,19 @@ func TestRun_ToolCall(t *testing.T) {
 	if result.Text != "Done!" {
 		t.Errorf("expected 'Done!', got %q", result.Text)
 	}
+	if len(mock.requests) != 2 {
+		t.Fatalf("expected 2 provider requests, got %d", len(mock.requests))
+	}
+	msgs := mock.requests[1].Messages
+	if len(msgs) != 2 {
+		t.Fatalf("expected assistant tool call and tool result messages, got %d", len(msgs))
+	}
+	if len(msgs[0].ToolCalls) != 1 || msgs[0].ToolCalls[0].ID != "call_1" {
+		t.Fatalf("expected assistant message to preserve tool call metadata, got %#v", msgs[0])
+	}
+	if msgs[1].Role != "tool" || msgs[1].ToolCallID != "call_1" {
+		t.Fatalf("expected tool result with tool_call_id call_1, got %#v", msgs[1])
+	}
 }
 
 func TestRun_Cancellation(t *testing.T) {
@@ -221,11 +236,11 @@ func TestRun_PluginHooks(t *testing.T) {
 }
 
 type mockPluginManager struct {
-	onPrePrompt     func(string, []provider.Message) (string, []provider.Message, error)
-	onPostResponse  func(*Result) (*Result, error)
-	onPreToolCall   func(string, map[string]any) (string, map[string]any, bool, error)
+	onPrePrompt      func(string, []provider.Message) (string, []provider.Message, error)
+	onPostResponse   func(*Result) (*Result, error)
+	onPreToolCall    func(string, map[string]any) (string, map[string]any, bool, error)
 	onPostToolResult func(string, map[string]any, any) (any, error)
-	onOnEvent       func(any) error
+	onOnEvent        func(any) error
 }
 
 func (m *mockPluginManager) CallPrePrompt(prompt string, msgs []provider.Message) (string, []provider.Message, error) {

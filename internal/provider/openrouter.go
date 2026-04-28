@@ -108,8 +108,9 @@ func (p *OpenRouterProvider) buildChatRequest(req Request) components.ChatReques
 			assistantContent := components.CreateChatAssistantMessageContentStr(m.Content)
 			messages = append(messages, components.CreateChatMessagesAssistant(
 				components.ChatAssistantMessage{
-					Content: optionalnullable.From(&assistantContent),
-					Role:    components.ChatAssistantMessageRoleAssistant,
+					Content:   optionalnullable.From(&assistantContent),
+					Role:      components.ChatAssistantMessageRoleAssistant,
+					ToolCalls: toChatToolCalls(m.ToolCalls),
 				},
 			))
 		case "tool":
@@ -117,7 +118,7 @@ func (p *OpenRouterProvider) buildChatRequest(req Request) components.ChatReques
 				components.ChatToolMessage{
 					Content:    components.CreateChatToolMessageContentStr(m.Content),
 					Role:       components.ChatToolMessageRoleTool,
-					ToolCallID: m.extractToolCallID(),
+					ToolCallID: m.ToolCallID,
 				},
 			))
 		}
@@ -265,13 +266,19 @@ func (p *OpenRouterProvider) streamLoop(
 				}
 
 				p, exists := toolAccum[idx]
-				if !exists && id != "" {
-					toolAccum[idx] = &pendingTool{name: name, id: id}
+				started := exists && p.name != "" && p.id != ""
+				if !exists {
+					toolAccum[idx] = &pendingTool{}
 					p = toolAccum[idx]
-					ch <- StreamEvent{ToolCallStart: &ToolCall{Name: name, ID: id}}
 				}
-				if p == nil {
-					continue
+				if id != "" {
+					p.id = id
+				}
+				if name != "" {
+					p.name = name
+				}
+				if !started && p.name != "" && p.id != "" {
+					ch <- StreamEvent{ToolCallStart: &ToolCall{Name: p.name, ID: p.id}}
 				}
 
 				// Append args delta.
@@ -319,6 +326,22 @@ func (p *OpenRouterProvider) streamLoop(
 	}
 }
 
+func toChatToolCalls(calls []ToolCall) []components.ChatToolCall {
+	out := make([]components.ChatToolCall, 0, len(calls))
+	for _, tc := range calls {
+		args, _ := json.Marshal(tc.Args)
+		out = append(out, components.ChatToolCall{
+			ID:   tc.ID,
+			Type: components.ChatToolCallTypeFunction,
+			Function: components.ChatToolCallFunction{
+				Name:      tc.Name,
+				Arguments: string(args),
+			},
+		})
+	}
+	return out
+}
+
 // parseToolArgs attempts to parse a JSON string into map[string]any.
 func parseToolArgs(raw string) map[string]any {
 	if raw == "" {
@@ -329,14 +352,4 @@ func parseToolArgs(raw string) map[string]any {
 		return map[string]any{"raw": raw}
 	}
 	return args
-}
-
-// extractToolCallID extracts the tool call ID from a message.
-// Tool messages store the ID as a prefix: "call_xxx: actual content".
-func (m Message) extractToolCallID() string {
-	parts := strings.SplitN(m.Content, ": ", 2)
-	if len(parts) == 2 {
-		return parts[0]
-	}
-	return ""
 }

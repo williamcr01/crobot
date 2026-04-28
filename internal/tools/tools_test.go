@@ -325,7 +325,7 @@ func TestFileEdit_FileNotFound(t *testing.T) {
 }
 
 func TestShell_Basic(t *testing.T) {
-	result, err := ShellTool.Execute(context.Background(), map[string]any{
+	result, err := BashTool.Execute(context.Background(), map[string]any{
 		"command": "echo hello world",
 	})
 	if err != nil {
@@ -341,7 +341,7 @@ func TestShell_Basic(t *testing.T) {
 }
 
 func TestShell_NonZeroExit(t *testing.T) {
-	result, err := ShellTool.Execute(context.Background(), map[string]any{
+	result, err := BashTool.Execute(context.Background(), map[string]any{
 		"command": "exit 42",
 	})
 	if err != nil {
@@ -354,7 +354,7 @@ func TestShell_NonZeroExit(t *testing.T) {
 }
 
 func TestShell_Stderr(t *testing.T) {
-	result, err := ShellTool.Execute(context.Background(), map[string]any{
+	result, err := BashTool.Execute(context.Background(), map[string]any{
 		"command": "echo error >&2",
 	})
 	if err != nil {
@@ -367,14 +367,14 @@ func TestShell_Stderr(t *testing.T) {
 }
 
 func TestShell_MissingCommand(t *testing.T) {
-	_, err := ShellTool.Execute(context.Background(), map[string]any{})
+	_, err := BashTool.Execute(context.Background(), map[string]any{})
 	if err == nil || !strings.Contains(err.Error(), "command is required") {
 		t.Errorf("expected command required error, got %v", err)
 	}
 }
 
 func TestShell_Timeout(t *testing.T) {
-	result, err := ShellTool.Execute(context.Background(), map[string]any{
+	result, err := BashTool.Execute(context.Background(), map[string]any{
 		"command": "sleep 0.05 && echo done",
 		"timeout": float64(10),
 	})
@@ -393,7 +393,7 @@ func TestShell_Timeout(t *testing.T) {
 func TestShell_TimeoutClamps(t *testing.T) {
 	// timeout > 120 should clamp to 120 but the test doesn't need to verify that
 	// precisely; we just ensure it doesn't blow up.
-	result, err := ShellTool.Execute(context.Background(), map[string]any{
+	result, err := BashTool.Execute(context.Background(), map[string]any{
 		"command": "echo ok",
 		"timeout": float64(999),
 	})
