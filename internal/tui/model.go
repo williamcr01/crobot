@@ -314,8 +314,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.textarea, cmd = m.textarea.Update(msg)
 	if m.modelPickerActive {
+		prev := m.modelPickerFilter
 		m.modelPickerFilter = m.textarea.Value()
-		m.modelPickerIndex = 0
+		if m.modelPickerFilter != prev {
+			m.modelPickerIndex = 0
+		}
 	}
 	m.clampCommandSuggestionIndex()
 	return m, cmd
