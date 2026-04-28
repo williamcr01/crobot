@@ -262,3 +262,79 @@ func (m *mockPluginManager) CallOnEvent(ev any) error {
 	}
 	return nil
 }
+
+func TestRun_MultipleToolCalls_NonNumericIDs(t *testing.T) {
+	echoTool := tools.Tool{
+		Name:        "echo",
+		Description: "Echoes input",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"message": map[string]any{"type": "string"},
+			},
+		},
+		Execute: func(ctx context.Context, args map[string]any) (any, error) {
+			msg, _ := args["message"].(string)
+			return map[string]any{"echo": msg}, nil
+		},
+	}
+	reverseTool := tools.Tool{
+		Name:        "reverse",
+		Description: "Reverses input",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"message": map[string]any{"type": "string"},
+			},
+		},
+		Execute: func(ctx context.Context, args map[string]any) (any, error) {
+			msg, _ := args["message"].(string)
+			runes := []rune(msg)
+			for i, j := 0, len(runes)-1; i < j; i, j = i+1, j-1 {
+				runes[i], runes[j] = runes[j], runes[i]
+			}
+			return map[string]any{"reversed": string(runes)}, nil
+		},
+	}
+
+	mock := &mockProvider{
+		name: "mock",
+		responses: []responseStep{
+			{
+				text: "",
+				toolCalls: []provider.ToolCall{
+					{Name: "echo", ID: "call_abc123", Args: map[string]any{"message": "hello"}},
+					{Name: "reverse", ID: "call_def456", Args: map[string]any{"message": "world"}},
+				},
+				usage: &provider.Usage{InputTokens: 10, OutputTokens: 5},
+			},
+			{
+				text:  "Done!",
+				usage: &provider.Usage{InputTokens: 20, OutputTokens: 3},
+			},
+		},
+	}
+
+	cfg := &config.AgentConfig{
+		Model:        "mock-model",
+		SystemPrompt: "You are a test assistant.",
+	}
+
+	toolReg := tools.NewRegistry()
+	toolReg.Register(echoTool)
+	toolReg.Register(reverseTool)
+
+	result, err := Run(context.Background(), mock, cfg.Model, cfg.SystemPrompt, nil, toolReg, nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Text != "Done!" {
+		t.Errorf("expected 'Done!', got %q", result.Text)
+	}
+
+	// Verify both tool results are in the conversation history.
+	// The runner appends tool messages as "{callID}: {output}".
+	if len(mock.responses) != 2 {
+		t.Fatalf("expected 2 response steps, got %d", len(mock.responses))
+	}
+}

@@ -188,6 +188,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.pending = true
 			ctx, cancel := context.WithCancel(context.Background())
 			m.agentCancel = cancel
+			m.agentEvents = make(chan agent.Event, 64)
 			go m.startAgent(ctx, input)
 
 			return m, tea.Batch(m.spinner.Tick, m.waitForEvents())
@@ -390,7 +391,10 @@ func (m *Model) refreshViewport() {
 // --- Agent runner goroutine ---
 
 func (m *Model) startAgent(ctx context.Context, input string) {
-	defer close(m.agentEvents)
+	// Capture the channel locally so this goroutine only ever touches
+	// its own instance, even if m.agentEvents is reassigned later.
+	ch := m.agentEvents
+	defer close(ch)
 
 	sysPrompt := prompt.Build(*m.config, getCwd())
 
@@ -428,7 +432,7 @@ func (m *Model) startAgent(ctx context.Context, input string) {
 		nil, // plugins
 		func(ev agent.Event) {
 			select {
-			case m.agentEvents <- ev:
+			case ch <- ev:
 			case <-ctx.Done():
 				return
 			}
