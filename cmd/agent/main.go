@@ -55,23 +55,22 @@ func main() {
 	toolReg := tools.NewRegistry()
 	cmdReg := commands.NewRegistry()
 
-	// Create model registry and load models.
+	// Create model registry and load models for every authorized provider.
 	modelReg := provider.NewModelRegistry()
-	if prov != nil {
-		modelReg.AddProvider(prov)
-	}
-	// Also try loading models for authorized providers if the provider isn't set yet.
-	if prov == nil {
-		for _, providerName := range []string{"openrouter", "openai"} {
-			apiKey := auth.APIKey(providerName)
-			if apiKey != "" {
-				tmpProv, err := provider.Create(providerName, apiKey)
-				if err == nil {
-					modelReg.AddProvider(tmpProv)
-				} else {
-					fmt.Fprintf(os.Stderr, "warning: creating %s model reader: %v\n", providerName, err)
-				}
-			}
+	for _, providerName := range []string{"openrouter", "openai", "openai-oauth"} {
+		apiKey := auth.APIKey(providerName)
+		if apiKey == "" {
+			continue
+		}
+		if prov != nil && cfg.Provider == providerName {
+			modelReg.AddProvider(prov)
+			continue
+		}
+		tmpProv, err := provider.Create(providerName, apiKey)
+		if err == nil {
+			modelReg.AddProvider(tmpProv)
+		} else {
+			fmt.Fprintf(os.Stderr, "warning: creating %s model reader: %v\n", providerName, err)
 		}
 	}
 	ctx := context.Background()
@@ -103,7 +102,7 @@ func main() {
 	_ = context.Background() // reserved for future plugin manager
 
 	// Create and run the TUI.
-	m := tui.NewModel(cfg, prov, toolReg, ev, cmdReg, sess, auth.APIKey)
+	m := tui.NewModel(cfg, prov, toolReg, ev, cmdReg, modelReg, sess, auth.APIKey)
 
 	p := tea.NewProgram(
 		m,

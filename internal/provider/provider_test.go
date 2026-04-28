@@ -1,6 +1,8 @@
 package provider
 
 import (
+	"context"
+	"errors"
 	"testing"
 )
 
@@ -27,6 +29,19 @@ func TestCreateOpenAI(t *testing.T) {
 	}
 	if prov.Name() != "openai" {
 		t.Errorf("expected name openai, got %s", prov.Name())
+	}
+}
+
+func TestCreateOpenAIOAuth(t *testing.T) {
+	prov, err := Create("openai-oauth", "oauth-token")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if prov == nil {
+		t.Fatal("expected non-nil provider")
+	}
+	if prov.Name() != "openai-oauth" {
+		t.Errorf("expected name openai-oauth, got %s", prov.Name())
 	}
 }
 
@@ -63,6 +78,44 @@ func TestMessageToolCallID(t *testing.T) {
 	}
 }
 
+func TestOpenAIOAuthListModelsUsesStaticFallback(t *testing.T) {
+	prov, err := NewOpenAI("oauth.jwt.token")
+	if err != nil {
+		t.Fatalf("NewOpenAI: %v", err)
+	}
+	models, err := prov.ListModels(context.Background())
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	if len(models) == 0 {
+		t.Fatal("expected static OAuth models")
+	}
+	if models[0] != "gpt-5-codex" {
+		t.Fatalf("expected gpt-5-codex first, got %q", models[0])
+	}
+}
+
+func TestModelRegistryLoadModelsClearsAndReportsErrors(t *testing.T) {
+	reg := NewModelRegistry()
+	reg.AddProvider(fakeProvider{name: "ok", models: []string{"m1"}})
+	if err := reg.LoadModels(context.Background()); err != nil {
+		t.Fatalf("LoadModels: %v", err)
+	}
+	if got := reg.GetAll(); len(got) != 1 || got[0].ID != "m1" {
+		t.Fatalf("expected one model, got %#v", got)
+	}
+
+	reg.AddProvider(fakeProvider{name: "ok", models: []string{"m2"}})
+	reg.AddProvider(fakeProvider{name: "bad", err: errors.New("boom")})
+	if err := reg.LoadModels(context.Background()); err == nil {
+		t.Fatal("expected load error")
+	}
+	got := reg.GetAll()
+	if len(got) != 1 || got[0].ID != "m2" {
+		t.Fatalf("expected reloaded m2 only, got %#v", got)
+	}
+}
+
 func TestParseToolArgs(t *testing.T) {
 	// Valid JSON.
 	args := parseToolArgs(`{"key": "value", "num": 42}`)
@@ -83,4 +136,21 @@ func TestParseToolArgs(t *testing.T) {
 	if parsed["raw"] != "not json" {
 		t.Errorf("expected raw fallback, got %v", parsed)
 	}
+}
+
+type fakeProvider struct {
+	name   string
+	models []string
+	err    error
+}
+
+func (f fakeProvider) Name() string { return f.name }
+func (f fakeProvider) Send(context.Context, Request) (*Response, error) {
+	return nil, nil
+}
+func (f fakeProvider) Stream(context.Context, Request) (<-chan StreamEvent, error) {
+	return nil, nil
+}
+func (f fakeProvider) ListModels(context.Context) ([]string, error) {
+	return f.models, f.err
 }

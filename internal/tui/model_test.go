@@ -14,7 +14,7 @@ import (
 )
 
 func testModel() Model {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil)
 	m.pending = true
 	m.agentEvents = make(chan agent.Event, 1)
 	return *m
@@ -47,7 +47,7 @@ func TestHandleAgentEvent_MessageEndClearsPending(t *testing.T) {
 }
 
 func TestNewModelShowsProviderWarningWhenAuthMissing(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil)
 
 	if len(m.messages) != 1 || m.messages[0].role != "error" || !strings.Contains(m.messages[0].content, "No provider added") {
 		t.Fatalf("expected no provider warning, got %#v", m.messages)
@@ -55,7 +55,7 @@ func TestNewModelShowsProviderWarningWhenAuthMissing(t *testing.T) {
 }
 
 func TestNewModelDoesNotWarnWhenAuthExistsButProviderUnselected(t *testing.T) {
-	m := NewModel(&config.AgentConfig{HasAuthorizedProvider: true}, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{HasAuthorizedProvider: true}, nil, nil, nil, nil, nil, nil, nil)
 
 	if len(m.messages) != 0 {
 		t.Fatalf("expected no startup warning, got %#v", m.messages)
@@ -63,7 +63,7 @@ func TestNewModelDoesNotWarnWhenAuthExistsButProviderUnselected(t *testing.T) {
 }
 
 func TestNewModelConfiguresTextareaInput(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil)
 
 	if m.textarea.Prompt != "" {
 		t.Fatalf("expected empty textarea prompt, got %q", m.textarea.Prompt)
@@ -80,7 +80,7 @@ func TestNewModelConfiguresTextareaInput(t *testing.T) {
 }
 
 func TestViewUsesInputViewForInput(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil)
 	m.ready = true
 	m.width = 80
 	m.height = 24
@@ -95,7 +95,7 @@ func TestViewUsesInputViewForInput(t *testing.T) {
 }
 
 func TestViewShowsProviderModelAndThinkingAboveInput(t *testing.T) {
-	m := NewModel(&config.AgentConfig{Provider: "openrouter", Model: "test/model", Thinking: "medium"}, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{Provider: "openrouter", Model: "test/model", Thinking: "medium"}, nil, nil, nil, nil, nil, nil, nil)
 	m.ready = true
 	m.width = 80
 	m.height = 24
@@ -118,7 +118,7 @@ func TestViewShowsProviderModelAndThinkingAboveInput(t *testing.T) {
 func TestTabCyclesThinkingLevels(t *testing.T) {
 	withTempWorkingDir(t)
 	t.Setenv("HOME", t.TempDir())
-	m := NewModel(&config.AgentConfig{Provider: "openrouter", Thinking: "none"}, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{Provider: "openrouter", Thinking: "none"}, nil, nil, nil, nil, nil, nil, nil)
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	updatedModel := updated.(Model)
@@ -140,7 +140,7 @@ func TestTabCyclesThinkingLevels(t *testing.T) {
 }
 
 func TestTabDoesNotCycleThinkingWhenPending(t *testing.T) {
-	m := NewModel(&config.AgentConfig{Thinking: "none"}, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{Thinking: "none"}, nil, nil, nil, nil, nil, nil, nil)
 	m.pending = true
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
@@ -152,7 +152,7 @@ func TestTabDoesNotCycleThinkingWhenPending(t *testing.T) {
 }
 
 func TestRenderMessagesShowsReasoningWhenEnabled(t *testing.T) {
-	m := NewModel(&config.AgentConfig{Reasoning: true}, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{Reasoning: true}, nil, nil, nil, nil, nil, nil, nil)
 	m.messages = append(m.messages, messageItem{role: "assistant", reasoning: "hidden chain", content: "final answer"})
 
 	got := m.renderMessages()
@@ -165,7 +165,7 @@ func TestRenderMessagesShowsReasoningWhenEnabled(t *testing.T) {
 }
 
 func TestRenderMessagesHidesReasoningWhenDisabled(t *testing.T) {
-	m := NewModel(&config.AgentConfig{Reasoning: false}, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{Reasoning: false}, nil, nil, nil, nil, nil, nil, nil)
 	m.messages = append(m.messages, messageItem{role: "assistant", reasoning: "hidden chain", content: "final answer"})
 
 	got := m.renderMessages()
@@ -178,7 +178,7 @@ func TestRenderMessagesHidesReasoningWhenDisabled(t *testing.T) {
 }
 
 func TestUpdateRoutesReasoningDeltaToReasoningField(t *testing.T) {
-	m := NewModel(&config.AgentConfig{Reasoning: true}, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{Reasoning: true}, nil, nil, nil, nil, nil, nil, nil)
 	m.messages = []messageItem{{role: "assistant"}}
 
 	updated, _ := m.Update(agentEventMsg(agent.Event{Type: "reasoning_delta", ReasoningDelta: "thinking..."}))
@@ -193,7 +193,7 @@ func TestUpdateRoutesReasoningDeltaToReasoningField(t *testing.T) {
 }
 
 func TestUpdateRoutesPageKeysToViewport(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil)
 	m.ready = true
 	m.width = 80
 	m.height = 10
@@ -210,7 +210,7 @@ func TestUpdateRoutesPageKeysToViewport(t *testing.T) {
 }
 
 func TestRefreshViewportPreservesManualScrollPosition(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil)
 	m.viewport = viewport.New(80, 5)
 	for i := 0; i < 30; i++ {
 		m.messages = append(m.messages, messageItem{role: "system", content: fmt.Sprintf("line %02d", i)})
@@ -251,4 +251,14 @@ func withTempWorkingDir(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
+}
+
+func TestOAuthProviderOptionUsesOpenAIOAuthID(t *testing.T) {
+	providers := oauthProviderOptions()
+	if len(providers) != 1 {
+		t.Fatalf("expected one oauth provider, got %d", len(providers))
+	}
+	if providers[0].ID != "openai-oauth" {
+		t.Fatalf("expected openai-oauth provider ID, got %q", providers[0].ID)
+	}
 }

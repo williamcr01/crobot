@@ -13,11 +13,13 @@ import (
 
 func init() {
 	Register("openai", NewOpenAI)
+	Register("openai-oauth", NewOpenAIOAuth)
 }
 
 const openAIBaseURL = "https://api.openai.com/v1"
 
 type OpenAIProvider struct {
+	name   string
 	apiKey string
 	client *http.Client
 }
@@ -26,10 +28,17 @@ func NewOpenAI(apiKey string) (Provider, error) {
 	if strings.TrimSpace(apiKey) == "" {
 		return nil, fmt.Errorf("openai: missing API key or OAuth access token")
 	}
-	return &OpenAIProvider{apiKey: apiKey, client: http.DefaultClient}, nil
+	return &OpenAIProvider{name: "openai", apiKey: apiKey, client: http.DefaultClient}, nil
 }
 
-func (p *OpenAIProvider) Name() string { return "openai" }
+func NewOpenAIOAuth(apiKey string) (Provider, error) {
+	if strings.TrimSpace(apiKey) == "" {
+		return nil, fmt.Errorf("openai-oauth: missing OAuth access token")
+	}
+	return &OpenAIProvider{name: "openai-oauth", apiKey: apiKey, client: http.DefaultClient}, nil
+}
+
+func (p *OpenAIProvider) Name() string { return p.name }
 
 func (p *OpenAIProvider) Send(ctx context.Context, req Request) (*Response, error) {
 	body := p.buildChatRequest(req, false)
@@ -65,6 +74,10 @@ func (p *OpenAIProvider) Stream(ctx context.Context, req Request) (<-chan Stream
 }
 
 func (p *OpenAIProvider) ListModels(ctx context.Context) ([]string, error) {
+	if p.name == "openai-oauth" || isOpenAIOAuthToken(p.apiKey) {
+		return openAIOAuthModels(), nil
+	}
+
 	var res struct {
 		Data []struct {
 			ID string `json:"id"`
@@ -78,6 +91,23 @@ func (p *OpenAIProvider) ListModels(ctx context.Context) ([]string, error) {
 		ids = append(ids, m.ID)
 	}
 	return ids, nil
+}
+
+func isOpenAIOAuthToken(token string) bool {
+	return !strings.HasPrefix(token, "sk-")
+}
+
+func openAIOAuthModels() []string {
+	return []string{
+		"gpt-5-codex",
+		"gpt-5",
+		"gpt-5-mini",
+		"gpt-5-nano",
+		"gpt-4.1",
+		"gpt-4.1-mini",
+		"gpt-4o",
+		"gpt-4o-mini",
+	}
 }
 
 func (p *OpenAIProvider) setHeaders(req *http.Request) {

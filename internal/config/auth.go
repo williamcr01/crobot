@@ -78,12 +78,23 @@ func LoadAuth() (AuthConfig, error) {
 
 // APIKey returns an API key for provider, if present.
 func (a AuthConfig) APIKey(provider string) string {
+	if provider == "openai-oauth" {
+		if entry, ok := a["openai-oauth"]; ok && entry.Type == "oauth" {
+			return entry.Access
+		}
+		// Backward compatibility for auth files written before OAuth used a separate provider ID.
+		if entry, ok := a["openai"]; ok && entry.Type == "oauth" {
+			return entry.Access
+		}
+		return ""
+	}
+
 	entry, ok := a[provider]
 	if !ok {
 		return ""
 	}
 	if entry.Type == "oauth" {
-		return entry.Access
+		return ""
 	}
 	if entry.Type != "" && entry.Type != "apiKey" {
 		return ""
@@ -97,7 +108,10 @@ func RefreshOpenAIOAuth() error {
 	if err != nil {
 		return err
 	}
-	entry, ok := auth["openai"]
+	entry, ok := auth["openai-oauth"]
+	if !ok {
+		entry, ok = auth["openai"]
+	}
 	if !ok || entry.Type != "oauth" || entry.Refresh == "" {
 		return nil
 	}
@@ -111,7 +125,7 @@ func RefreshOpenAIOAuth() error {
 	if refreshed.AccountID == "" {
 		refreshed.AccountID = entry.AccountID
 	}
-	auth["openai"] = refreshed
+	auth["openai-oauth"] = refreshed
 	return SaveAuth(auth)
 }
 
@@ -163,5 +177,5 @@ func (a AuthConfig) HasAuthorizedProvider() bool {
 			return true
 		}
 	}
-	return false
+	return a.APIKey("openai-oauth") != ""
 }

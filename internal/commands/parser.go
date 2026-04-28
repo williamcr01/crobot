@@ -24,16 +24,17 @@ type Handler func(args []string) (string, error)
 
 // Command describes a single slash command.
 type Command struct {
-	Name        string
-	Description string
-	Args        string // usage hint, e.g. "<model>"
-	Handler     Handler
-	ModelID     string // non-empty if this is a model suggestion (e.g., "openrouter/anthropic/claude-opus-4-7")
+	Name          string
+	Description   string
+	Args          string // usage hint, e.g. "<model>"
+	Handler       Handler
+	ModelID       string // non-empty if this is a model suggestion (e.g., "anthropic/claude-opus-4-7")
+	ModelProvider string // provider for model suggestions
 }
 
 // Registry manages available slash commands.
 type Registry struct {
-	commands     map[string]Command
+	commands      map[string]Command
 	modelRegistry ModelRegistry
 }
 
@@ -56,9 +57,10 @@ func (r *Registry) FilterModels(filter string) []Command {
 	var suggestions []Command
 	for _, m := range models {
 		suggestions = append(suggestions, Command{
-			Name:    m.ID,
-			Args:    m.Provider,
-			ModelID: m.ID,
+			Name:          m.ID,
+			Args:          m.Provider,
+			ModelID:       m.ID,
+			ModelProvider: m.Provider,
 		})
 	}
 	return suggestions
@@ -161,9 +163,10 @@ func (r *Registry) modelSuggestions(input string) []Command {
 	var suggestions []Command
 	for _, m := range models {
 		suggestions = append(suggestions, Command{
-			Name:    m.ID,
-			Args:    m.Provider,
-			ModelID: m.ID,
+			Name:          m.ID,
+			Args:          m.Provider,
+			ModelID:       m.ID,
+			ModelProvider: m.Provider,
 		})
 	}
 	return suggestions

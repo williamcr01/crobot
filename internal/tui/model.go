@@ -66,6 +66,7 @@ type Model struct {
 	session  sessionWriter
 	events   *events.Logger
 	cmdReg   *commands.Registry
+	modelReg *provider.ModelRegistry
 
 	// apiKeyFor returns the API key for a provider name, or "" if not authorized.
 	apiKeyFor func(string) string
@@ -101,6 +102,7 @@ func NewModel(
 	toolReg *tools.Registry,
 	ev *events.Logger,
 	cmdReg *commands.Registry,
+	modelReg *provider.ModelRegistry,
 	sess sessionWriter,
 	apiKeyFor func(string) string,
 ) *Model {
@@ -126,6 +128,7 @@ func NewModel(
 		toolReg:     toolReg,
 		events:      ev,
 		cmdReg:      cmdReg,
+		modelReg:    modelReg,
 		session:     sess,
 		apiKeyFor:   apiKeyFor,
 		textarea:    ta,
@@ -175,14 +178,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.config.HasAuthorizedProvider = true
 			m.config.Provider = msg.provider
 			_ = config.SaveConfig(m.config)
-			if auth, err := config.LoadAuth(); err == nil {
-				if prov, err := provider.Create(msg.provider, auth.APIKey(msg.provider)); err == nil {
-					m.provider = prov
-				}
-			}
+			modelLoadErr := m.reloadAuthorizedProviders()
 			content := fmt.Sprintf("Logged in to %s", msg.provider)
 			if msg.accountID != "" {
 				content += fmt.Sprintf(" (%s)", msg.accountID)
+			}
+			if modelLoadErr != nil {
+				content += fmt.Sprintf("; model refresh warning: %v", modelLoadErr)
 			}
 			m.messages = append(m.messages, messageItem{role: "system", content: content})
 		}
@@ -609,7 +611,7 @@ func (m *Model) completeCommandSuggestion(suggestions []commands.Command) {
 
 	// Check if this is a model suggestion
 	if selected.ModelID != "" {
-		m.selectModel(selected.ModelID)
+		m.selectModel(selected.ModelProvider, selected.ModelID)
 		return
 	}
 
@@ -643,7 +645,8 @@ func (m Model) handleModelPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 	case tea.KeyEnter:
 		if len(models) > 0 {
 			m.clampModelPickerIndex(models)
-			m.selectModel(models[m.modelPickerIndex].ModelID)
+			selected := models[m.modelPickerIndex]
+			m.selectModel(selected.ModelProvider, selected.ModelID)
 		}
 		m.modelPickerActive = false
 		m.textarea.Reset()
@@ -667,7 +670,8 @@ func (m Model) handleModelPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 	case tea.KeyTab:
 		if len(models) > 0 {
 			m.clampModelPickerIndex(models)
-			m.selectModel(models[m.modelPickerIndex].ModelID)
+			selected := models[m.modelPickerIndex]
+			m.selectModel(selected.ModelProvider, selected.ModelID)
 		}
 		m.modelPickerActive = false
 		m.textarea.Reset()
@@ -748,7 +752,7 @@ type loginProviderOption struct {
 }
 
 func oauthProviderOptions() []loginProviderOption {
-	return []loginProviderOption{{ID: "openai", Name: "OpenAI", Description: "ChatGPT Plus/Pro OAuth"}}
+	return []loginProviderOption{{ID: "openai-oauth", Name: "OpenAI OAuth", Description: "ChatGPT Plus/Pro OAuth"}}
 }
 
 func (m Model) filteredLoginProviders() []loginProviderOption {
@@ -808,14 +812,50 @@ func (m Model) handleLoginPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 	return m, nil, false
 }
 
+func (m *Model) reloadAuthorizedProviders() error {
+	auth, err := config.LoadAuth()
+	if err != nil {
+		return err
+	}
+	for _, providerName := range []string{"openrouter", "openai", "openai-oauth"} {
+		apiKey := auth.APIKey(providerName)
+		if apiKey == "" {
+			continue
+		}
+		prov, err := provider.Create(providerName, apiKey)
+		if err != nil {
+			return err
+		}
+		if providerName == m.config.Provider {
+			m.provider = prov
+		}
+		if m.modelReg != nil {
+			m.modelReg.AddProvider(prov)
+		}
+	}
+	if m.provider == nil && m.config.Provider != "" {
+		if apiKey := auth.APIKey(m.config.Provider); apiKey != "" {
+			if prov, err := provider.Create(m.config.Provider, apiKey); err == nil {
+				m.provider = prov
+			}
+		}
+	}
+	if m.modelReg == nil {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	return m.modelReg.LoadModels(ctx)
+}
+
 func (m Model) loginProviderCmd(providerID string) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
 		switch providerID {
-		case "openai":
+		case "openai-oauth":
 			accountID, err := config.LoginOpenAIOAuth(ctx)
-			return loginResultMsg{provider: "openai", accountID: accountID, err: err}
+			return loginResultMsg{provider: "openai-oauth", accountID: accountID, err: err}
 		default:
 			return loginResultMsg{provider: providerID, err: fmt.Errorf("unsupported oauth provider: %s", providerID)}
 		}
@@ -890,19 +930,23 @@ func (m Model) visibleModelPickerRange(models []commands.Command) (start, end, s
 	return start, end, selected
 }
 
-// selectModel sets the model and clears the input.
-func (m *Model) selectModel(modelID string) {
-	if m.config.Provider == "" {
-		m.config.Provider = "openrouter"
+// selectModel sets the provider/model and clears the input.
+func (m *Model) selectModel(providerName, modelID string) {
+	if providerName == "" {
+		providerName = m.config.Provider
 	}
+	if providerName == "" {
+		providerName = "openrouter"
+	}
+	m.config.Provider = providerName
 	m.config.Model = modelID
 	_ = config.SaveConfig(m.config)
 
 	// Lazy-create provider if not set yet.
 	if m.provider == nil && m.apiKeyFor != nil {
-		apiKey := m.apiKeyFor("openrouter")
+		apiKey := m.apiKeyFor(m.config.Provider)
 		if apiKey != "" {
-			prov, err := provider.Create("openrouter", apiKey)
+			prov, err := provider.Create(m.config.Provider, apiKey)
 			if err == nil {
 				m.provider = prov
 				m.config.HasAuthorizedProvider = true
@@ -914,7 +958,7 @@ func (m *Model) selectModel(modelID string) {
 	m.commandSuggestionIndex = 0
 	m.messages = append(m.messages, messageItem{
 		role:    "system",
-		content: fmt.Sprintf("Model changed to %s", modelID),
+		content: fmt.Sprintf("Model changed to %s (%s)", modelID, m.config.Provider),
 	})
 	m.refreshViewport()
 	m.textarea.Focus()

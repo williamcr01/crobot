@@ -2,6 +2,8 @@ package provider
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strings"
 	"sync"
 
@@ -27,6 +29,12 @@ func NewModelRegistry() *ModelRegistry {
 func (r *ModelRegistry) AddProvider(p Provider) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	for i, existing := range r.providers {
+		if existing.Name() == p.Name() {
+			r.providers[i] = p
+			return
+		}
+	}
 	r.providers = append(r.providers, p)
 }
 
@@ -35,9 +43,12 @@ func (r *ModelRegistry) LoadModels(ctx context.Context) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	r.models = r.models[:0]
+	var errs []error
 	for _, p := range r.providers {
 		models, err := p.ListModels(ctx)
 		if err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", p.Name(), err))
 			continue
 		}
 		for _, m := range models {
@@ -47,7 +58,7 @@ func (r *ModelRegistry) LoadModels(ctx context.Context) error {
 			})
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 // GetAll returns all known models.
