@@ -152,7 +152,7 @@ func TestTabDoesNotCycleThinkingWhenPending(t *testing.T) {
 }
 
 func TestRenderMessagesShowsReasoningWhenEnabled(t *testing.T) {
-	m := NewModel(&config.AgentConfig{Display: config.DisplayConfig{Reasoning: true}}, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{Reasoning: true}, nil, nil, nil, nil, nil, nil)
 	m.messages = append(m.messages, messageItem{role: "assistant", reasoning: "hidden chain", content: "final answer"})
 
 	got := m.renderMessages()
@@ -165,7 +165,7 @@ func TestRenderMessagesShowsReasoningWhenEnabled(t *testing.T) {
 }
 
 func TestRenderMessagesHidesReasoningWhenDisabled(t *testing.T) {
-	m := NewModel(&config.AgentConfig{Display: config.DisplayConfig{Reasoning: false}}, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{Reasoning: false}, nil, nil, nil, nil, nil, nil)
 	m.messages = append(m.messages, messageItem{role: "assistant", reasoning: "hidden chain", content: "final answer"})
 
 	got := m.renderMessages()
@@ -178,7 +178,7 @@ func TestRenderMessagesHidesReasoningWhenDisabled(t *testing.T) {
 }
 
 func TestUpdateRoutesReasoningDeltaToReasoningField(t *testing.T) {
-	m := NewModel(&config.AgentConfig{Display: config.DisplayConfig{Reasoning: true}}, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{Reasoning: true}, nil, nil, nil, nil, nil, nil)
 	m.messages = []messageItem{{role: "assistant"}}
 
 	updated, _ := m.Update(agentEventMsg(agent.Event{Type: "reasoning_delta", ReasoningDelta: "thinking..."}))

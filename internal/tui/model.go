@@ -46,6 +46,12 @@ type messageItem struct {
 // tea messages from the agent goroutine.
 type agentEventMsg agent.Event
 
+type loginResultMsg struct {
+	provider  string
+	accountID string
+	err       error
+}
+
 // sessionWriter is the subset of session.Manager used by the TUI.
 type sessionWriter interface {
 	Append(rec session.Record) error
@@ -81,6 +87,11 @@ type Model struct {
 	modelPickerActive bool
 	modelPickerFilter string
 	modelPickerIndex  int
+
+	// Login picker modal state
+	loginPickerActive bool
+	loginPickerFilter string
+	loginPickerIndex  int
 }
 
 // NewModel creates a fully initialized TUI model.
@@ -155,8 +166,38 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.textarea.SetWidth(msg.Width - 4)
 		return m, nil
 
+	case loginResultMsg:
+		m.pending = false
+		m.textarea.Focus()
+		if msg.err != nil {
+			m.messages = append(m.messages, messageItem{role: "error", content: msg.err.Error()})
+		} else {
+			m.config.HasAuthorizedProvider = true
+			m.config.Provider = msg.provider
+			_ = config.SaveConfig(m.config)
+			if auth, err := config.LoadAuth(); err == nil {
+				if prov, err := provider.Create(msg.provider, auth.APIKey(msg.provider)); err == nil {
+					m.provider = prov
+				}
+			}
+			content := fmt.Sprintf("Logged in to %s", msg.provider)
+			if msg.accountID != "" {
+				content += fmt.Sprintf(" (%s)", msg.accountID)
+			}
+			m.messages = append(m.messages, messageItem{role: "system", content: content})
+		}
+		m.refreshViewport()
+		return m, nil
+
 	case tea.KeyMsg:
-		// Model picker mode: intercept navigation/action keys, let typing through.
+		// Picker modes: intercept navigation/action keys, let typing through.
+		if m.loginPickerActive {
+			model, cmd, handled := m.handleLoginPickerKey(msg)
+			if handled {
+				return model, cmd
+			}
+			m = model.(Model)
+		}
 		if m.modelPickerActive {
 			model, cmd, handled := m.handleModelPickerKey(msg)
 			if handled {
@@ -229,6 +270,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.modelPickerActive = true
 				m.modelPickerFilter = ""
 				m.modelPickerIndex = 0
+				m.textarea.Reset()
+				m.textarea.Focus()
+				return m, nil
+			}
+
+			// /login: open the OAuth provider picker
+			if input == "/login" {
+				m.loginPickerActive = true
+				m.loginPickerFilter = ""
+				m.loginPickerIndex = 0
 				m.textarea.Reset()
 				m.textarea.Focus()
 				return m, nil
@@ -318,6 +369,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.modelPickerFilter = m.textarea.Value()
 		if m.modelPickerFilter != prev {
 			m.modelPickerIndex = 0
+		}
+	}
+	if m.loginPickerActive {
+		prev := m.loginPickerFilter
+		m.loginPickerFilter = m.textarea.Value()
+		if m.loginPickerFilter != prev {
+			m.loginPickerIndex = 0
 		}
 	}
 	m.clampCommandSuggestionIndex()
@@ -457,6 +515,12 @@ func (m Model) View() string {
 		b.WriteString(Dim.Render("filter: "))
 		b.WriteString(m.textarea.Value())
 		b.WriteString(InputCursor.Render("█"))
+	} else if m.loginPickerActive {
+		b.WriteString(m.renderLoginPicker())
+		b.WriteString("\n")
+		b.WriteString(Dim.Render("filter: "))
+		b.WriteString(m.textarea.Value())
+		b.WriteString(InputCursor.Render("█"))
 	} else {
 		if m.pending {
 			b.WriteString(m.spinner.View())
@@ -473,14 +537,7 @@ func (m Model) View() string {
 		b.WriteString(m.renderStatusLine())
 		b.WriteString("\n")
 		input := m.renderInputView()
-		switch m.config.Display.InputStyle {
-		case "block":
-			b.WriteString(renderBlockInput(m.width, input))
-		case "bordered":
-			b.WriteString(renderBorderedInput(m.width, input))
-		default:
-			b.WriteString(UserCaret.Render("> ") + input)
-		}
+		b.WriteString(renderBlockInput(m.width, input))
 	}
 	b.WriteString("\n")
 	b.WriteString(Dim.Render(compactCwd()))
@@ -681,6 +738,129 @@ func (m Model) renderModelPicker() string {
 
 	b.WriteString(Dim.Render("  esc: cancel  enter: select  arrows: navigate  type: filter"))
 
+	return b.String()
+}
+
+type loginProviderOption struct {
+	ID          string
+	Name        string
+	Description string
+}
+
+func oauthProviderOptions() []loginProviderOption {
+	return []loginProviderOption{{ID: "openai", Name: "OpenAI", Description: "ChatGPT Plus/Pro OAuth"}}
+}
+
+func (m Model) filteredLoginProviders() []loginProviderOption {
+	filter := strings.ToLower(strings.TrimSpace(m.loginPickerFilter))
+	providers := oauthProviderOptions()
+	if filter == "" {
+		return providers
+	}
+	out := make([]loginProviderOption, 0, len(providers))
+	for _, p := range providers {
+		if strings.Contains(strings.ToLower(p.ID), filter) || strings.Contains(strings.ToLower(p.Name), filter) || strings.Contains(strings.ToLower(p.Description), filter) {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+func (m Model) handleLoginPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
+	providers := m.filteredLoginProviders()
+	switch msg.Type {
+	case tea.KeyCtrlC:
+		m.loginPickerActive = false
+		m.textarea.Reset()
+		m.textarea.Focus()
+		return m, tea.Quit, true
+	case tea.KeyEsc:
+		m.loginPickerActive = false
+		m.textarea.Reset()
+		m.textarea.Focus()
+		return m, nil, true
+	case tea.KeyEnter, tea.KeyTab:
+		if len(providers) == 0 {
+			return m, nil, true
+		}
+		m.clampLoginPickerIndex(providers)
+		selected := providers[m.loginPickerIndex]
+		m.loginPickerActive = false
+		m.textarea.Reset()
+		m.textarea.Blur()
+		m.pending = true
+		m.messages = append(m.messages, messageItem{role: "system", content: fmt.Sprintf("Opening browser for %s OAuth login...", selected.Name)})
+		m.refreshViewport()
+		return m, m.loginProviderCmd(selected.ID), true
+	case tea.KeyUp:
+		if len(providers) > 0 {
+			m.loginPickerIndex--
+			m.clampLoginPickerIndex(providers)
+		}
+		return m, nil, true
+	case tea.KeyDown:
+		if len(providers) > 0 {
+			m.loginPickerIndex++
+			m.clampLoginPickerIndex(providers)
+		}
+		return m, nil, true
+	}
+	return m, nil, false
+}
+
+func (m Model) loginProviderCmd(providerID string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+		switch providerID {
+		case "openai":
+			accountID, err := config.LoginOpenAIOAuth(ctx)
+			return loginResultMsg{provider: "openai", accountID: accountID, err: err}
+		default:
+			return loginResultMsg{provider: providerID, err: fmt.Errorf("unsupported oauth provider: %s", providerID)}
+		}
+	}
+}
+
+func (m *Model) clampLoginPickerIndex(providers []loginProviderOption) {
+	if len(providers) == 0 {
+		m.loginPickerIndex = 0
+		return
+	}
+	if m.loginPickerIndex < 0 {
+		m.loginPickerIndex = 0
+	}
+	if m.loginPickerIndex >= len(providers) {
+		m.loginPickerIndex = len(providers) - 1
+	}
+}
+
+func (m Model) renderLoginPicker() string {
+	providers := m.filteredLoginProviders()
+	var b strings.Builder
+	if len(providers) == 0 {
+		b.WriteString(Dim.Render("  No OAuth providers match your filter"))
+		b.WriteString("\n")
+	} else {
+		b.WriteString(Dim.Render(fmt.Sprintf("  OAuth providers (%d)", len(providers))))
+		b.WriteString("\n")
+		m.clampLoginPickerIndex(providers)
+		for i, p := range providers {
+			prefix := "  "
+			style := Dim
+			if i == m.loginPickerIndex {
+				prefix = "> "
+				style = UserPrompt
+			}
+			line := fmt.Sprintf("%s%s", prefix, p.Name)
+			if p.Description != "" {
+				line += Dim.Render(fmt.Sprintf("  (%s)", p.Description))
+			}
+			b.WriteString(style.Render(line))
+			b.WriteString("\n")
+		}
+	}
+	b.WriteString(Dim.Render("  esc: cancel  enter: login  arrows: navigate  type: filter"))
 	return b.String()
 }
 
@@ -898,7 +1078,7 @@ func (m Model) renderMessages() string {
 			b.WriteString(UserPrompt.Render(msg.content))
 			b.WriteString("\n\n")
 		case "assistant":
-			if msg.reasoning != "" && m.config.Display.Reasoning {
+			if msg.reasoning != "" && m.config.Reasoning {
 				b.WriteString(Dim.Render("thinking"))
 				b.WriteString("\n")
 				b.WriteString(Dim.Render(msg.reasoning))

@@ -27,11 +27,8 @@ func TestDefaults(t *testing.T) {
 	if !cfg.SlashCommands {
 		t.Error("expected slashCommands true")
 	}
-	if cfg.Display.ToolDisplay != "grouped" {
-		t.Errorf("expected toolDisplay grouped, got %s", cfg.Display.ToolDisplay)
-	}
-	if cfg.Display.InputStyle != "block" {
-		t.Errorf("expected inputStyle block, got %s", cfg.Display.InputStyle)
+	if !cfg.Reasoning {
+		t.Error("expected reasoning true")
 	}
 	if !cfg.Plugins.Enabled {
 		t.Error("expected plugins enabled")
@@ -69,8 +66,8 @@ func TestLoadConfig_BootstrapsUserConfigAndPlugins(t *testing.T) {
 	if !cfg.SlashCommands {
 		t.Fatal("empty config should preserve default slashCommands=true")
 	}
-	if !cfg.Display.Reasoning {
-		t.Fatal("empty config should preserve default display.reasoning=true")
+	if !cfg.Reasoning {
+		t.Fatal("empty config should preserve default reasoning=true")
 	}
 	if cfg.SessionDir != filepath.Join(home, ".crobot", "sessions") {
 		t.Fatalf("expected expanded session dir, got %s", cfg.SessionDir)
@@ -121,10 +118,7 @@ func TestLoadConfig_WithConfigFile(t *testing.T) {
 		"model": "anthropic/claude-3-5-sonnet",
 		"thinking": "high",
 		"appendPrompt": "Extra instructions for {cwd}",
-		"display": {
-			"toolDisplay": "emoji",
-			"inputStyle": "bordered"
-		},
+		"reasoning": false,
 		"plugins": {
 			"directories": ["./my-plugins"]
 		}
@@ -143,11 +137,8 @@ func TestLoadConfig_WithConfigFile(t *testing.T) {
 	if cfg.AppendPrompt != "Extra instructions for {cwd}" {
 		t.Errorf("expected appendPrompt, got %s", cfg.AppendPrompt)
 	}
-	if cfg.Display.ToolDisplay != "emoji" {
-		t.Errorf("expected emoji display, got %s", cfg.Display.ToolDisplay)
-	}
-	if cfg.Display.InputStyle != "bordered" {
-		t.Errorf("expected bordered input, got %s", cfg.Display.InputStyle)
+	if cfg.Reasoning {
+		t.Error("expected reasoning false")
 	}
 	if len(cfg.Plugins.Directories) != 1 || cfg.Plugins.Directories[0] != "./my-plugins" {
 		t.Errorf("expected [./my-plugins], got %v", cfg.Plugins.Directories)
@@ -173,8 +164,8 @@ func TestLoadConfig_PartialConfigUsesDefaults(t *testing.T) {
 	if cfg.Thinking != DEFAULTS.Thinking {
 		t.Fatalf("expected default thinking, got %q", cfg.Thinking)
 	}
-	if cfg.Display.InputStyle != DEFAULTS.Display.InputStyle {
-		t.Fatalf("expected default input style, got %q", cfg.Display.InputStyle)
+	if cfg.Reasoning != DEFAULTS.Reasoning {
+		t.Fatalf("expected default reasoning, got %v", cfg.Reasoning)
 	}
 }
 
@@ -203,7 +194,7 @@ func TestLoadConfig_CanOverrideBoolDefaultsToFalse(t *testing.T) {
 	withTempHome(t)
 	defer os.Unsetenv("OPENROUTER_API_KEY")
 	os.Setenv("OPENROUTER_API_KEY", "sk-or-v1-test")
-	writeUserConfig(t, `{"showBanner": false, "slashCommands": false, "display": {"reasoning": false}}`)
+	writeUserConfig(t, `{"showBanner": false, "slashCommands": false, "reasoning": false}`)
 
 	cfg, err := LoadConfig()
 	if err != nil {
@@ -215,32 +206,23 @@ func TestLoadConfig_CanOverrideBoolDefaultsToFalse(t *testing.T) {
 	if cfg.SlashCommands {
 		t.Fatal("expected slashCommands false override")
 	}
-	if cfg.Display.Reasoning {
-		t.Fatal("expected display.reasoning false override")
+	if cfg.Reasoning {
+		t.Fatal("expected reasoning false override")
 	}
 }
 
-func TestLoadConfig_InvalidToolDisplay(t *testing.T) {
+func TestLoadConfig_LegacyDisplayReasoning(t *testing.T) {
 	withTempHome(t)
 	defer os.Unsetenv("OPENROUTER_API_KEY")
 	os.Setenv("OPENROUTER_API_KEY", "sk-or-v1-test")
-	writeUserConfig(t, `{"display": {"toolDisplay": "invalid"}}`)
+	writeUserConfig(t, `{"display": {"reasoning": false}}`)
 
-	_, err := LoadConfig()
-	if err == nil {
-		t.Fatal("expected error for invalid toolDisplay")
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-}
-
-func TestLoadConfig_InvalidInputStyle(t *testing.T) {
-	withTempHome(t)
-	defer os.Unsetenv("OPENROUTER_API_KEY")
-	os.Setenv("OPENROUTER_API_KEY", "sk-or-v1-test")
-	writeUserConfig(t, `{"display": {"inputStyle": "fancy"}}`)
-
-	_, err := LoadConfig()
-	if err == nil {
-		t.Fatal("expected error for invalid inputStyle")
+	if cfg.Reasoning {
+		t.Fatal("expected legacy display.reasoning false override")
 	}
 }
 

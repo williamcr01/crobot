@@ -8,13 +8,6 @@ import (
 	"strings"
 )
 
-// DisplayConfig controls visual appearance of the TUI.
-type DisplayConfig struct {
-	ToolDisplay string `json:"toolDisplay"` // "grouped" | "emoji" | "minimal" | "hidden"
-	Reasoning   bool   `json:"reasoning"`
-	InputStyle  string `json:"inputStyle"` // "block" | "bordered" | "plain"
-}
-
 // PluginConfig controls WASM plugin loading and permissions.
 type PluginConfig struct {
 	Enabled     bool     `json:"enabled"`
@@ -24,16 +17,16 @@ type PluginConfig struct {
 
 // AgentConfig is the top-level configuration for the agent.
 type AgentConfig struct {
-	Provider      string        `json:"provider"`
-	Model         string        `json:"model"`
-	Thinking      string        `json:"thinking"`
-	SystemPrompt  string        `json:"systemPrompt,omitempty"`
-	AppendPrompt  string        `json:"appendPrompt,omitempty"`
-	SessionDir    string        `json:"sessionDir"`
-	ShowBanner    bool          `json:"showBanner"`
-	SlashCommands bool          `json:"slashCommands"`
-	Display       DisplayConfig `json:"display"`
-	Plugins       PluginConfig  `json:"plugins"`
+	Provider      string       `json:"provider"`
+	Model         string       `json:"model"`
+	Thinking      string       `json:"thinking"`
+	SystemPrompt  string       `json:"systemPrompt,omitempty"`
+	AppendPrompt  string       `json:"appendPrompt,omitempty"`
+	SessionDir    string       `json:"sessionDir"`
+	ShowBanner    bool         `json:"showBanner"`
+	SlashCommands bool         `json:"slashCommands"`
+	Reasoning     bool         `json:"reasoning"`
+	Plugins       PluginConfig `json:"plugins"`
 
 	HasAuthorizedProvider bool `json:"-"`
 }
@@ -54,11 +47,7 @@ var DEFAULTS = AgentConfig{
 	SessionDir:    "~/.crobot/sessions",
 	ShowBanner:    true,
 	SlashCommands: true,
-	Display: DisplayConfig{
-		ToolDisplay: "grouped",
-		Reasoning:   true,
-		InputStyle:  "block",
-	},
+	Reasoning:     true,
 	Plugins: PluginConfig{
 		Enabled:     true,
 		Directories: []string{"~/.crobot/plugins"},
@@ -114,15 +103,19 @@ func LoadConfig() (*AgentConfig, error) {
 		if hasKey(raw, "slashCommands") {
 			cfg.SlashCommands = file.SlashCommands
 		}
-		// Display nested merge.
-		if file.Display.ToolDisplay != "" {
-			cfg.Display.ToolDisplay = file.Display.ToolDisplay
-		}
-		if file.Display.InputStyle != "" {
-			cfg.Display.InputStyle = file.Display.InputStyle
-		}
-		if hasNestedKey(raw, "display", "reasoning") {
-			cfg.Display.Reasoning = file.Display.Reasoning
+		if hasKey(raw, "reasoning") {
+			cfg.Reasoning = file.Reasoning
+		} else if hasNestedKey(raw, "display", "reasoning") {
+			// Backward compatibility for configs written before reasoning moved top-level.
+			var legacy struct {
+				Display struct {
+					Reasoning bool `json:"reasoning"`
+				} `json:"display"`
+			}
+			if err := json.Unmarshal(data, &legacy); err != nil {
+				return nil, fmt.Errorf("invalid %s: %w", configPath, err)
+			}
+			cfg.Reasoning = legacy.Display.Reasoning
 		}
 		// Plugins nested merge.
 		if len(file.Plugins.Directories) > 0 {
@@ -152,15 +145,6 @@ func LoadConfig() (*AgentConfig, error) {
 		return nil, fmt.Errorf("unsupported provider: %q (supported: openrouter)", cfg.Provider)
 	}
 
-	// Validate display settings.
-	validToolDisplays := map[string]bool{"grouped": true, "emoji": true, "minimal": true, "hidden": true}
-	if !validToolDisplays[cfg.Display.ToolDisplay] {
-		return nil, fmt.Errorf("invalid toolDisplay: %q (valid: grouped, emoji, minimal, hidden)", cfg.Display.ToolDisplay)
-	}
-	validInputStyles := map[string]bool{"block": true, "bordered": true, "plain": true}
-	if !validInputStyles[cfg.Display.InputStyle] {
-		return nil, fmt.Errorf("invalid inputStyle: %q (valid: block, bordered, plain)", cfg.Display.InputStyle)
-	}
 	validThinking := map[string]bool{"none": true, "minimal": true, "low": true, "medium": true, "high": true, "xhigh": true}
 	if !validThinking[cfg.Thinking] {
 		return nil, fmt.Errorf("invalid thinking: %q (valid: none, minimal, low, medium, high, xhigh)", cfg.Thinking)

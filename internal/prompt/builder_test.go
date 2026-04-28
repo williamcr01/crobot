@@ -65,7 +65,7 @@ func TestBuild_CustomPrompt(t *testing.T) {
 func TestBuild_EmptyPrompt(t *testing.T) {
 	cfg := config.AgentConfig{
 		SystemPrompt: "",
-		Display:      config.DEFAULTS.Display,
+		Reasoning:    config.DEFAULTS.Reasoning,
 	}
 	result := Build(cfg, "/tmp")
 	if !strings.Contains(result, "coding assistant") {
