@@ -18,6 +18,9 @@ func TestDefaults(t *testing.T) {
 	if cfg.Thinking != "none" {
 		t.Errorf("expected thinking none, got %s", cfg.Thinking)
 	}
+	if cfg.MaxTurns != 50 {
+		t.Errorf("expected maxTurns 50, got %d", cfg.MaxTurns)
+	}
 	if cfg.SessionDir != "~/.crobot/sessions" {
 		t.Errorf("expected sessionDir ~/.crobot/sessions, got %s", cfg.SessionDir)
 	}
@@ -97,8 +100,10 @@ func TestLoadConfig_WithEnvOverrides(t *testing.T) {
 	withTempHome(t)
 	os.Setenv("OPENROUTER_API_KEY", "sk-or-v1-testkey")
 	os.Setenv("AGENT_MODEL", "openai/gpt-4")
+	os.Setenv("AGENT_MAX_TURNS", "-1")
 	defer os.Unsetenv("OPENROUTER_API_KEY")
 	defer os.Unsetenv("AGENT_MODEL")
+	defer os.Unsetenv("AGENT_MAX_TURNS")
 
 	cfg, err := LoadConfig()
 	if err != nil {
@@ -106,6 +111,9 @@ func TestLoadConfig_WithEnvOverrides(t *testing.T) {
 	}
 	if cfg.Model != "openai/gpt-4" {
 		t.Errorf("expected model override, got %s", cfg.Model)
+	}
+	if cfg.MaxTurns != -1 {
+		t.Errorf("expected maxTurns env override -1, got %d", cfg.MaxTurns)
 	}
 }
 
@@ -117,6 +125,7 @@ func TestLoadConfig_WithConfigFile(t *testing.T) {
 	writeUserConfig(t, `{
 		"model": "anthropic/claude-3-5-sonnet",
 		"thinking": "high",
+		"maxTurns": 12,
 		"appendPrompt": "Extra instructions for {cwd}",
 		"reasoning": false,
 		"plugins": {
@@ -133,6 +142,9 @@ func TestLoadConfig_WithConfigFile(t *testing.T) {
 	}
 	if cfg.Thinking != "high" {
 		t.Errorf("expected file thinking, got %s", cfg.Thinking)
+	}
+	if cfg.MaxTurns != 12 {
+		t.Errorf("expected file maxTurns 12, got %d", cfg.MaxTurns)
 	}
 	if cfg.AppendPrompt != "Extra instructions for {cwd}" {
 		t.Errorf("expected appendPrompt, got %s", cfg.AppendPrompt)
@@ -223,6 +235,18 @@ func TestLoadConfig_LegacyDisplayReasoning(t *testing.T) {
 	}
 	if cfg.Reasoning {
 		t.Fatal("expected legacy display.reasoning false override")
+	}
+}
+
+func TestLoadConfig_InvalidMaxTurns(t *testing.T) {
+	withTempHome(t)
+	defer os.Unsetenv("OPENROUTER_API_KEY")
+	os.Setenv("OPENROUTER_API_KEY", "sk-or-v1-test")
+	writeUserConfig(t, `{"maxTurns": -2}`)
+
+	_, err := LoadConfig()
+	if err == nil || !strings.Contains(err.Error(), "invalid maxTurns") {
+		t.Fatalf("expected invalid maxTurns error, got %v", err)
 	}
 }
 

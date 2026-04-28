@@ -49,6 +49,7 @@ Override the default system prompt entirely:
   "provider": "",
   "model": "",
   "thinking": "none",
+  "maxTurns": 50,
   "systemPrompt": "You are Crobot, a coding assistant. You have access to the following tools:\nfile read,\nfile write\nfile edit\nbash\n\nCurrent working directory: {cwd}",
   "appendPrompt": "",
   "sessionDir": "~/.crobot/sessions",
@@ -104,6 +105,14 @@ Valid values:
 - `"medium"`
 - `"high"`
 - `"xhigh"`
+
+### `maxTurns`
+
+Maximum number of model turns in a single user request. A turn is one model response, including responses that request tool calls.
+
+Default: `50`.
+
+Set to `-1` to disable the limit and allow unlimited turns.
 
 ### `systemPrompt`
 

@@ -103,7 +103,7 @@ func Run(
 	plugins PluginManager,
 	onEvent func(Event),
 ) (*Result, error) {
-	return RunWithThinking(ctx, prov, model, "none", systemPrompt, messages, toolReg, plugins, onEvent)
+	return RunWithThinking(ctx, prov, model, "none", 50, systemPrompt, messages, toolReg, plugins, onEvent)
 }
 
 // RunWithThinking executes the agent loop with an explicit thinking effort.
@@ -112,6 +112,7 @@ func RunWithThinking(
 	prov provider.Provider,
 	model string,
 	thinking string,
+	maxTurns int,
 	systemPrompt string,
 	messages []provider.Message,
 	toolReg *tools.Registry,
@@ -122,6 +123,7 @@ func RunWithThinking(
 		prov:         prov,
 		model:        model,
 		thinking:     thinking,
+		maxTurns:     maxTurns,
 		systemPrompt: systemPrompt,
 		toolReg:      toolReg,
 		plugins:      plugins,
@@ -136,6 +138,7 @@ type runner struct {
 	prov         provider.Provider
 	model        string
 	thinking     string
+	maxTurns     int
 	systemPrompt string
 	toolReg      *tools.Registry
 	plugins      PluginManager
@@ -145,7 +148,12 @@ type runner struct {
 }
 
 func (r *runner) run(ctx context.Context) (*Result, error) {
-	for {
+	for turn := 0; ; turn++ {
+		if r.maxTurns >= 0 && turn >= r.maxTurns {
+			err := fmt.Errorf("agent stopped after %d turns to prevent an infinite loop", r.maxTurns)
+			r.emit(Event{Type: "error", Error: err})
+			return nil, err
+		}
 		// Plugin hook: pre-prompt.
 		sysPrompt := r.systemPrompt
 		msgs := r.messages
@@ -173,7 +181,7 @@ func (r *runner) run(ctx context.Context) (*Result, error) {
 		// Stream with retry.
 		step, err := r.streamWithRetry(ctx, req)
 		if err != nil {
-			r.emit(Event{Error: err})
+			r.emit(Event{Type: "error", Error: err})
 			return nil, err
 		}
 
@@ -334,7 +342,7 @@ func (r *runner) processStream(ctx context.Context, evCh <-chan provider.StreamE
 			// Accumulate into the active tool call (last started).
 			if acc, ok := toolCallsPending[currentCallID]; ok {
 				acc.argsBuf.WriteString(event.ToolCallArgsDelta)
-				r.emit(Event{ToolCallArgs: event.ToolCallArgsDelta})
+				r.emit(Event{Type: "tool_call_args", ToolCallArgs: event.ToolCallArgsDelta})
 			}
 		}
 

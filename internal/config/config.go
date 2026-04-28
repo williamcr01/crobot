@@ -20,6 +20,7 @@ type AgentConfig struct {
 	Provider      string       `json:"provider"`
 	Model         string       `json:"model"`
 	Thinking      string       `json:"thinking"`
+	MaxTurns      int          `json:"maxTurns"`
 	SystemPrompt  string       `json:"systemPrompt,omitempty"`
 	AppendPrompt  string       `json:"appendPrompt,omitempty"`
 	SessionDir    string       `json:"sessionDir"`
@@ -35,6 +36,7 @@ type AgentConfig struct {
 var DEFAULTS = AgentConfig{
 	Provider: "",
 	Thinking: "none",
+	MaxTurns: 50,
 	SystemPrompt: strings.Join([]string{
 		"You are Crobot, a coding assistant. You have access to the following tools:",
 		"file read,",
@@ -88,6 +90,9 @@ func LoadConfig() (*AgentConfig, error) {
 		if file.Thinking != "" {
 			cfg.Thinking = file.Thinking
 		}
+		if hasKey(raw, "maxTurns") {
+			cfg.MaxTurns = file.MaxTurns
+		}
 		if file.SystemPrompt != "" {
 			cfg.SystemPrompt = file.SystemPrompt
 		}
@@ -138,6 +143,13 @@ func LoadConfig() (*AgentConfig, error) {
 	if v := os.Getenv("AGENT_THINKING"); v != "" {
 		cfg.Thinking = v
 	}
+	if v := os.Getenv("AGENT_MAX_TURNS"); v != "" {
+		var maxTurns int
+		if _, err := fmt.Sscanf(v, "%d", &maxTurns); err != nil {
+			return nil, fmt.Errorf("invalid AGENT_MAX_TURNS: %q", v)
+		}
+		cfg.MaxTurns = maxTurns
+	}
 
 	// Validate provider.
 	validProviders := map[string]bool{"": true, "openrouter": true, "openai": true, "openai-oauth": true, "deepseek": true}
@@ -148,6 +160,9 @@ func LoadConfig() (*AgentConfig, error) {
 	validThinking := map[string]bool{"none": true, "minimal": true, "low": true, "medium": true, "high": true, "xhigh": true}
 	if !validThinking[cfg.Thinking] {
 		return nil, fmt.Errorf("invalid thinking: %q (valid: none, minimal, low, medium, high, xhigh)", cfg.Thinking)
+	}
+	if cfg.MaxTurns < -1 {
+		return nil, fmt.Errorf("invalid maxTurns: %d (must be -1 or greater)", cfg.MaxTurns)
 	}
 
 	if cfg.SessionDir, err = expandHome(cfg.SessionDir); err != nil {

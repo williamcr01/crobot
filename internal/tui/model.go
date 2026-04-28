@@ -1413,6 +1413,7 @@ func (m *Model) startAgent(ctx context.Context, input string) {
 		m.provider,
 		m.config.Model,
 		m.config.Thinking,
+		m.config.MaxTurns,
 		sysPrompt,
 		llmMsgs,
 		m.toolReg,

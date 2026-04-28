@@ -46,6 +46,22 @@ func TestHandleAgentEvent_MessageEndClearsPending(t *testing.T) {
 	}
 }
 
+func TestHandleAgentEvent_ErrorClearsPending(t *testing.T) {
+	m := testModel()
+
+	updated, cmd := m.handleAgentEvent(agent.Event{Type: "error", Error: fmt.Errorf("provider failed")})
+	m = updated.(Model)
+	if m.pending {
+		t.Fatal("expected error to clear pending")
+	}
+	if cmd != nil {
+		t.Fatal("expected error to stop waiting for agent events")
+	}
+	if len(m.messages) == 0 || m.messages[len(m.messages)-1].role != "error" {
+		t.Fatalf("expected error message to be appended, got %#v", m.messages)
+	}
+}
+
 func TestNewModelShowsProviderWarningWhenAuthMissing(t *testing.T) {
 	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil)
 

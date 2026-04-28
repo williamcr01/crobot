@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 
 	"crobot/internal/config"
@@ -33,11 +34,14 @@ func (m *mockProvider) Send(ctx context.Context, req provider.Request) (*provide
 
 func (m *mockProvider) Stream(ctx context.Context, req provider.Request) (<-chan provider.StreamEvent, error) {
 	m.requests = append(m.requests, req)
+	step := m.responses[m.stepIdx]
+	m.stepIdx++
+	if step.err != nil {
+		return nil, step.err
+	}
 	ch := make(chan provider.StreamEvent, 10)
 	go func() {
 		defer close(ch)
-		step := m.responses[m.stepIdx]
-		m.stepIdx++
 
 		if step.text != "" {
 			for _, r := range step.text {
@@ -156,6 +160,69 @@ func TestRun_ToolCall(t *testing.T) {
 	}
 	if msgs[1].Role != "tool" || msgs[1].ToolCallID != "call_1" {
 		t.Fatalf("expected tool result with tool_call_id call_1, got %#v", msgs[1])
+	}
+}
+
+func TestRun_ProviderErrorEmitsTypedErrorEvent(t *testing.T) {
+	expectedErr := fmt.Errorf("provider failed")
+	mock := &mockProvider{
+		name: "mock",
+		responses: []responseStep{
+			{err: expectedErr},
+			{err: expectedErr},
+			{err: expectedErr},
+			{err: expectedErr},
+		},
+	}
+
+	var events []Event
+	_, err := Run(context.Background(), mock, "mock", "prompt", nil, tools.NewRegistry(), nil, func(ev Event) {
+		events = append(events, ev)
+	})
+	if err == nil {
+		t.Fatal("expected provider error")
+	}
+	if len(events) == 0 || events[len(events)-1].Type != "error" || events[len(events)-1].Error == nil {
+		t.Fatalf("expected final typed error event, got %#v", events)
+	}
+}
+
+func TestRun_StopsAfterMaxTurns(t *testing.T) {
+	maxTurns := 3
+	responses := make([]responseStep, maxTurns+1)
+	for i := range responses {
+		responses[i] = responseStep{toolCalls: []provider.ToolCall{{Name: "missing", ID: fmt.Sprintf("call_%d", i)}}}
+	}
+	mock := &mockProvider{name: "mock", responses: responses}
+
+	var last Event
+	_, err := RunWithThinking(context.Background(), mock, "mock", "none", maxTurns, "prompt", nil, tools.NewRegistry(), nil, func(ev Event) {
+		last = ev
+	})
+	if err == nil || !strings.Contains(err.Error(), "infinite loop") {
+		t.Fatalf("expected infinite loop guard error, got %v", err)
+	}
+	if last.Type != "error" || last.Error == nil {
+		t.Fatalf("expected typed error event from turn limit, got %#v", last)
+	}
+	if len(mock.requests) != maxTurns {
+		t.Fatalf("expected %d provider requests, got %d", maxTurns, len(mock.requests))
+	}
+}
+
+func TestRun_MaxTurnsMinusOneDisablesLimit(t *testing.T) {
+	responses := []responseStep{
+		{toolCalls: []provider.ToolCall{{Name: "missing", ID: "call_1"}}},
+		{text: "done"},
+	}
+	mock := &mockProvider{name: "mock", responses: responses}
+
+	result, err := RunWithThinking(context.Background(), mock, "mock", "none", -1, "prompt", nil, tools.NewRegistry(), nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Text != "done" {
+		t.Fatalf("expected final text, got %q", result.Text)
 	}
 }
 
