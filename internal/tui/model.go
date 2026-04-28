@@ -125,9 +125,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.ready = true
 
-		footerHeight := 4
+		footerHeight := 5
 		if m.pending {
-			footerHeight = 5
+			footerHeight = 6
 		}
 		vpHeight := msg.Height - footerHeight
 		if vpHeight < 10 {
@@ -175,6 +175,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.completeCommandSuggestion(suggestions)
 					return m, nil
 				}
+				if err := m.cycleThinkingLevel(); err != nil {
+					m.messages = append(m.messages, messageItem{role: "error", content: err.Error()})
+					m.refreshViewport()
+				}
+				return m, nil
 			}
 
 		case tea.KeyEnter:
@@ -392,6 +397,9 @@ func (m Model) View() string {
 		b.WriteString("\n")
 	}
 
+	b.WriteString(m.renderStatusLine())
+	b.WriteString("\n")
+
 	input := m.renderInputView()
 	switch m.config.Display.InputStyle {
 	case "block":
@@ -413,6 +421,26 @@ func (m Model) renderInputView() string {
 		return value
 	}
 	return value + InputCursor.Render("█")
+}
+
+func (m Model) renderStatusLine() string {
+	providerName := valueOrDefault(m.config.Provider, "unknown")
+	modelName := valueOrDefault(m.config.Model, "unknown")
+	thinking := valueOrDefault(m.config.Thinking, "none")
+	return Dim.Render(fmt.Sprintf("provider: %s  model: %s  thinking: %s  tab: cycle thinking", providerName, modelName, thinking))
+}
+
+func (m *Model) cycleThinkingLevel() error {
+	levels := []string{"none", "minimal", "low", "medium", "high", "xhigh"}
+	current := m.config.Thinking
+	for i, level := range levels {
+		if level == current {
+			m.config.Thinking = levels[(i+1)%len(levels)]
+			return config.SaveConfig(m.config)
+		}
+	}
+	m.config.Thinking = levels[0]
+	return config.SaveConfig(m.config)
 }
 
 func (m Model) commandSuggestions() []commands.Command {
@@ -541,7 +569,7 @@ func (m Model) commandSuggestionHeight() int {
 }
 
 func (m Model) dynamicViewportHeight() int {
-	footerHeight := 4 + m.commandSuggestionHeight()
+	footerHeight := 5 + m.commandSuggestionHeight()
 	if m.pending {
 		footerHeight++
 	}
@@ -745,6 +773,13 @@ func renderBorderedInput(width int, val string) string {
 }
 
 // --- Helpers ---
+
+func valueOrDefault(value, fallback string) string {
+	if value == "" {
+		return fallback
+	}
+	return value
+}
 
 func compactCwd() string {
 	cwd := getCwd()

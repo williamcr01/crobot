@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 
@@ -77,6 +78,58 @@ func TestViewUsesInputViewForInput(t *testing.T) {
 	}
 }
 
+func TestViewShowsProviderModelAndThinkingAboveInput(t *testing.T) {
+	m := NewModel(&config.AgentConfig{Provider: "openrouter", Model: "test/model", Thinking: "medium"}, nil, nil, nil, nil, nil)
+	m.ready = true
+	m.width = 80
+	m.height = 24
+	m.viewport.Width = 80
+	m.viewport.Height = 19
+
+	view := m.View()
+	status := "provider: openrouter  model: test/model  thinking: medium"
+	input := "> "
+	statusIndex := strings.Index(view, status)
+	inputIndex := strings.LastIndex(view, input)
+	if statusIndex == -1 {
+		t.Fatalf("expected status line %q in view %q", status, view)
+	}
+	if inputIndex == -1 || statusIndex > inputIndex {
+		t.Fatalf("expected status line above input, view %q", view)
+	}
+}
+
+func TestTabCyclesThinkingLevels(t *testing.T) {
+	withTempWorkingDir(t)
+	m := NewModel(&config.AgentConfig{Thinking: "none"}, nil, nil, nil, nil, nil)
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	updatedModel := updated.(Model)
+
+	if updatedModel.config.Thinking != "minimal" {
+		t.Fatalf("expected thinking to cycle to minimal, got %q", updatedModel.config.Thinking)
+	}
+	data, err := os.ReadFile("agent.config.json")
+	if err != nil {
+		t.Fatalf("expected agent.config.json to be written: %v", err)
+	}
+	if !strings.Contains(string(data), `"thinking": "minimal"`) {
+		t.Fatalf("expected persisted thinking level, got %s", string(data))
+	}
+}
+
+func TestTabDoesNotCycleThinkingWhenPending(t *testing.T) {
+	m := NewModel(&config.AgentConfig{Thinking: "none"}, nil, nil, nil, nil, nil)
+	m.pending = true
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	updatedModel := updated.(Model)
+
+	if updatedModel.config.Thinking != "none" {
+		t.Fatalf("expected pending tab to leave thinking unchanged, got %q", updatedModel.config.Thinking)
+	}
+}
+
 func TestUpdateRoutesPageKeysToViewport(t *testing.T) {
 	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil)
 	m.ready = true
@@ -120,4 +173,20 @@ func viewportWithContent(width, height, lines int) viewport.Model {
 	}
 	vp.SetContent(b.String())
 	return vp
+}
+
+func withTempWorkingDir(t *testing.T) {
+	t.Helper()
+	origWd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(origWd); err != nil {
+			t.Fatal(err)
+		}
+	})
 }
