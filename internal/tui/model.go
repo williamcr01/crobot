@@ -449,17 +449,21 @@ func (m Model) View() string {
 		viewport.Height = m.dynamicViewportHeight()
 	}
 	b.WriteString(viewport.View())
+	b.WriteString("\n")
 
 	if m.modelPickerActive {
 		b.WriteString(m.renderModelPicker())
+		b.WriteString("\n")
+		b.WriteString(Dim.Render("filter: "))
+		b.WriteString(m.textarea.Value())
+		b.WriteString(InputCursor.Render("█"))
 	} else {
 		if m.pending {
-			b.WriteString("\n")
 			b.WriteString(m.spinner.View())
 			b.WriteString(" ")
 			b.WriteString(Dim.Render("Working"))
+			b.WriteString("\n")
 		}
-		b.WriteString("\n")
 
 		if suggestions := m.commandSuggestions(); len(suggestions) > 0 {
 			b.WriteString(m.renderCommandSuggestions(suggestions))
@@ -467,14 +471,7 @@ func (m Model) View() string {
 		}
 
 		b.WriteString(m.renderStatusLine())
-	}
-	b.WriteString("\n")
-
-	if m.modelPickerActive {
-		b.WriteString(Dim.Render("filter: "))
-		b.WriteString(m.textarea.Value())
-		b.WriteString(InputCursor.Render("█"))
-	} else {
+		b.WriteString("\n")
 		input := m.renderInputView()
 		switch m.config.Display.InputStyle {
 		case "block":
@@ -643,7 +640,6 @@ func (m Model) renderModelPicker() string {
 	models := m.cmdReg.FilterModels(m.modelPickerFilter)
 
 	var b strings.Builder
-	b.WriteString("\n")
 
 	if len(models) == 0 {
 		b.WriteString(Dim.Render("  No models match your filter"))
@@ -683,9 +679,7 @@ func (m Model) renderModelPicker() string {
 		}
 	}
 
-	b.WriteString("\n")
 	b.WriteString(Dim.Render("  esc: cancel  enter: select  arrows: navigate  type: filter"))
-	b.WriteString("\n")
 
 	return b.String()
 }
@@ -858,8 +852,27 @@ func (m Model) commandSuggestionHeight() int {
 	return height
 }
 
+func (m Model) modelPickerHeight() int {
+	models := m.cmdReg.FilterModels(m.modelPickerFilter)
+	if len(models) == 0 {
+		return 2 // empty message + help line
+	}
+	start, end, _ := m.visibleModelPickerRange(models)
+	height := 1 + end - start // header + visible models
+	if start > 0 {
+		height++
+	}
+	if end < len(models) {
+		height++
+	}
+	return height + 1 // help line
+}
+
 func (m Model) dynamicViewportHeight() int {
 	footerHeight := 5 + m.commandSuggestionHeight()
+	if m.modelPickerActive {
+		footerHeight = 3 + m.modelPickerHeight()
+	}
 	if m.pending {
 		footerHeight++
 	}
