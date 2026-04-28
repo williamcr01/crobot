@@ -55,7 +55,7 @@ var DEFAULTS = AgentConfig{
 	SlashCommands: true,
 	Display: DisplayConfig{
 		ToolDisplay: "grouped",
-		Reasoning:   false,
+		Reasoning:   true,
 		InputStyle:  "block",
 	},
 	Plugins: PluginConfig{
