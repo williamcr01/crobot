@@ -60,3 +60,29 @@ func TestLoadAuthEmptyHasNoAuthorizedProvider(t *testing.T) {
 		t.Fatal("empty auth should not have authorized provider")
 	}
 }
+
+func TestLoadAuthOAuthProvider(t *testing.T) {
+	withTempHome(t)
+	path, err := AuthPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := `{"openai":{"type":"oauth","access":"oauth-access","refresh":"oauth-refresh","expires":4102444800000}}`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	auth, err := LoadAuth()
+	if err != nil {
+		t.Fatalf("LoadAuth: %v", err)
+	}
+	if got := auth.APIKey("openai"); got != "oauth-access" {
+		t.Fatalf("expected openai oauth access token, got %q", got)
+	}
+	if !auth.HasAuthorizedProvider() {
+		t.Fatal("expected authorized provider")
+	}
+}

@@ -36,11 +36,49 @@ Then select OpenRouter in `~/.crobot/agent.config.json`:
 }
 ```
 
+## OpenAI
+
+API key:
+
+```json
+{
+  "openai": {
+    "type": "apiKey",
+    "apiKey": "sk-your-key-here"
+  }
+}
+```
+
+OAuth tokens, compatible with pi-ai/OpenAI Codex login output:
+
+```json
+{
+  "openai": {
+    "type": "oauth",
+    "access": "eyJ...",
+    "refresh": "...",
+    "expires": 1770000000000,
+    "accountId": "acct_..."
+  }
+}
+```
+
+OAuth access tokens are sent as bearer tokens. Crobot refreshes them using the stored refresh token when they are close to expiry.
+
+Then select OpenAI in `~/.crobot/agent.config.json`:
+
+```json
+{
+  "provider": "openai",
+  "model": "gpt-4.1"
+}
+```
+
 ## File format
 
 `auth.json` is a JSON object keyed by provider ID.
 
-Each provider entry currently supports:
+Each API-key provider entry supports:
 
 ```json
 {
@@ -64,6 +102,7 @@ Each provider entry currently supports:
 Currently supported:
 
 - `openrouter`
+- `openai`
 
 ## Notes
 

@@ -140,9 +140,9 @@ func LoadConfig() (*AgentConfig, error) {
 	}
 
 	// Validate provider.
-	validProviders := map[string]bool{"": true, "openrouter": true}
+	validProviders := map[string]bool{"": true, "openrouter": true, "openai": true}
 	if !validProviders[cfg.Provider] {
-		return nil, fmt.Errorf("unsupported provider: %q (supported: openrouter)", cfg.Provider)
+		return nil, fmt.Errorf("unsupported provider: %q (supported: openrouter, openai)", cfg.Provider)
 	}
 
 	validThinking := map[string]bool{"none": true, "minimal": true, "low": true, "medium": true, "high": true, "xhigh": true}

@@ -26,6 +26,9 @@ func main() {
 	}
 
 	// Load auth and create provider if configured.
+	if err := config.RefreshOpenAIOAuth(); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: %v\n", err)
+	}
 	auth, err := config.LoadAuth()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -57,15 +60,17 @@ func main() {
 	if prov != nil {
 		modelReg.AddProvider(prov)
 	}
-	// Also try loading models if we have an OpenRouter API key but provider isn't set yet.
+	// Also try loading models for authorized providers if the provider isn't set yet.
 	if prov == nil {
-		apiKey := auth.APIKey("openrouter")
-		if apiKey != "" {
-			tmpProv, err := provider.Create("openrouter", apiKey)
-			if err == nil {
-				modelReg.AddProvider(tmpProv)
-			} else {
-				fmt.Fprintf(os.Stderr, "warning: creating model reader: %v\n", err)
+		for _, providerName := range []string{"openrouter", "openai"} {
+			apiKey := auth.APIKey(providerName)
+			if apiKey != "" {
+				tmpProv, err := provider.Create(providerName, apiKey)
+				if err == nil {
+					modelReg.AddProvider(tmpProv)
+				} else {
+					fmt.Fprintf(os.Stderr, "warning: creating %s model reader: %v\n", providerName, err)
+				}
 			}
 		}
 	}
@@ -143,6 +148,14 @@ func registerCommands(cmdReg *commands.Registry, cfg *config.AgentConfig) {
 		Description: "Switch model (interactive picker)",
 		Handler: func(args []string) (string, error) {
 			return "No models available. Try /model <search> or check your provider connection.", nil
+		},
+	})
+
+	cmdReg.Register(commands.Command{
+		Name:        "login",
+		Description: "Login to an OAuth provider",
+		Handler: func(args []string) (string, error) {
+			return "Use /login to open the OAuth provider picker.", nil
 		},
 	})
 

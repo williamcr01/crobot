@@ -3,14 +3,21 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // AuthProvider stores credentials for a provider in ~/.crobot/auth.json.
 type AuthProvider struct {
-	Type   string `json:"type,omitempty"`
-	APIKey string `json:"apiKey,omitempty"`
+	Type      string `json:"type,omitempty"`
+	APIKey    string `json:"apiKey,omitempty"`
+	Access    string `json:"access,omitempty"`
+	Refresh   string `json:"refresh,omitempty"`
+	Expires   int64  `json:"expires,omitempty"`
+	AccountID string `json:"accountId,omitempty"`
 }
 
 // AuthConfig maps provider IDs to credentials.
@@ -75,10 +82,78 @@ func (a AuthConfig) APIKey(provider string) string {
 	if !ok {
 		return ""
 	}
+	if entry.Type == "oauth" {
+		return entry.Access
+	}
 	if entry.Type != "" && entry.Type != "apiKey" {
 		return ""
 	}
 	return entry.APIKey
+}
+
+// RefreshOpenAIOAuth refreshes an OpenAI OAuth access token when it is close to expiry.
+func RefreshOpenAIOAuth() error {
+	auth, err := LoadAuth()
+	if err != nil {
+		return err
+	}
+	entry, ok := auth["openai"]
+	if !ok || entry.Type != "oauth" || entry.Refresh == "" {
+		return nil
+	}
+	if entry.Access != "" && entry.Expires > time.Now().Add(2*time.Minute).UnixMilli() {
+		return nil
+	}
+	refreshed, err := refreshOpenAIToken(entry.Refresh)
+	if err != nil {
+		return err
+	}
+	if refreshed.AccountID == "" {
+		refreshed.AccountID = entry.AccountID
+	}
+	auth["openai"] = refreshed
+	return SaveAuth(auth)
+}
+
+// SaveAuth writes credentials to ~/.crobot/auth.json.
+func SaveAuth(auth AuthConfig) error {
+	path, err := AuthPath()
+	if err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(auth, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal %s: %w", path, err)
+	}
+	data = append(data, '\n')
+	return os.WriteFile(path, data, 0o600)
+}
+
+func refreshOpenAIToken(refreshToken string) (AuthProvider, error) {
+	form := url.Values{}
+	form.Set("grant_type", "refresh_token")
+	form.Set("refresh_token", refreshToken)
+	form.Set("client_id", "app_EMoamEEZ73f0CkXaXp7hrann")
+	resp, err := http.PostForm("https://auth.openai.com/oauth/token", form)
+	if err != nil {
+		return AuthProvider{}, fmt.Errorf("refresh openai oauth token: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return AuthProvider{}, fmt.Errorf("refresh openai oauth token: %s", resp.Status)
+	}
+	var body struct {
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
+		ExpiresIn    int64  `json:"expires_in"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return AuthProvider{}, err
+	}
+	if body.AccessToken == "" || body.RefreshToken == "" || body.ExpiresIn == 0 {
+		return AuthProvider{}, fmt.Errorf("refresh openai oauth token: incomplete token response")
+	}
+	return AuthProvider{Type: "oauth", Access: body.AccessToken, Refresh: body.RefreshToken, Expires: time.Now().Add(time.Duration(body.ExpiresIn) * time.Second).UnixMilli()}, nil
 }
 
 // HasAuthorizedProvider reports whether any provider has usable credentials.

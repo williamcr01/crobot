@@ -17,6 +17,19 @@ func TestCreateOpenRouter(t *testing.T) {
 	}
 }
 
+func TestCreateOpenAI(t *testing.T) {
+	prov, err := Create("openai", "sk-test")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if prov == nil {
+		t.Fatal("expected non-nil provider")
+	}
+	if prov.Name() != "openai" {
+		t.Errorf("expected name openai, got %s", prov.Name())
+	}
+}
+
 func TestCreateUnsupported(t *testing.T) {
 	prov, err := Create("nonexistent", "key")
 	if err == nil {
