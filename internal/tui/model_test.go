@@ -332,6 +332,81 @@ func TestEscCancelsPendingAgent(t *testing.T) {
 	}
 }
 
+func TestWrapLine_ShortLine(t *testing.T) {
+	got := wrapLine("hello", 10)
+	if got != "hello" {
+		t.Fatalf("expected no wrapping for short line, got %q", got)
+	}
+}
+
+func TestWrapLine_WrapsAtWordBoundary(t *testing.T) {
+	got := wrapLine("hello world foo", 12)
+	expected := "hello world\nfoo"
+	if got != expected {
+		t.Fatalf("expected wrapped at space, got %q", got)
+	}
+}
+
+func TestWrapLine_ForceBreaksLongWord(t *testing.T) {
+	got := wrapLine("abcdefghijklmnopqrstuvwxyz", 10)
+	// Force-break at position 10: "abcdefghij" then "klmnopqrst" then "uvwxyz"
+	expected := "abcdefghij\nklmnopqrst\nuvwxyz"
+	if got != expected {
+		t.Fatalf("expected force-break, got %q", got)
+	}
+}
+
+func TestWrapLine_EmptyString(t *testing.T) {
+	got := wrapLine("", 10)
+	if got != "" {
+		t.Fatalf("expected empty for empty input, got %q", got)
+	}
+}
+
+func TestWrapText_PreservesNewlines(t *testing.T) {
+	got := wrapText("line one\nline two is longer than width", 15)
+	expected := "line one\nline two is\nlonger than\nwidth"
+	if got != expected {
+		t.Fatalf("expected preserved newlines with wrapping, got %q", got)
+	}
+}
+
+func TestWrapText_WrapsAllMessages(t *testing.T) {
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil)
+	m.width = 40
+	m.messages = append(m.messages, messageItem{role: "assistant", content: "this is a long response that should wrap to multiple lines"})
+	m.messages = append(m.messages, messageItem{role: "system", content: "this is a system message that is also very long and must wrap"})
+
+	got := m.renderMessages()
+	// Strip ANSI escape sequences for length checking.
+	clean := stripANSI(got)
+	for _, line := range strings.Split(clean, "\n") {
+		if len(line) > m.width {
+			t.Fatalf("visible line exceeds viewport width %d (len=%d): %q", m.width, len(line), line)
+		}
+	}
+}
+
+// stripANSI removes ANSI escape sequences from a string.
+func stripANSI(s string) string {
+	var b strings.Builder
+	inEscape := false
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\x1b' {
+			inEscape = true
+			continue
+		}
+		if inEscape {
+			if s[i] >= '@' && s[i] <= '~' {
+				inEscape = false
+			}
+			continue
+		}
+		b.WriteByte(s[i])
+	}
+	return b.String()
+}
+
 func TestEscDoesNothingWhenNotPending(t *testing.T) {
 	m := NewModel(&config.AgentConfig{HasAuthorizedProvider: true}, nil, nil, nil, nil, nil, nil, nil)
 	m.ready = true

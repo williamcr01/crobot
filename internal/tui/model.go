@@ -1323,6 +1323,10 @@ func (m Model) dynamicViewportHeight() int {
 
 func (m Model) renderMessages() string {
 	var b strings.Builder
+	wrapWidth := m.width
+	if wrapWidth < 40 {
+		wrapWidth = 40
+	}
 	if m.config.ShowBanner {
 		b.WriteString(Render(m.config.Model))
 		b.WriteString("\n")
@@ -1339,11 +1343,11 @@ func (m Model) renderMessages() string {
 			if msg.reasoning != "" && m.config.Reasoning {
 				b.WriteString(Dim.Render("thinking"))
 				b.WriteString("\n")
-				b.WriteString(Dim.Render(msg.reasoning))
+				b.WriteString(Dim.Render(wrapText(msg.reasoning, wrapWidth)))
 				b.WriteString("\n")
 			}
 			if msg.content != "" {
-				b.WriteString(msg.content)
+				b.WriteString(wrapText(msg.content, wrapWidth))
 				b.WriteString("\n")
 			}
 			for _, tc := range msg.toolCalls {
@@ -1355,14 +1359,18 @@ func (m Model) renderMessages() string {
 				b.WriteString("\n")
 			}
 		case "system":
-			b.WriteString(Dim.Render(msg.content))
+			b.WriteString(Dim.Render(wrapText(msg.content, wrapWidth)))
 			b.WriteString("\n\n")
 		case "compaction":
 			b.WriteString(Dim.Render("[compaction] "))
-			b.WriteString(Dim.Render(msg.content))
+			b.WriteString(Dim.Render(wrapText(msg.content, wrapWidth)))
 			b.WriteString("\n\n")
 		case "error":
-			b.WriteString(Red.Render("Error: " + msg.content))
+			errWidth := wrapWidth - 7
+			if errWidth < 20 {
+				errWidth = 20
+			}
+			b.WriteString(Red.Render("Error: " + wrapText(msg.content, errWidth)))
 			b.WriteString("\n\n")
 		}
 	}
@@ -1694,6 +1702,55 @@ func summarizeArgs(name string, args map[string]any) string {
 		return key + "=" + val
 	}
 	return ""
+}
+
+// wrapText word-wraps text to fit within the given width. It preserves existing
+// newlines and breaks long lines at word boundaries. Lines with no spaces that
+// exceed width are force-broken at the width boundary.
+func wrapText(text string, width int) string {
+	if width <= 0 || text == "" {
+		return text
+	}
+	var result strings.Builder
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		if i > 0 {
+			result.WriteByte('\n')
+		}
+		result.WriteString(wrapLine(line, width))
+	}
+	return result.String()
+}
+
+// wrapLine wraps a single line (no embedded newlines) to the given width.
+func wrapLine(line string, width int) string {
+	if len(line) <= width {
+		return line
+	}
+	var b strings.Builder
+	remaining := line
+	first := true
+	for len(remaining) > 0 {
+		if !first {
+			b.WriteByte('\n')
+		}
+		first = false
+		if len(remaining) <= width {
+			b.WriteString(remaining)
+			break
+		}
+		// Try to break at the last space within width.
+		breakAt := strings.LastIndexByte(remaining[:width+1], ' ')
+		if breakAt <= 0 {
+			// No space found — force break at width.
+			breakAt = width
+		}
+		b.WriteString(remaining[:breakAt])
+		// Skip past the break point and any leading whitespace.
+		remaining = remaining[breakAt:]
+		remaining = strings.TrimLeft(remaining, " ")
+	}
+	return b.String()
 }
 
 func summarizeKey(name string) string {
