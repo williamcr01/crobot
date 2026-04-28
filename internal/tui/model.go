@@ -61,6 +61,9 @@ type Model struct {
 	events   *events.Logger
 	cmdReg   *commands.Registry
 
+	// apiKeyFor returns the API key for a provider name, or "" if not authorized.
+	apiKeyFor func(string) string
+
 	viewport viewport.Model
 	textarea textarea.Model
 	spinner  spinner.Model
@@ -73,6 +76,11 @@ type Model struct {
 	commandSuggestionIndex int
 	agentCancel            context.CancelFunc
 	agentEvents            chan agent.Event
+
+	// Model picker modal state
+	modelPickerActive bool
+	modelPickerFilter string
+	modelPickerIndex  int
 }
 
 // NewModel creates a fully initialized TUI model.
@@ -83,6 +91,7 @@ func NewModel(
 	ev *events.Logger,
 	cmdReg *commands.Registry,
 	sess sessionWriter,
+	apiKeyFor func(string) string,
 ) *Model {
 	ta := textarea.New()
 	ta.Prompt = ""
@@ -107,6 +116,7 @@ func NewModel(
 		events:      ev,
 		cmdReg:      cmdReg,
 		session:     sess,
+		apiKeyFor:   apiKeyFor,
 		textarea:    ta,
 		spinner:     s,
 		messages:    messages,
@@ -146,6 +156,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		// Model picker mode: intercept navigation/action keys, let typing through.
+		if m.modelPickerActive {
+			model, cmd, handled := m.handleModelPickerKey(msg)
+			if handled {
+				return model, cmd
+			}
+			// Fall through to textarea update for character/backspace input.
+			m = model.(Model)
+		}
+
 		switch msg.Type {
 		case tea.KeyCtrlC:
 			if m.pending && m.agentCancel != nil {
@@ -191,14 +211,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.pending {
 				return m, nil
 			}
+
+			input := strings.TrimSpace(m.textarea.Value())
+
+			// Normal command suggestion handling
 			if suggestions := m.commandSuggestions(); len(suggestions) > 0 && !m.commandInputExactlyMatchesSuggestion(suggestions) {
 				m.completeCommandSuggestion(suggestions)
 				return m, nil
 			}
-			input := strings.TrimSpace(m.textarea.Value())
+
 			if input == "" {
 				return m, nil
 			}
+
+			// /model: open the model picker
+			if input == "/model" {
+				m.modelPickerActive = true
+				m.modelPickerFilter = ""
+				m.modelPickerIndex = 0
+				m.textarea.Reset()
+				m.textarea.Focus()
+				return m, nil
+			}
+
 			m.textarea.Reset()
 			m.textarea.Blur()
 
@@ -278,6 +313,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	var cmd tea.Cmd
 	m.textarea, cmd = m.textarea.Update(msg)
+	if m.modelPickerActive {
+		m.modelPickerFilter = m.textarea.Value()
+		m.modelPickerIndex = 0
+	}
 	m.clampCommandSuggestionIndex()
 	return m, cmd
 }
@@ -408,30 +447,40 @@ func (m Model) View() string {
 	}
 	b.WriteString(viewport.View())
 
-	if m.pending {
+	if m.modelPickerActive {
+		b.WriteString(m.renderModelPicker())
+	} else {
+		if m.pending {
+			b.WriteString("\n")
+			b.WriteString(m.spinner.View())
+			b.WriteString(" ")
+			b.WriteString(Dim.Render("Working"))
+		}
 		b.WriteString("\n")
-		b.WriteString(m.spinner.View())
-		b.WriteString(" ")
-		b.WriteString(Dim.Render("Working"))
+
+		if suggestions := m.commandSuggestions(); len(suggestions) > 0 {
+			b.WriteString(m.renderCommandSuggestions(suggestions))
+			b.WriteString("\n")
+		}
+
+		b.WriteString(m.renderStatusLine())
 	}
 	b.WriteString("\n")
 
-	if suggestions := m.commandSuggestions(); len(suggestions) > 0 {
-		b.WriteString(m.renderCommandSuggestions(suggestions))
-		b.WriteString("\n")
-	}
-
-	b.WriteString(m.renderStatusLine())
-	b.WriteString("\n")
-
-	input := m.renderInputView()
-	switch m.config.Display.InputStyle {
-	case "block":
-		b.WriteString(renderBlockInput(m.width, input))
-	case "bordered":
-		b.WriteString(renderBorderedInput(m.width, input))
-	default:
-		b.WriteString(UserCaret.Render("> ") + input)
+	if m.modelPickerActive {
+		b.WriteString(Dim.Render("filter: "))
+		b.WriteString(m.textarea.Value())
+		b.WriteString(InputCursor.Render("█"))
+	} else {
+		input := m.renderInputView()
+		switch m.config.Display.InputStyle {
+		case "block":
+			b.WriteString(renderBlockInput(m.width, input))
+		case "bordered":
+			b.WriteString(renderBorderedInput(m.width, input))
+		default:
+			b.WriteString(UserCaret.Render("> ") + input)
+		}
 	}
 	b.WriteString("\n")
 	b.WriteString(Dim.Render(compactCwd()))
@@ -498,8 +547,200 @@ func (m *Model) completeCommandSuggestion(suggestions []commands.Command) {
 	if len(suggestions) == 0 {
 		return
 	}
-	m.textarea.SetValue("/" + suggestions[m.commandSuggestionIndex].Name + " ")
+
+	selected := suggestions[m.commandSuggestionIndex]
+
+	// Check if this is a model suggestion
+	if selected.ModelID != "" {
+		m.selectModel(selected.ModelID)
+		return
+	}
+
+	// Normal command completion
+	m.textarea.SetValue("/" + selected.Name + " ")
 	m.commandSuggestionIndex = 0
+}
+
+// handleModelPickerKey processes key events when model picker is active.
+// Returns (model, cmd, handled). If handled is false, the event falls through
+// to the textarea for character/backspace input.
+func (m Model) handleModelPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
+	models := m.cmdReg.FilterModels(m.modelPickerFilter)
+
+	switch msg.Type {
+	case tea.KeyCtrlC:
+		if m.pending && m.agentCancel != nil {
+			m.agentCancel()
+		}
+		m.modelPickerActive = false
+		m.textarea.Reset()
+		m.textarea.Focus()
+		return m, tea.Quit, true
+
+	case tea.KeyEsc:
+		m.modelPickerActive = false
+		m.textarea.Reset()
+		m.textarea.Focus()
+		return m, nil, true
+
+	case tea.KeyEnter:
+		if len(models) > 0 {
+			m.clampModelPickerIndex(models)
+			m.selectModel(models[m.modelPickerIndex].ModelID)
+		}
+		m.modelPickerActive = false
+		m.textarea.Reset()
+		m.textarea.Focus()
+		return m, nil, true
+
+	case tea.KeyUp:
+		if len(models) > 0 {
+			m.modelPickerIndex--
+			m.clampModelPickerIndex(models)
+		}
+		return m, nil, true
+
+	case tea.KeyDown:
+		if len(models) > 0 {
+			m.modelPickerIndex++
+			m.clampModelPickerIndex(models)
+		}
+		return m, nil, true
+
+	case tea.KeyTab:
+		if len(models) > 0 {
+			m.clampModelPickerIndex(models)
+			m.selectModel(models[m.modelPickerIndex].ModelID)
+		}
+		m.modelPickerActive = false
+		m.textarea.Reset()
+		m.textarea.Focus()
+		return m, nil, true
+	}
+
+	// Not a special key — let textarea handle it (backspace, characters, etc.)
+	return m, nil, false
+}
+
+func (m *Model) clampModelPickerIndex(models []commands.Command) {
+	if len(models) == 0 {
+		m.modelPickerIndex = 0
+		return
+	}
+	if m.modelPickerIndex < 0 {
+		m.modelPickerIndex = 0
+	}
+	if m.modelPickerIndex >= len(models) {
+		m.modelPickerIndex = len(models) - 1
+	}
+}
+
+// renderModelPicker renders the model picker modal.
+func (m Model) renderModelPicker() string {
+	models := m.cmdReg.FilterModels(m.modelPickerFilter)
+
+	var b strings.Builder
+	b.WriteString("\n")
+
+	if len(models) == 0 {
+		b.WriteString(Dim.Render("  No models match your filter"))
+		if m.modelPickerFilter == "" {
+			b.WriteString(Dim.Render(" (no models available)"))
+		}
+		b.WriteString("\n")
+	} else {
+		b.WriteString(Dim.Render(fmt.Sprintf("  models (%d)", len(models))))
+		b.WriteString("\n")
+
+		m.clampModelPickerIndex(models)
+		start, end, _ := m.visibleModelPickerRange(models)
+
+		if start > 0 {
+			b.WriteString(Dim.Render(fmt.Sprintf("  +%d more above", start)))
+			b.WriteString("\n")
+		}
+		for i := start; i < end; i++ {
+			mdl := models[i]
+			prefix := "  "
+			style := Dim
+			if i == m.modelPickerIndex {
+				prefix = "> "
+				style = UserPrompt
+			}
+			line := fmt.Sprintf("%s%s", prefix, mdl.ModelID)
+			if mdl.Args != "" {
+				line += Dim.Render(fmt.Sprintf("  (%s)", mdl.Args))
+			}
+			b.WriteString(style.Render(line))
+			b.WriteString("\n")
+		}
+		if end < len(models) {
+			b.WriteString(Dim.Render(fmt.Sprintf("  +%d more below", len(models)-end)))
+			b.WriteString("\n")
+		}
+	}
+
+	b.WriteString("\n")
+	b.WriteString(Dim.Render("  esc: cancel  enter: select  arrows: navigate  type: filter"))
+	b.WriteString("\n")
+
+	return b.String()
+}
+
+func (m Model) visibleModelPickerRange(models []commands.Command) (start, end, selected int) {
+	const maxVisible = 12
+
+	selected = m.modelPickerIndex
+	if selected >= len(models) {
+		selected = len(models) - 1
+	}
+	if selected < 0 {
+		selected = 0
+	}
+
+	end = len(models)
+	if len(models) > maxVisible {
+		start = selected - maxVisible/2
+		if start < 0 {
+			start = 0
+		}
+		end = start + maxVisible
+		if end > len(models) {
+			end = len(models)
+			start = end - maxVisible
+		}
+	}
+	return start, end, selected
+}
+
+// selectModel sets the model and clears the input.
+func (m *Model) selectModel(modelID string) {
+	if m.config.Provider == "" {
+		m.config.Provider = "openrouter"
+	}
+	m.config.Model = modelID
+	_ = config.SaveConfig(m.config)
+
+	// Lazy-create provider if not set yet.
+	if m.provider == nil && m.apiKeyFor != nil {
+		apiKey := m.apiKeyFor("openrouter")
+		if apiKey != "" {
+			prov, err := provider.Create("openrouter", apiKey)
+			if err == nil {
+				m.provider = prov
+				m.config.HasAuthorizedProvider = true
+			}
+		}
+	}
+
+	m.textarea.Reset()
+	m.commandSuggestionIndex = 0
+	m.messages = append(m.messages, messageItem{
+		role:    "system",
+		content: fmt.Sprintf("Model changed to %s", modelID),
+	})
+	m.refreshViewport()
+	m.textarea.Focus()
 }
 
 func (m Model) commandInputExactlyMatchesSuggestion(suggestions []commands.Command) bool {
@@ -517,10 +758,22 @@ func (m Model) commandInputExactlyMatchesSuggestion(suggestions []commands.Comma
 }
 
 func (m Model) renderCommandSuggestions(suggestions []commands.Command) string {
+	if len(suggestions) == 0 {
+		return ""
+	}
+
 	start, end, selected := m.visibleCommandSuggestionRange(suggestions)
 
 	var b strings.Builder
-	b.WriteString(Dim.Render("commands"))
+
+	// Check if these are model suggestions
+	isModel := len(suggestions) > 0 && suggestions[0].ModelID != ""
+	if isModel {
+		b.WriteString(Dim.Render(fmt.Sprintf("models (%d)", len(suggestions))))
+	} else {
+		b.WriteString(Dim.Render("commands"))
+	}
+
 	if start > 0 {
 		b.WriteString("\n")
 		b.WriteString(Dim.Render(fmt.Sprintf("  +%d more above", start)))
@@ -533,13 +786,23 @@ func (m Model) renderCommandSuggestions(suggestions []commands.Command) string {
 			prefix = "> "
 			style = UserPrompt
 		}
-		line := fmt.Sprintf("%s/%s", prefix, cmd.Name)
-		if cmd.Args != "" {
-			line += " " + cmd.Args
+
+		var line string
+		if isModel {
+			line = fmt.Sprintf("%s%s", prefix, cmd.ModelID)
+			if cmd.Args != "" {
+				line += Dim.Render(fmt.Sprintf("  (%s)", cmd.Args))
+			}
+		} else {
+			line = fmt.Sprintf("%s/%s", prefix, cmd.Name)
+			if cmd.Args != "" {
+				line += " " + cmd.Args
+			}
+			if cmd.Description != "" {
+				line += "  " + cmd.Description
+			}
 		}
-		if cmd.Description != "" {
-			line += "  " + cmd.Description
-		}
+
 		b.WriteString("\n")
 		b.WriteString(style.Render(line))
 	}

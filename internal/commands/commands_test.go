@@ -192,3 +192,117 @@ func TestHandlerError(t *testing.T) {
 		t.Errorf("expected handler error, got %v", err)
 	}
 }
+
+// stubModelRegistry is a test stub implementing ModelRegistry.
+type stubModelRegistry struct {
+	models []ModelInfo
+}
+
+func (s *stubModelRegistry) GetAll() []ModelInfo { return s.models }
+
+func (s *stubModelRegistry) Filter(prefix string) []ModelInfo {
+	if prefix == "" {
+		return s.models
+	}
+	var res []ModelInfo
+	for _, m := range s.models {
+		if strings.Contains(strings.ToLower(m.ID), strings.ToLower(prefix)) ||
+			strings.Contains(strings.ToLower(m.Provider), strings.ToLower(prefix)) {
+			res = append(res, m)
+		}
+	}
+	return res
+}
+
+func TestModelSuggestions_NoRegistry(t *testing.T) {
+	reg := NewRegistry()
+	suggestions := reg.FilterModels("")
+	if suggestions != nil {
+		t.Fatalf("expected nil suggestions without model registry, got %v", suggestions)
+	}
+}
+
+func TestModelSuggestions_AllModels(t *testing.T) {
+	reg := NewRegistry()
+	reg.SetModelRegistry(&stubModelRegistry{
+		models: []ModelInfo{
+			{ID: "openai/gpt-4o", Provider: "openrouter"},
+			{ID: "anthropic/claude-opus-4-7", Provider: "openrouter"},
+		},
+	})
+
+	suggestions := reg.FilterModels("")
+	if len(suggestions) != 2 {
+		t.Fatalf("expected 2 model suggestions, got %d", len(suggestions))
+	}
+	if suggestions[0].ModelID != "openai/gpt-4o" {
+		t.Errorf("expected ModelID openai/gpt-4o, got %q", suggestions[0].ModelID)
+	}
+	if suggestions[0].Args != "openrouter" {
+		t.Errorf("expected Args openrouter, got %q", suggestions[0].Args)
+	}
+}
+
+func TestModelSuggestions_Filtered(t *testing.T) {
+	reg := NewRegistry()
+	reg.SetModelRegistry(&stubModelRegistry{
+		models: []ModelInfo{
+			{ID: "openai/gpt-4o", Provider: "openrouter"},
+			{ID: "anthropic/claude-opus-4-7", Provider: "openrouter"},
+			{ID: "anthropic/claude-sonnet-4", Provider: "openrouter"},
+		},
+	})
+
+	suggestions := reg.FilterModels("anthropic")
+	if len(suggestions) != 2 {
+		t.Fatalf("expected 2 matching model suggestions, got %d", len(suggestions))
+	}
+	for _, s := range suggestions {
+		if !strings.HasPrefix(s.ModelID, "anthropic/") {
+			t.Errorf("expected anthropic model, got %q", s.ModelID)
+		}
+	}
+}
+
+func TestModelSuggestions_NoMatch(t *testing.T) {
+	reg := NewRegistry()
+	reg.SetModelRegistry(&stubModelRegistry{
+		models: []ModelInfo{
+			{ID: "openai/gpt-4o", Provider: "openrouter"},
+		},
+	})
+
+	suggestions := reg.FilterModels("nonexistent")
+	if len(suggestions) != 0 {
+		t.Fatalf("expected 0 suggestions, got %d", len(suggestions))
+	}
+}
+
+func TestModelSuggestions_PreservesCommandSuggestions(t *testing.T) {
+	reg := NewRegistry()
+	reg.Register(Command{Name: "help", Description: "Show help"})
+	reg.Register(Command{Name: "model", Description: "Switch model"})
+	reg.SetModelRegistry(&stubModelRegistry{
+		models: []ModelInfo{
+			{ID: "openai/gpt-4o", Provider: "openrouter"},
+		},
+	})
+
+	// FilterModels returns model results
+	suggestions := reg.FilterModels("")
+	if len(suggestions) != 1 {
+		t.Fatalf("expected 1 model suggestion, got %d", len(suggestions))
+	}
+
+	// /model shows as a command suggestion (not a model suggestion)
+	suggestions = reg.Suggestions("/mo")
+	if len(suggestions) != 1 || suggestions[0].Name != "model" {
+		t.Fatalf("expected model command suggestion, got %v", suggestions)
+	}
+
+	// Other commands still work normally
+	suggestions = reg.Suggestions("/h")
+	if len(suggestions) != 1 || suggestions[0].Name != "help" {
+		t.Fatalf("expected help command suggestion, got %v", suggestions)
+	}
+}

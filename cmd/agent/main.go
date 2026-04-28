@@ -52,6 +52,29 @@ func main() {
 	toolReg := tools.NewRegistry()
 	cmdReg := commands.NewRegistry()
 
+	// Create model registry and load models.
+	modelReg := provider.NewModelRegistry()
+	if prov != nil {
+		modelReg.AddProvider(prov)
+	}
+	// Also try loading models if we have an OpenRouter API key but provider isn't set yet.
+	if prov == nil {
+		apiKey := auth.APIKey("openrouter")
+		if apiKey != "" {
+			tmpProv, err := provider.Create("openrouter", apiKey)
+			if err == nil {
+				modelReg.AddProvider(tmpProv)
+			} else {
+				fmt.Fprintf(os.Stderr, "warning: creating model reader: %v\n", err)
+			}
+		}
+	}
+	ctx := context.Background()
+	if err := modelReg.LoadModels(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to load models: %v\n", err)
+	}
+	cmdReg.SetModelRegistry(modelReg)
+
 	// Register native tools.
 	toolReg.Register(tools.FileReadTool)
 	toolReg.Register(tools.FileWriteTool)
@@ -75,7 +98,7 @@ func main() {
 	_ = context.Background() // reserved for future plugin manager
 
 	// Create and run the TUI.
-	m := tui.NewModel(cfg, prov, toolReg, ev, cmdReg, sess)
+	m := tui.NewModel(cfg, prov, toolReg, ev, cmdReg, sess, auth.APIKey)
 
 	p := tea.NewProgram(
 		m,
@@ -117,17 +140,9 @@ func registerCommands(cmdReg *commands.Registry, cfg *config.AgentConfig) {
 
 	cmdReg.Register(commands.Command{
 		Name:        "model",
-		Description: "Switch model",
-		Args:        "<name>",
+		Description: "Switch model (interactive picker)",
 		Handler: func(args []string) (string, error) {
-			if len(args) == 0 {
-				return "", fmt.Errorf("usage: /model <model-name>")
-			}
-			cfg.Model = args[0]
-			if err := config.SaveConfig(cfg); err != nil {
-				return "", err
-			}
-			return fmt.Sprintf("Model set to: %s", cfg.Model), nil
+			return "No models available. Try /model <search> or check your provider connection.", nil
 		},
 	})
 
