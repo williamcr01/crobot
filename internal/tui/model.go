@@ -38,6 +38,7 @@ type toolRenderItem struct {
 type messageItem struct {
 	role      string // "user", "assistant", "system", "error"
 	content   string
+	reasoning string
 	usage     string
 	toolCalls []toolRenderItem
 }
@@ -292,6 +293,14 @@ func (m Model) handleAgentEvent(ev agent.Event) (tea.Model, tea.Cmd) {
 		if ev.TextDelta != "" {
 			if len(m.messages) > 0 && m.messages[len(m.messages)-1].role == "assistant" {
 				m.messages[len(m.messages)-1].content += ev.TextDelta
+				m.refreshViewport()
+			}
+		}
+
+	case "reasoning_delta":
+		if ev.ReasoningDelta != "" {
+			if len(m.messages) > 0 && m.messages[len(m.messages)-1].role == "assistant" {
+				m.messages[len(m.messages)-1].reasoning += ev.ReasoningDelta
 				m.refreshViewport()
 			}
 		}
@@ -595,6 +604,12 @@ func (m Model) renderMessages() string {
 			b.WriteString(UserPrompt.Render(msg.content))
 			b.WriteString("\n\n")
 		case "assistant":
+			if msg.reasoning != "" && m.config.Display.Reasoning {
+				b.WriteString(Dim.Render("thinking"))
+				b.WriteString("\n")
+				b.WriteString(Dim.Render(msg.reasoning))
+				b.WriteString("\n")
+			}
 			if msg.content != "" {
 				b.WriteString(msg.content)
 				b.WriteString("\n")

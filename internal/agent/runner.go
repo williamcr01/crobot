@@ -20,7 +20,8 @@ type Event struct {
 	MessageEnd   *MessageEndEvent
 
 	// Text streaming.
-	TextDelta string
+	TextDelta      string
+	ReasoningDelta string
 
 	// Tool call events.
 	ToolCallStart *ToolCallEvent
@@ -310,8 +311,7 @@ func (r *runner) processStream(ctx context.Context, evCh <-chan provider.StreamE
 		}
 
 		if event.ReasoningDelta != "" {
-			currentText.WriteString(event.ReasoningDelta)
-			r.emit(Event{Type: "text_delta", TextDelta: event.ReasoningDelta})
+			r.emit(Event{Type: "reasoning_delta", ReasoningDelta: event.ReasoningDelta})
 		}
 
 		if event.ToolCallStart != nil {

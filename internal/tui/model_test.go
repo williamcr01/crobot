@@ -130,6 +130,47 @@ func TestTabDoesNotCycleThinkingWhenPending(t *testing.T) {
 	}
 }
 
+func TestRenderMessagesShowsReasoningWhenEnabled(t *testing.T) {
+	m := NewModel(&config.AgentConfig{Display: config.DisplayConfig{Reasoning: true}}, nil, nil, nil, nil, nil)
+	m.messages = append(m.messages, messageItem{role: "assistant", reasoning: "hidden chain", content: "final answer"})
+
+	got := m.renderMessages()
+	if !strings.Contains(got, "thinking") || !strings.Contains(got, "hidden chain") {
+		t.Fatalf("expected reasoning to render, got %q", got)
+	}
+	if !strings.Contains(got, "final answer") {
+		t.Fatalf("expected assistant content to render, got %q", got)
+	}
+}
+
+func TestRenderMessagesHidesReasoningWhenDisabled(t *testing.T) {
+	m := NewModel(&config.AgentConfig{Display: config.DisplayConfig{Reasoning: false}}, nil, nil, nil, nil, nil)
+	m.messages = append(m.messages, messageItem{role: "assistant", reasoning: "hidden chain", content: "final answer"})
+
+	got := m.renderMessages()
+	if strings.Contains(got, "thinking") || strings.Contains(got, "hidden chain") {
+		t.Fatalf("expected reasoning to be hidden, got %q", got)
+	}
+	if !strings.Contains(got, "final answer") {
+		t.Fatalf("expected assistant content to render, got %q", got)
+	}
+}
+
+func TestUpdateRoutesReasoningDeltaToReasoningField(t *testing.T) {
+	m := NewModel(&config.AgentConfig{Display: config.DisplayConfig{Reasoning: true}}, nil, nil, nil, nil, nil)
+	m.messages = append(m.messages, messageItem{role: "assistant"})
+
+	updated, _ := m.Update(agentEventMsg(agent.Event{Type: "reasoning_delta", ReasoningDelta: "thinking..."}))
+	updatedModel := updated.(Model)
+
+	if updatedModel.messages[0].reasoning != "thinking..." {
+		t.Fatalf("expected reasoning field to update, got %q", updatedModel.messages[0].reasoning)
+	}
+	if updatedModel.messages[0].content != "" {
+		t.Fatalf("reasoning should not be appended to content, got %q", updatedModel.messages[0].content)
+	}
+}
+
 func TestUpdateRoutesPageKeysToViewport(t *testing.T) {
 	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil)
 	m.ready = true
