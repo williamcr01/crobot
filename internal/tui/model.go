@@ -442,18 +442,37 @@ func (m Model) commandInputExactlyMatchesSuggestion(suggestions []commands.Comma
 }
 
 func (m Model) renderCommandSuggestions(suggestions []commands.Command) string {
-	limit := len(suggestions)
-	if limit > 8 {
-		limit = 8
-	}
+	const maxVisible = 8
+
 	selected := m.commandSuggestionIndex
-	if selected >= limit {
-		selected = limit - 1
+	if selected >= len(suggestions) {
+		selected = len(suggestions) - 1
+	}
+	if selected < 0 {
+		selected = 0
+	}
+
+	start := 0
+	end := len(suggestions)
+	if len(suggestions) > maxVisible {
+		start = selected - maxVisible/2
+		if start < 0 {
+			start = 0
+		}
+		end = start + maxVisible
+		if end > len(suggestions) {
+			end = len(suggestions)
+			start = end - maxVisible
+		}
 	}
 
 	var b strings.Builder
 	b.WriteString(Dim.Render("commands"))
-	for i := 0; i < limit; i++ {
+	if start > 0 {
+		b.WriteString("\n")
+		b.WriteString(Dim.Render(fmt.Sprintf("  +%d more above", start)))
+	}
+	for i := start; i < end; i++ {
 		cmd := suggestions[i]
 		prefix := "  "
 		style := Dim
@@ -471,9 +490,9 @@ func (m Model) renderCommandSuggestions(suggestions []commands.Command) string {
 		b.WriteString("\n")
 		b.WriteString(style.Render(line))
 	}
-	if len(suggestions) > limit {
+	if end < len(suggestions) {
 		b.WriteString("\n")
-		b.WriteString(Dim.Render(fmt.Sprintf("  +%d more", len(suggestions)-limit)))
+		b.WriteString(Dim.Render(fmt.Sprintf("  +%d more below", len(suggestions)-end)))
 	}
 	return b.String()
 }
