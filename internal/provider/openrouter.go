@@ -164,11 +164,18 @@ func (p *OpenRouterProvider) buildChatRequest(req Request) components.ChatReques
 		),
 	)
 
-	return components.ChatRequest{
+	chatReq := components.ChatRequest{
 		Model:    openrouter.Pointer(req.Model),
 		Messages: messages,
 		Tools:    tools,
 	}
+	if req.Thinking != "" && req.Thinking != "none" {
+		effort := components.Effort(req.Thinking)
+		chatReq.Reasoning = &components.Reasoning{
+			Effort: optionalnullable.From(&effort),
+		}
+	}
+	return chatReq
 }
 
 // mapResult converts an OpenRouter ChatResult to our Response type.

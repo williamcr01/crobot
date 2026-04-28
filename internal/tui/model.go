@@ -627,10 +627,11 @@ func (m *Model) startAgent(ctx context.Context, input string) {
 
 	// The latest user message is already in m.messages.
 	// Run the agent loop.
-	_, _ = agent.Run(
+	_, _ = agent.RunWithThinking(
 		ctx,
 		m.provider,
 		m.config.Model,
+		m.config.Thinking,
 		sysPrompt,
 		llmMsgs,
 		m.toolReg,

@@ -39,6 +39,7 @@ type Usage struct {
 // Request is the input to a provider Send or Stream call.
 type Request struct {
 	Model        string
+	Thinking     string
 	SystemPrompt string
 	Messages     []Message
 	Tools        []ToolDefinition

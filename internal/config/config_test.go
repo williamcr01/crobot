@@ -11,8 +11,11 @@ func TestDefaults(t *testing.T) {
 	if cfg.Provider != "openrouter" {
 		t.Errorf("expected provider openrouter, got %s", cfg.Provider)
 	}
-	if cfg.Model != "anthropic/claude-opus-4.7" {
-		t.Errorf("expected default model, got %s", cfg.Model)
+	if cfg.Model != "" {
+		t.Errorf("expected no default model, got %s", cfg.Model)
+	}
+	if cfg.Thinking != "none" {
+		t.Errorf("expected thinking none, got %s", cfg.Thinking)
 	}
 	if cfg.SessionDir != ".sessions" {
 		t.Errorf("expected sessionDir .sessions, got %s", cfg.SessionDir)
@@ -95,6 +98,7 @@ func TestLoadConfig_WithConfigFile(t *testing.T) {
 
 	configContent := `{
 		"model": "anthropic/claude-3-5-sonnet",
+		"thinking": "high",
 		"display": {
 			"toolDisplay": "emoji",
 			"inputStyle": "bordered"
@@ -118,6 +122,9 @@ func TestLoadConfig_WithConfigFile(t *testing.T) {
 	// File overrides model.
 	if cfg.Model != "anthropic/claude-3-5-sonnet" {
 		t.Errorf("expected file model, got %s", cfg.Model)
+	}
+	if cfg.Thinking != "high" {
+		t.Errorf("expected file thinking, got %s", cfg.Thinking)
 	}
 	// File overrides display.
 	if cfg.Display.ToolDisplay != "emoji" {

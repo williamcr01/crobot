@@ -102,9 +102,25 @@ func Run(
 	plugins PluginManager,
 	onEvent func(Event),
 ) (*Result, error) {
+	return RunWithThinking(ctx, prov, model, "none", systemPrompt, messages, toolReg, plugins, onEvent)
+}
+
+// RunWithThinking executes the agent loop with an explicit thinking effort.
+func RunWithThinking(
+	ctx context.Context,
+	prov provider.Provider,
+	model string,
+	thinking string,
+	systemPrompt string,
+	messages []provider.Message,
+	toolReg *tools.Registry,
+	plugins PluginManager,
+	onEvent func(Event),
+) (*Result, error) {
 	r := &runner{
 		prov:         prov,
 		model:        model,
+		thinking:     thinking,
 		systemPrompt: systemPrompt,
 		toolReg:      toolReg,
 		plugins:      plugins,
@@ -118,6 +134,7 @@ func Run(
 type runner struct {
 	prov         provider.Provider
 	model        string
+	thinking     string
 	systemPrompt string
 	toolReg      *tools.Registry
 	plugins      PluginManager
@@ -142,6 +159,7 @@ func (r *runner) run(ctx context.Context) (*Result, error) {
 		// Build request.
 		req := provider.Request{
 			Model:        r.model,
+			Thinking:     r.thinking,
 			SystemPrompt: sysPrompt,
 			Messages:     msgs,
 			Tools:        r.toolReg.ToProviderTools(),

@@ -43,7 +43,7 @@ func main() {
 	toolReg.Register(tools.BashTool)
 
 	// Register native commands.
-	registerCommands(cmdReg)
+	registerCommands(cmdReg, cfg)
 
 	// Initialize events logger.
 	ev := events.NewLogger(cfg.SessionDir)
@@ -74,7 +74,7 @@ func main() {
 }
 
 // registerCommands wires up all native slash commands.
-func registerCommands(cmdReg *commands.Registry) {
+func registerCommands(cmdReg *commands.Registry, cfg *config.AgentConfig) {
 	cmdReg.Register(commands.Command{
 		Name:        "help",
 		Description: "Show available commands",
@@ -107,7 +107,32 @@ func registerCommands(cmdReg *commands.Registry) {
 			if len(args) == 0 {
 				return "", fmt.Errorf("usage: /model <model-name>")
 			}
-			return fmt.Sprintf("Model would be set to: %s (not applied in this demo)", args[0]), nil
+			cfg.Model = args[0]
+			if err := config.SaveConfig(cfg); err != nil {
+				return "", err
+			}
+			return fmt.Sprintf("Model set to: %s", cfg.Model), nil
+		},
+	})
+
+	cmdReg.Register(commands.Command{
+		Name:        "thinking",
+		Description: "Switch thinking level",
+		Args:        "<none|minimal|low|medium|high|xhigh>",
+		Handler: func(args []string) (string, error) {
+			if len(args) == 0 {
+				return "", fmt.Errorf("usage: /thinking <none|minimal|low|medium|high|xhigh>")
+			}
+			level := args[0]
+			valid := map[string]bool{"none": true, "minimal": true, "low": true, "medium": true, "high": true, "xhigh": true}
+			if !valid[level] {
+				return "", fmt.Errorf("invalid thinking: %s", level)
+			}
+			cfg.Thinking = level
+			if err := config.SaveConfig(cfg); err != nil {
+				return "", err
+			}
+			return fmt.Sprintf("Thinking set to: %s", cfg.Thinking), nil
 		},
 	})
 

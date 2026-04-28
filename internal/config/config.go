@@ -25,8 +25,9 @@ type PluginConfig struct {
 // AgentConfig is the top-level configuration for the agent.
 type AgentConfig struct {
 	Provider      string        `json:"provider"`
-	APIKey        string        `json:"apiKey"`
+	APIKey        string        `json:"apiKey,omitempty"`
 	Model         string        `json:"model"`
+	Thinking      string        `json:"thinking"`
 	SystemPrompt  string        `json:"systemPrompt"`
 	SessionDir    string        `json:"sessionDir"`
 	ShowBanner    bool          `json:"showBanner"`
@@ -38,7 +39,7 @@ type AgentConfig struct {
 // DEFAULTS provides the base configuration before file and env overrides.
 var DEFAULTS = AgentConfig{
 	Provider: "openrouter",
-	Model:    "anthropic/claude-opus-4.7",
+	Thinking: "none",
 	SystemPrompt: strings.Join([]string{
 		"You are Crobot, a coding assistant. You have access to the following tools:",
 		"file read,",
@@ -81,6 +82,9 @@ func LoadConfig() (*AgentConfig, error) {
 		}
 		if file.Model != "" {
 			cfg.Model = file.Model
+		}
+		if file.Thinking != "" {
+			cfg.Thinking = file.Thinking
 		}
 		if file.SystemPrompt != "" {
 			cfg.SystemPrompt = file.SystemPrompt
@@ -125,6 +129,9 @@ func LoadConfig() (*AgentConfig, error) {
 	if v := os.Getenv("AGENT_MODEL"); v != "" {
 		cfg.Model = v
 	}
+	if v := os.Getenv("AGENT_THINKING"); v != "" {
+		cfg.Thinking = v
+	}
 
 	if cfg.APIKey == "" {
 		return nil, fmt.Errorf("OPENROUTER_API_KEY is required: set it in agent.config.json, .env, or environment")
@@ -145,6 +152,10 @@ func LoadConfig() (*AgentConfig, error) {
 	if !validInputStyles[cfg.Display.InputStyle] {
 		return nil, fmt.Errorf("invalid inputStyle: %q (valid: block, bordered, plain)", cfg.Display.InputStyle)
 	}
+	validThinking := map[string]bool{"none": true, "minimal": true, "low": true, "medium": true, "high": true, "xhigh": true}
+	if !validThinking[cfg.Thinking] {
+		return nil, fmt.Errorf("invalid thinking: %q (valid: none, minimal, low, medium, high, xhigh)", cfg.Thinking)
+	}
 
 	// Expand ~ in plugin directories.
 	for i, dir := range cfg.Plugins.Directories {
@@ -158,6 +169,28 @@ func LoadConfig() (*AgentConfig, error) {
 	}
 
 	return &cfg, nil
+}
+
+// SaveConfig writes the current configuration to agent.config.json.
+func SaveConfig(cfg *AgentConfig) error {
+	fileCfg := *cfg
+	if data, err := os.ReadFile("agent.config.json"); err == nil {
+		var raw map[string]json.RawMessage
+		if json.Unmarshal(data, &raw) == nil {
+			if _, ok := raw["apiKey"]; !ok {
+				fileCfg.APIKey = ""
+			}
+		}
+	}
+	data, err := json.MarshalIndent(&fileCfg, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal agent.config.json: %w", err)
+	}
+	data = append(data, '\n')
+	if err := os.WriteFile("agent.config.json", data, 0o644); err != nil {
+		return fmt.Errorf("write agent.config.json: %w", err)
+	}
+	return nil
 }
 
 // boolFieldSet checks whether a bool field was explicitly set in JSON.

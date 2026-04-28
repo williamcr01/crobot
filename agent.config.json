@@ -1,6 +1,7 @@
 {
   "provider": "openrouter",
   "model": "deepseek/deepseek-v4-flash",
+  "thinking": "none",
   "systemPrompt": "",
   "sessionDir": ".sessions",
   "showBanner": true,
