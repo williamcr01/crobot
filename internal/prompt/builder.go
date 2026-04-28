@@ -17,6 +17,10 @@ func Build(cfg config.AgentConfig, cwd string) string {
 		prompt = config.DEFAULTS.SystemPrompt
 	}
 
+	if cfg.AppendPrompt != "" {
+		prompt += "\n\n" + cfg.AppendPrompt
+	}
+
 	// Replace {cwd} with actual working directory.
 	prompt = strings.ReplaceAll(prompt, "{cwd}", cwd)
 

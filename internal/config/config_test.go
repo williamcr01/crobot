@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -99,6 +100,7 @@ func TestLoadConfig_WithConfigFile(t *testing.T) {
 	configContent := `{
 		"model": "anthropic/claude-3-5-sonnet",
 		"thinking": "high",
+		"appendPrompt": "Extra instructions for {cwd}",
 		"display": {
 			"toolDisplay": "emoji",
 			"inputStyle": "bordered"
@@ -125,6 +127,9 @@ func TestLoadConfig_WithConfigFile(t *testing.T) {
 	}
 	if cfg.Thinking != "high" {
 		t.Errorf("expected file thinking, got %s", cfg.Thinking)
+	}
+	if cfg.AppendPrompt != "Extra instructions for {cwd}" {
+		t.Errorf("expected appendPrompt, got %s", cfg.AppendPrompt)
 	}
 	// File overrides display.
 	if cfg.Display.ToolDisplay != "emoji" {
@@ -239,5 +244,67 @@ func TestLoadConfig_UnsupportedProvider(t *testing.T) {
 	_, err := LoadConfig()
 	if err == nil {
 		t.Fatal("expected error for unsupported provider")
+	}
+}
+
+func TestSaveConfig_WritesOnlyRuntimeFieldsWhenCreatingFile(t *testing.T) {
+	dir := t.TempDir()
+	origWd, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(origWd)
+
+	cfg := DEFAULTS
+	cfg.Model = "test/model"
+	if err := SaveConfig(&cfg); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+	data, err := os.ReadFile("agent.config.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(data)
+	for _, want := range []string{`"provider": "openrouter"`, `"model": "test/model"`, `"thinking": "none"`} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("expected %s in saved config, got %s", want, content)
+		}
+	}
+	for _, forbidden := range []string{"systemPrompt", "appendPrompt", "sessionDir", "display", "plugins", "apiKey"} {
+		if strings.Contains(content, forbidden) {
+			t.Fatalf("%s should not be autosaved, got %s", forbidden, content)
+		}
+	}
+}
+
+func TestSaveConfig_PreservesExistingUserConfig(t *testing.T) {
+	dir := t.TempDir()
+	origWd, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(origWd)
+
+	initial := `{
+		"systemPrompt": "custom prompt",
+		"appendPrompt": "extra prompt",
+		"display": {"inputStyle": "bordered"},
+		"model": "old/model"
+	}`
+	if err := os.WriteFile("agent.config.json", []byte(initial), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := DEFAULTS
+	cfg.Model = "new/model"
+	cfg.Thinking = "high"
+	if err := SaveConfig(&cfg); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+	data, err := os.ReadFile("agent.config.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(data)
+	for _, want := range []string{`"systemPrompt": "custom prompt"`, `"appendPrompt": "extra prompt"`, `"inputStyle": "bordered"`, `"model": "new/model"`, `"thinking": "high"`} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("expected %s in saved config, got %s", want, content)
+		}
 	}
 }

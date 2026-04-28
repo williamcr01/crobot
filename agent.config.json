@@ -3,6 +3,7 @@
   "model": "deepseek/deepseek-v4-flash",
   "thinking": "none",
   "systemPrompt": "",
+  "appendPrompt": "",
   "sessionDir": ".sessions",
   "showBanner": true,
   "slashCommands": true,

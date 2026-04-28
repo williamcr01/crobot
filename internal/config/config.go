@@ -28,7 +28,8 @@ type AgentConfig struct {
 	APIKey        string        `json:"apiKey,omitempty"`
 	Model         string        `json:"model"`
 	Thinking      string        `json:"thinking"`
-	SystemPrompt  string        `json:"systemPrompt"`
+	SystemPrompt  string        `json:"systemPrompt,omitempty"`
+	AppendPrompt  string        `json:"appendPrompt,omitempty"`
 	SessionDir    string        `json:"sessionDir"`
 	ShowBanner    bool          `json:"showBanner"`
 	SlashCommands bool          `json:"slashCommands"`
@@ -88,6 +89,9 @@ func LoadConfig() (*AgentConfig, error) {
 		}
 		if file.SystemPrompt != "" {
 			cfg.SystemPrompt = file.SystemPrompt
+		}
+		if file.AppendPrompt != "" {
+			cfg.AppendPrompt = file.AppendPrompt
 		}
 		if file.SessionDir != "" {
 			cfg.SessionDir = file.SessionDir
@@ -171,18 +175,24 @@ func LoadConfig() (*AgentConfig, error) {
 	return &cfg, nil
 }
 
-// SaveConfig writes the current configuration to agent.config.json.
+// SaveConfig writes only runtime-selected values to agent.config.json.
+// It preserves existing user-authored config and only updates provider, model,
+// and thinking so defaults are not expanded into the file.
 func SaveConfig(cfg *AgentConfig) error {
-	fileCfg := *cfg
+	raw := map[string]any{}
 	if data, err := os.ReadFile("agent.config.json"); err == nil {
-		var raw map[string]json.RawMessage
-		if json.Unmarshal(data, &raw) == nil {
-			if _, ok := raw["apiKey"]; !ok {
-				fileCfg.APIKey = ""
-			}
+		if err := json.Unmarshal(data, &raw); err != nil {
+			return fmt.Errorf("invalid agent.config.json: %w", err)
 		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("read agent.config.json: %w", err)
 	}
-	data, err := json.MarshalIndent(&fileCfg, "", "  ")
+
+	raw["provider"] = cfg.Provider
+	raw["model"] = cfg.Model
+	raw["thinking"] = cfg.Thinking
+
+	data, err := json.MarshalIndent(raw, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal agent.config.json: %w", err)
 	}

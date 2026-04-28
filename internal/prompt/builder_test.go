@@ -73,6 +73,30 @@ func TestBuild_EmptyPrompt(t *testing.T) {
 	}
 }
 
+func TestBuild_AppendPrompt(t *testing.T) {
+	cfg := config.DEFAULTS
+	cfg.AppendPrompt = "Extra instructions for {cwd}"
+	result := Build(cfg, "/my/dir")
+
+	if !strings.Contains(result, "coding assistant") {
+		t.Error("appendPrompt should keep the base prompt")
+	}
+	if !strings.Contains(result, "Extra instructions for /my/dir") {
+		t.Errorf("expected appended prompt, got: %s", result)
+	}
+}
+
+func TestBuild_CustomPromptWithAppendPrompt(t *testing.T) {
+	cfg := config.DEFAULTS
+	cfg.SystemPrompt = "Custom base"
+	cfg.AppendPrompt = "Custom append"
+	result := Build(cfg, "/tmp")
+
+	if !strings.Contains(result, "Custom base\n\nCustom append") {
+		t.Errorf("expected appendPrompt after custom systemPrompt, got: %s", result)
+	}
+}
+
 func TestBuild_TrailingContent(t *testing.T) {
 	cfg := config.DEFAULTS
 	result := Build(cfg, "/tmp")
