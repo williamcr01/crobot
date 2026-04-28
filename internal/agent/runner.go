@@ -262,7 +262,8 @@ func (r *runner) processStream(ctx context.Context, evCh <-chan provider.StreamE
 		currentText      strings.Builder
 		toolCalls        []provider.ToolCall
 		usage            *provider.Usage
-		toolCallsPending = make(map[int64]*toolCallAccum)
+		toolCallsPending = make(map[string]*toolCallAccum)
+		currentCallID    string
 	)
 
 	r.emit(Event{
@@ -285,15 +286,21 @@ func (r *runner) processStream(ctx context.Context, evCh <-chan provider.StreamE
 
 		if event.TextDelta != "" {
 			currentText.WriteString(event.TextDelta)
-			r.emit(Event{TextDelta: event.TextDelta})
+			r.emit(Event{Type: "text_delta", TextDelta: event.TextDelta})
+		}
+
+		if event.ReasoningDelta != "" {
+			currentText.WriteString(event.ReasoningDelta)
+			r.emit(Event{Type: "text_delta", TextDelta: event.ReasoningDelta})
 		}
 
 		if event.ToolCallStart != nil {
 			tc := event.ToolCallStart
-			toolCallsPending[tc.IDNumber()] = &toolCallAccum{
+			toolCallsPending[tc.ID] = &toolCallAccum{
 				name: tc.Name,
 				id:   tc.ID,
 			}
+			currentCallID = tc.ID
 			r.emit(Event{
 				Type: "tool_call_start",
 				ToolCallStart: &ToolCallEvent{
@@ -304,15 +311,8 @@ func (r *runner) processStream(ctx context.Context, evCh <-chan provider.StreamE
 		}
 
 		if event.ToolCallArgsDelta != "" {
-			// Accumulate into the active tool call (last in accumulator map).
-			// SDK streams tool calls sequentially.
-			var maxIdx int64
-			for idx := range toolCallsPending {
-				if idx > maxIdx {
-					maxIdx = idx
-				}
-			}
-			if acc, ok := toolCallsPending[maxIdx]; ok {
+			// Accumulate into the active tool call (last started).
+			if acc, ok := toolCallsPending[currentCallID]; ok {
 				acc.argsBuf.WriteString(event.ToolCallArgsDelta)
 				r.emit(Event{ToolCallArgs: event.ToolCallArgsDelta})
 			}
@@ -320,26 +320,27 @@ func (r *runner) processStream(ctx context.Context, evCh <-chan provider.StreamE
 
 		if event.ToolCallEnd != nil {
 			tc := event.ToolCallEnd
-			// Find the matching pending tool call by name.
-			for idx, acc := range toolCallsPending {
-				if acc.name == tc.Name {
-					args := parseArgs(acc.argsBuf.String())
-					toolCalls = append(toolCalls, provider.ToolCall{
-						Name: tc.Name,
-						ID:   acc.id,
-						Args: args,
-					})
-					delete(toolCallsPending, idx)
-					r.emit(Event{
-						Type: "tool_call_end",
-						ToolCallEnd: &ToolCallEvent{
-							Name:   tc.Name,
-							CallID: acc.id,
-							Args:   args,
-						},
-					})
-					break
+			if acc, ok := toolCallsPending[tc.ID]; ok {
+				var args map[string]any
+				if len(tc.Args) > 0 {
+					args = tc.Args
+				} else {
+					args = parseArgs(acc.argsBuf.String())
 				}
+				toolCalls = append(toolCalls, provider.ToolCall{
+					Name: tc.Name,
+					ID:   acc.id,
+					Args: args,
+				})
+				delete(toolCallsPending, tc.ID)
+				r.emit(Event{
+					Type: "tool_call_end",
+					ToolCallEnd: &ToolCallEvent{
+						Name:   tc.Name,
+						CallID: acc.id,
+						Args:   args,
+					},
+				})
 			}
 		}
 
