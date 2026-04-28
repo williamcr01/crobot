@@ -84,6 +84,22 @@ func registerCommands(cmdReg *commands.Registry) {
 	})
 
 	cmdReg.Register(commands.Command{
+		Name:        "quit",
+		Description: "Quit crobot",
+		Handler: func(args []string) (string, error) {
+			return "", nil
+		},
+	})
+
+	cmdReg.Register(commands.Command{
+		Name:        "exit",
+		Description: "Quit crobot",
+		Handler: func(args []string) (string, error) {
+			return "", nil
+		},
+	})
+
+	cmdReg.Register(commands.Command{
 		Name:        "model",
 		Description: "Switch model",
 		Args:        "<name>",

@@ -117,8 +117,8 @@ func TestExecute_NotCommand(t *testing.T) {
 
 func TestHelpText(t *testing.T) {
 	reg := NewRegistry()
-	reg.Register(Command{Name: "help", Description: "Show help"})
 	reg.Register(Command{Name: "model", Description: "Switch model", Args: "<name>"})
+	reg.Register(Command{Name: "help", Description: "Show help"})
 
 	help := reg.HelpText()
 	if !strings.Contains(help, "/help") {
@@ -132,6 +132,49 @@ func TestHelpText(t *testing.T) {
 	}
 	if !strings.Contains(help, "<name>") {
 		t.Error("help should contain args")
+	}
+	if strings.Index(help, "/help") > strings.Index(help, "/model") {
+		t.Error("help commands should be sorted")
+	}
+}
+
+func TestSuggestions(t *testing.T) {
+	reg := NewRegistry()
+	reg.Register(Command{Name: "model", Description: "Switch model", Args: "<name>"})
+	reg.Register(Command{Name: "help", Description: "Show help"})
+	reg.Register(Command{Name: "new", Description: "New session"})
+
+	tests := []struct {
+		name  string
+		input string
+		want  []string
+	}{
+		{name: "slash shows all", input: "/", want: []string{"help", "model", "new"}},
+		{name: "prefix filters", input: "/mo", want: []string{"model"}},
+		{name: "leading spaces allowed", input: "  /h", want: []string{"help"}},
+		{name: "no matches", input: "/x", want: []string{}},
+		{name: "hide after args", input: "/model gpt-4", want: nil},
+		{name: "not command", input: "hello /mo", want: nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := reg.Suggestions(tt.input)
+			if tt.want == nil {
+				if got != nil {
+					t.Fatalf("expected nil, got %v", got)
+				}
+				return
+			}
+			if len(got) != len(tt.want) {
+				t.Fatalf("expected %d suggestions, got %d", len(tt.want), len(got))
+			}
+			for i, want := range tt.want {
+				if got[i].Name != want {
+					t.Errorf("suggestion %d: expected %q, got %q", i, want, got[i].Name)
+				}
+			}
+		})
 	}
 }
 

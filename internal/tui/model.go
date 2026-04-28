@@ -62,13 +62,14 @@ type Model struct {
 	textarea textarea.Model
 	spinner  spinner.Model
 
-	messages    []messageItem
-	pending     bool
-	ready       bool
-	width       int
-	height      int
-	agentCancel context.CancelFunc
-	agentEvents chan agent.Event
+	messages               []messageItem
+	pending                bool
+	ready                  bool
+	width                  int
+	height                 int
+	commandSuggestionIndex int
+	agentCancel            context.CancelFunc
+	agentEvents            chan agent.Event
 }
 
 // NewModel creates a fully initialized TUI model.
@@ -142,14 +143,47 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		switch msg.Type {
-		case tea.KeyCtrlC, tea.KeyEsc:
+		case tea.KeyCtrlC:
 			if m.pending && m.agentCancel != nil {
 				m.agentCancel()
 			}
 			return m, tea.Quit
 
+		case tea.KeyEsc:
+			return m, nil
+
+		case tea.KeyUp:
+			if suggestions := m.commandSuggestions(); len(suggestions) > 0 {
+				m.commandSuggestionIndex--
+				if m.commandSuggestionIndex < 0 {
+					m.commandSuggestionIndex = len(suggestions) - 1
+				}
+				return m, nil
+			}
+
+		case tea.KeyDown:
+			if suggestions := m.commandSuggestions(); len(suggestions) > 0 {
+				m.commandSuggestionIndex++
+				if m.commandSuggestionIndex >= len(suggestions) {
+					m.commandSuggestionIndex = 0
+				}
+				return m, nil
+			}
+
+		case tea.KeyTab:
+			if !m.pending {
+				if suggestions := m.commandSuggestions(); len(suggestions) > 0 {
+					m.completeCommandSuggestion(suggestions)
+					return m, nil
+				}
+			}
+
 		case tea.KeyEnter:
 			if m.pending {
+				return m, nil
+			}
+			if suggestions := m.commandSuggestions(); len(suggestions) > 0 && !m.commandInputExactlyMatchesSuggestion(suggestions) {
+				m.completeCommandSuggestion(suggestions)
 				return m, nil
 			}
 			input := strings.TrimSpace(m.textarea.Value())
@@ -161,6 +195,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			// Slash commands.
 			if strings.HasPrefix(input, "/") {
+				if m.isQuitCommand(input) {
+					return m, tea.Quit
+				}
 				result, err := m.cmdReg.Execute(input)
 				if err != nil {
 					m.messages = append(m.messages, messageItem{role: "error", content: err.Error()})
@@ -210,6 +247,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	var cmd tea.Cmd
 	m.textarea, cmd = m.textarea.Update(msg)
+	m.clampCommandSuggestionIndex()
 	return m, cmd
 }
 
@@ -335,6 +373,11 @@ func (m Model) View() string {
 	}
 	b.WriteString("\n")
 
+	if suggestions := m.commandSuggestions(); len(suggestions) > 0 {
+		b.WriteString(m.renderCommandSuggestions(suggestions))
+		b.WriteString("\n")
+	}
+
 	switch m.config.Display.InputStyle {
 	case "block":
 		b.WriteString(renderBlockInput(m.width, m.textarea.Value()))
@@ -346,6 +389,92 @@ func (m Model) View() string {
 	b.WriteString("\n")
 	b.WriteString(Dim.Render(compactCwd()))
 
+	return b.String()
+}
+
+func (m Model) commandSuggestions() []commands.Command {
+	if m.cmdReg == nil || m.pending {
+		return nil
+	}
+	return m.cmdReg.Suggestions(m.textarea.Value())
+}
+
+func (m Model) isQuitCommand(input string) bool {
+	cmd, _, ok := commands.Parse(input)
+	return ok && (cmd == "quit" || cmd == "exit")
+}
+
+func (m *Model) clampCommandSuggestionIndex() {
+	suggestions := m.commandSuggestions()
+	if len(suggestions) == 0 {
+		m.commandSuggestionIndex = 0
+		return
+	}
+	if m.commandSuggestionIndex >= len(suggestions) {
+		m.commandSuggestionIndex = len(suggestions) - 1
+	}
+	if m.commandSuggestionIndex < 0 {
+		m.commandSuggestionIndex = 0
+	}
+}
+
+func (m *Model) completeCommandSuggestion(suggestions []commands.Command) {
+	m.clampCommandSuggestionIndex()
+	if len(suggestions) == 0 {
+		return
+	}
+	m.textarea.SetValue("/" + suggestions[m.commandSuggestionIndex].Name + " ")
+	m.commandSuggestionIndex = 0
+}
+
+func (m Model) commandInputExactlyMatchesSuggestion(suggestions []commands.Command) bool {
+	input := strings.TrimSpace(m.textarea.Value())
+	if !strings.HasPrefix(input, "/") {
+		return false
+	}
+	name := strings.TrimPrefix(input, "/")
+	for _, cmd := range suggestions {
+		if cmd.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func (m Model) renderCommandSuggestions(suggestions []commands.Command) string {
+	limit := len(suggestions)
+	if limit > 8 {
+		limit = 8
+	}
+	selected := m.commandSuggestionIndex
+	if selected >= limit {
+		selected = limit - 1
+	}
+
+	var b strings.Builder
+	b.WriteString(Dim.Render("commands"))
+	for i := 0; i < limit; i++ {
+		cmd := suggestions[i]
+		prefix := "  "
+		style := Dim
+		if i == selected {
+			prefix = "> "
+			style = UserPrompt
+		}
+		line := fmt.Sprintf("%s/%s", prefix, cmd.Name)
+		if cmd.Args != "" {
+			line += " " + cmd.Args
+		}
+		if cmd.Description != "" {
+			line += "  " + cmd.Description
+		}
+		b.WriteString("\n")
+		b.WriteString(style.Render(line))
+	}
+	if len(suggestions) > limit {
+		b.WriteString("\n")
+		b.WriteString(Dim.Render(fmt.Sprintf("  +%d more", len(suggestions)-limit)))
+	}
 	return b.String()
 }
 

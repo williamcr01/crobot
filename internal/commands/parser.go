@@ -2,6 +2,7 @@ package commands
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -52,7 +53,7 @@ func (r *Registry) Execute(input string) (string, error) {
 func (r *Registry) HelpText() string {
 	var b strings.Builder
 	b.WriteString("Commands:\n")
-	for _, cmd := range r.commands {
+	for _, cmd := range r.Commands() {
 		line := fmt.Sprintf("  /%s", cmd.Name)
 		if cmd.Args != "" {
 			line += " " + cmd.Args
@@ -64,6 +65,41 @@ func (r *Registry) HelpText() string {
 		b.WriteString("\n")
 	}
 	return b.String()
+}
+
+// Commands returns all registered commands sorted by name.
+func (r *Registry) Commands() []Command {
+	cmds := make([]Command, 0, len(r.commands))
+	for _, cmd := range r.commands {
+		cmds = append(cmds, cmd)
+	}
+	sort.Slice(cmds, func(i, j int) bool {
+		return cmds[i].Name < cmds[j].Name
+	})
+	return cmds
+}
+
+// Suggestions returns commands matching the slash-command prefix currently being typed.
+// Suggestions are only shown while typing the command name, e.g. "/" or "/mo".
+func (r *Registry) Suggestions(input string) []Command {
+	trimmed := strings.TrimLeft(input, " \t")
+	if !strings.HasPrefix(trimmed, "/") {
+		return nil
+	}
+
+	withoutSlash := strings.TrimPrefix(trimmed, "/")
+	if strings.ContainsAny(withoutSlash, " \t\n") {
+		return nil
+	}
+
+	prefix := withoutSlash
+	matches := make([]Command, 0)
+	for _, cmd := range r.Commands() {
+		if strings.HasPrefix(cmd.Name, prefix) {
+			matches = append(matches, cmd)
+		}
+	}
+	return matches
 }
 
 // Parse splits an input line into command name and args.
