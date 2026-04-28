@@ -363,7 +363,11 @@ func (m Model) View() string {
 		b.WriteString("\n")
 	}
 
-	b.WriteString(m.viewport.View())
+	viewport := m.viewport
+	if m.height > 0 {
+		viewport.Height = m.dynamicViewportHeight()
+	}
+	b.WriteString(viewport.View())
 
 	if m.pending {
 		b.WriteString("\n")
@@ -442,29 +446,7 @@ func (m Model) commandInputExactlyMatchesSuggestion(suggestions []commands.Comma
 }
 
 func (m Model) renderCommandSuggestions(suggestions []commands.Command) string {
-	const maxVisible = 8
-
-	selected := m.commandSuggestionIndex
-	if selected >= len(suggestions) {
-		selected = len(suggestions) - 1
-	}
-	if selected < 0 {
-		selected = 0
-	}
-
-	start := 0
-	end := len(suggestions)
-	if len(suggestions) > maxVisible {
-		start = selected - maxVisible/2
-		if start < 0 {
-			start = 0
-		}
-		end = start + maxVisible
-		if end > len(suggestions) {
-			end = len(suggestions)
-			start = end - maxVisible
-		}
-	}
+	start, end, selected := m.visibleCommandSuggestionRange(suggestions)
 
 	var b strings.Builder
 	b.WriteString(Dim.Render("commands"))
@@ -495,6 +477,64 @@ func (m Model) renderCommandSuggestions(suggestions []commands.Command) string {
 		b.WriteString(Dim.Render(fmt.Sprintf("  +%d more below", len(suggestions)-end)))
 	}
 	return b.String()
+}
+
+func (m Model) visibleCommandSuggestionRange(suggestions []commands.Command) (start, end, selected int) {
+	const maxVisible = 8
+
+	selected = m.commandSuggestionIndex
+	if selected >= len(suggestions) {
+		selected = len(suggestions) - 1
+	}
+	if selected < 0 {
+		selected = 0
+	}
+
+	end = len(suggestions)
+	if len(suggestions) > maxVisible {
+		start = selected - maxVisible/2
+		if start < 0 {
+			start = 0
+		}
+		end = start + maxVisible
+		if end > len(suggestions) {
+			end = len(suggestions)
+			start = end - maxVisible
+		}
+	}
+	return start, end, selected
+}
+
+func (m Model) commandSuggestionHeight() int {
+	suggestions := m.commandSuggestions()
+	if len(suggestions) == 0 {
+		return 0
+	}
+	start, end, _ := m.visibleCommandSuggestionRange(suggestions)
+	height := 1 + end - start
+	if start > 0 {
+		height++
+	}
+	if end < len(suggestions) {
+		height++
+	}
+	return height
+}
+
+func (m Model) dynamicViewportHeight() int {
+	headerHeight := 0
+	if m.config.ShowBanner {
+		headerHeight = 9
+	}
+	footerHeight := 4 + m.commandSuggestionHeight()
+	if m.pending {
+		footerHeight++
+	}
+	vpHeight := m.height - headerHeight - footerHeight
+	if vpHeight < 3 {
+		vpHeight = 3
+	}
+	return vpHeight
 }
 
 func (m Model) renderMessages() string {
