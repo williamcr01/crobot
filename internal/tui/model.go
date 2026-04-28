@@ -232,6 +232,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// textarea handles this natively via its own keybindings.
 		}
 
+		if m.shouldHandleViewportKey(msg) {
+			var cmd tea.Cmd
+			m.viewport, cmd = m.viewport.Update(msg)
+			return m, cmd
+		}
+
+	case tea.MouseMsg:
+		var cmd tea.Cmd
+		m.viewport, cmd = m.viewport.Update(msg)
+		return m, cmd
+
 	case agentEventMsg:
 		return m.handleAgentEvent(agent.Event(msg))
 
@@ -579,9 +590,27 @@ func (m Model) renderMessages() string {
 	return b.String()
 }
 
+func (m Model) shouldHandleViewportKey(msg tea.KeyMsg) bool {
+	if len(m.commandSuggestions()) > 0 {
+		return false
+	}
+
+	switch msg.Type {
+	case tea.KeyPgUp, tea.KeyPgDown, tea.KeyCtrlU, tea.KeyCtrlD:
+		return true
+	case tea.KeyUp, tea.KeyDown:
+		return strings.TrimSpace(m.textarea.Value()) == ""
+	default:
+		return false
+	}
+}
+
 func (m *Model) refreshViewport() {
+	wasAtBottom := m.viewport.AtBottom()
 	m.viewport.SetContent(m.renderMessages())
-	m.viewport.GotoBottom()
+	if wasAtBottom {
+		m.viewport.GotoBottom()
+	}
 }
 
 // --- Agent runner goroutine ---
