@@ -25,11 +25,27 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Create provider.
-	prov, err := provider.Create(cfg.Provider, cfg.APIKey)
+	// Load auth and create provider if configured.
+	auth, err := config.LoadAuth()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
+	}
+	var prov provider.Provider
+	cfg.HasAuthorizedProvider = auth.HasAuthorizedProvider()
+	if !cfg.HasAuthorizedProvider {
+		fmt.Fprintln(os.Stderr, "warning: No provider added. Add credentials to ~/.crobot/auth.json")
+	} else if cfg.Provider != "" {
+		apiKey := auth.APIKey(cfg.Provider)
+		if apiKey == "" {
+			fmt.Fprintf(os.Stderr, "warning: Provider %q is not authorized in ~/.crobot/auth.json\n", cfg.Provider)
+		} else {
+			prov, err = provider.Create(cfg.Provider, apiKey)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "error: %v\n", err)
+				os.Exit(1)
+			}
+		}
 	}
 
 	// Initialize registries.

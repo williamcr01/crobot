@@ -95,6 +95,10 @@ func NewModel(
 	ta.KeyMap.InsertNewline.SetEnabled(true)
 
 	s := NewLoaderSpinner()
+	messages := []messageItem{}
+	if prov == nil && !cfg.HasAuthorizedProvider {
+		messages = append(messages, messageItem{role: "error", content: "No provider added. Add credentials to ~/.crobot/auth.json."})
+	}
 
 	return &Model{
 		config:      cfg,
@@ -105,7 +109,7 @@ func NewModel(
 		session:     sess,
 		textarea:    ta,
 		spinner:     s,
-		messages:    []messageItem{},
+		messages:    messages,
 		agentEvents: make(chan agent.Event, 64),
 	}
 }
@@ -219,6 +223,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				input = expandShellShortcut(m.toolReg, input)
 			}
 			input = expandFileRefs(m.toolReg, input)
+
+			if m.provider == nil {
+				message := "No provider added. Add credentials to ~/.crobot/auth.json."
+				if m.config.HasAuthorizedProvider {
+					message = "No provider selected. Select a provider before sending a message."
+				}
+				m.messages = append(m.messages, messageItem{role: "error", content: message})
+				m.refreshViewport()
+				m.textarea.Focus()
+				return m, nil
+			}
 
 			m.messages = append(m.messages, messageItem{role: "user", content: input})
 			m.refreshViewport()

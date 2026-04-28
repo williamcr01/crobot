@@ -9,8 +9,8 @@ import (
 
 func TestDefaults(t *testing.T) {
 	cfg := DEFAULTS
-	if cfg.Provider != "openrouter" {
-		t.Errorf("expected provider openrouter, got %s", cfg.Provider)
+	if cfg.Provider != "" {
+		t.Errorf("expected no default provider, got %s", cfg.Provider)
 	}
 	if cfg.Model != "" {
 		t.Errorf("expected no default model, got %s", cfg.Model)
@@ -80,28 +80,19 @@ func TestLoadConfig_BootstrapsUserConfigAndPlugins(t *testing.T) {
 	}
 }
 
-func TestLoadConfig_RequiresAPIKey(t *testing.T) {
-	withTempHome(t)
-	defer os.Unsetenv("OPENROUTER_API_KEY")
-	os.Unsetenv("OPENROUTER_API_KEY")
+func TestLoadConfig_CreatesEmptyAuthFile(t *testing.T) {
+	home := withTempHome(t)
 
 	_, err := LoadConfig()
-	if err == nil {
-		t.Fatal("expected error when OPENROUTER_API_KEY is not set")
-	}
-}
-
-func TestLoadConfig_WithEnvAPIKey(t *testing.T) {
-	withTempHome(t)
-	os.Setenv("OPENROUTER_API_KEY", "sk-or-v1-testkey")
-	defer os.Unsetenv("OPENROUTER_API_KEY")
-
-	cfg, err := LoadConfig()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cfg.APIKey != "sk-or-v1-testkey" {
-		t.Errorf("expected test key, got %s", cfg.APIKey)
+	data, err := os.ReadFile(filepath.Join(home, ".crobot", "auth.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(data)) != "{}" {
+		t.Fatalf("expected empty auth file, got %s", string(data))
 	}
 }
 
@@ -142,9 +133,6 @@ func TestLoadConfig_WithConfigFile(t *testing.T) {
 	cfg, err := LoadConfig()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
-	}
-	if cfg.APIKey != "sk-or-v1-from-env" {
-		t.Errorf("expected env API key, got %s", cfg.APIKey)
 	}
 	if cfg.Model != "anthropic/claude-3-5-sonnet" {
 		t.Errorf("expected file model, got %s", cfg.Model)
@@ -309,7 +297,7 @@ func TestSaveConfig_WritesOnlyRuntimeFieldsWhenCreatingFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	content := string(data)
-	for _, want := range []string{`"provider": "openrouter"`, `"model": "test/model"`, `"thinking": "none"`} {
+	for _, want := range []string{`"provider": ""`, `"model": "test/model"`, `"thinking": "none"`} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("expected %s in saved config, got %s", want, content)
 		}

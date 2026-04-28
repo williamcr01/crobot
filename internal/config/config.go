@@ -25,7 +25,6 @@ type PluginConfig struct {
 // AgentConfig is the top-level configuration for the agent.
 type AgentConfig struct {
 	Provider      string        `json:"provider"`
-	APIKey        string        `json:"apiKey,omitempty"`
 	Model         string        `json:"model"`
 	Thinking      string        `json:"thinking"`
 	SystemPrompt  string        `json:"systemPrompt,omitempty"`
@@ -35,11 +34,13 @@ type AgentConfig struct {
 	SlashCommands bool          `json:"slashCommands"`
 	Display       DisplayConfig `json:"display"`
 	Plugins       PluginConfig  `json:"plugins"`
+
+	HasAuthorizedProvider bool `json:"-"`
 }
 
 // DEFAULTS provides the base configuration before file and env overrides.
 var DEFAULTS = AgentConfig{
-	Provider: "openrouter",
+	Provider: "",
 	Thinking: "none",
 	SystemPrompt: strings.Join([]string{
 		"You are Crobot, a coding assistant. You have access to the following tools:",
@@ -75,6 +76,9 @@ func LoadConfig() (*AgentConfig, error) {
 	if err := EnsureBaseConfig(); err != nil {
 		return nil, err
 	}
+	if err := EnsureAuth(); err != nil {
+		return nil, err
+	}
 
 	// Merge from ~/.crobot/agent.config.json.
 	if data, err := os.ReadFile(configPath); err == nil {
@@ -88,9 +92,6 @@ func LoadConfig() (*AgentConfig, error) {
 		}
 		if file.Provider != "" {
 			cfg.Provider = file.Provider
-		}
-		if file.APIKey != "" {
-			cfg.APIKey = file.APIKey
 		}
 		if file.Model != "" {
 			cfg.Model = file.Model
@@ -138,9 +139,6 @@ func LoadConfig() (*AgentConfig, error) {
 	}
 
 	// Override from environment variables.
-	if v := os.Getenv("OPENROUTER_API_KEY"); v != "" {
-		cfg.APIKey = v
-	}
 	if v := os.Getenv("AGENT_MODEL"); v != "" {
 		cfg.Model = v
 	}
@@ -148,12 +146,8 @@ func LoadConfig() (*AgentConfig, error) {
 		cfg.Thinking = v
 	}
 
-	if cfg.APIKey == "" {
-		return nil, fmt.Errorf("OPENROUTER_API_KEY is required: set it in %s, .env, or environment", configPath)
-	}
-
 	// Validate provider.
-	validProviders := map[string]bool{"openrouter": true}
+	validProviders := map[string]bool{"": true, "openrouter": true}
 	if !validProviders[cfg.Provider] {
 		return nil, fmt.Errorf("unsupported provider: %q (supported: openrouter)", cfg.Provider)
 	}

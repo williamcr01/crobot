@@ -46,6 +46,22 @@ func TestHandleAgentEvent_MessageEndClearsPending(t *testing.T) {
 	}
 }
 
+func TestNewModelShowsProviderWarningWhenAuthMissing(t *testing.T) {
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil)
+
+	if len(m.messages) != 1 || m.messages[0].role != "error" || !strings.Contains(m.messages[0].content, "No provider added") {
+		t.Fatalf("expected no provider warning, got %#v", m.messages)
+	}
+}
+
+func TestNewModelDoesNotWarnWhenAuthExistsButProviderUnselected(t *testing.T) {
+	m := NewModel(&config.AgentConfig{HasAuthorizedProvider: true}, nil, nil, nil, nil, nil)
+
+	if len(m.messages) != 0 {
+		t.Fatalf("expected no startup warning, got %#v", m.messages)
+	}
+}
+
 func TestNewModelConfiguresTextareaInput(t *testing.T) {
 	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil)
 
@@ -163,7 +179,7 @@ func TestRenderMessagesHidesReasoningWhenDisabled(t *testing.T) {
 
 func TestUpdateRoutesReasoningDeltaToReasoningField(t *testing.T) {
 	m := NewModel(&config.AgentConfig{Display: config.DisplayConfig{Reasoning: true}}, nil, nil, nil, nil, nil)
-	m.messages = append(m.messages, messageItem{role: "assistant"})
+	m.messages = []messageItem{{role: "assistant"}}
 
 	updated, _ := m.Update(agentEventMsg(agent.Event{Type: "reasoning_delta", ReasoningDelta: "thinking..."}))
 	updatedModel := updated.(Model)
