@@ -9,6 +9,7 @@ import (
 
 	"crobot/internal/agent"
 	"crobot/internal/commands"
+	"crobot/internal/compaction"
 	"crobot/internal/config"
 	"crobot/internal/events"
 	"crobot/internal/prompt"
@@ -328,7 +329,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 
-			// /model: open the model picker
+			// /compact: trigger context compaction
+		if strings.HasPrefix(input, "/compact") {
+			cmd := m.handleCompactCommand(input)
+			return m, cmd
+		}
+
+		// /model: open the model picker
 			if input == "/model" {
 				m.modelPickerActive = true
 				m.modelPickerFilter = ""
@@ -428,6 +435,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case agentDoneMsg:
 		m.pending = false
+		// Check for auto-compaction after agent finishes.
+		if m.provider != nil && m.shouldAutoCompact() {
+			return m, m.runAutoCompactCmd()
+		}
 		return m, nil
 
 	case spinner.TickMsg:
@@ -1346,6 +1357,10 @@ func (m Model) renderMessages() string {
 		case "system":
 			b.WriteString(Dim.Render(msg.content))
 			b.WriteString("\n\n")
+		case "compaction":
+			b.WriteString(Dim.Render("[compaction] "))
+			b.WriteString(Dim.Render(msg.content))
+			b.WriteString("\n\n")
 		case "error":
 			b.WriteString(Red.Render("Error: " + msg.content))
 			b.WriteString("\n\n")
@@ -1379,6 +1394,126 @@ func (m *Model) refreshViewport() {
 
 // --- Agent runner goroutine ---
 
+// messageToCompactionItem converts a TUI messageItem to a compaction.MessageItem.
+func messageToCompactionItem(msg messageItem) compaction.MessageItem {
+	result := compaction.MessageItem{
+		Role:      msg.role,
+		Content:   msg.content,
+		Reasoning: msg.reasoning,
+		ToolCalls: make([]compaction.ToolRenderItem, len(msg.toolCalls)),
+	}
+	for i, tc := range msg.toolCalls {
+		result.ToolCalls[i] = compaction.ToolRenderItem{
+			Name:    tc.name,
+			CallID:  tc.callID,
+			Output:  tc.output,
+			Args:    tc.args,
+			RawArgs: tc.rawArgs,
+		}
+	}
+	return result
+}
+
+// compactionToMessageItem converts a compaction.MessageItem to a TUI messageItem.
+func compactionToMessageItem(msg compaction.MessageItem) messageItem {
+	result := messageItem{
+		role:      msg.Role,
+		content:   msg.Content,
+		reasoning: msg.Reasoning,
+		toolCalls: make([]toolRenderItem, len(msg.ToolCalls)),
+	}
+	for i, tc := range msg.ToolCalls {
+		result.toolCalls[i] = toolRenderItem{
+			name:    tc.Name,
+			callID:  tc.CallID,
+			output:  tc.Output,
+			args:    tc.Args,
+			rawArgs: tc.RawArgs,
+		}
+	}
+	return result
+}
+
+// handleCompactCommand processes a /compact command, optionally with custom instructions.
+// Returns a tea.Cmd that runs compaction asynchronously.
+func (m *Model) handleCompactCommand(input string) tea.Cmd {
+	if !compaction.CanCompact(messagesToCompaction(m.messages)) {
+		m.messages = append(m.messages, messageItem{role: "error", content: "Nothing to compact (session already compacted or empty)."})
+		m.refreshViewport()
+		m.textarea.Reset()
+		m.textarea.Focus()
+		return nil
+	}
+
+	// Extract custom instructions from "/compact <instructions>".
+	instructions := ""
+	if len(input) > 8 && input[8] == ' ' {
+		instructions = input[9:]
+	}
+
+	m.messages = append(m.messages, messageItem{role: "system", content: "Compacting context..."})
+	m.refreshViewport()
+	m.textarea.Reset()
+	m.textarea.Blur()
+
+	return m.compactCmd(instructions)
+}
+
+// compactCmd returns a tea.Cmd that runs compaction asynchronously.
+func (m *Model) compactCmd(instructions string) tea.Cmd {
+	return func() tea.Msg {
+		m.runCompaction(instructions)
+		return nil
+	}
+}
+
+// shouldAutoCompact checks whether auto-compaction should trigger.
+func (m *Model) shouldAutoCompact() bool {
+	return compaction.ShouldCompact(messagesToCompaction(m.messages), m.config.Compaction)
+}
+
+// runAutoCompactCmd returns a tea.Cmd that runs auto-compaction in the background.
+func (m *Model) runAutoCompactCmd() tea.Cmd {
+	return m.compactCmd("")
+}
+
+// runCompaction performs the compaction, updates messages, and restores focus.
+func (m *Model) runCompaction(instructions string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	compactionMsgs := messagesToCompaction(m.messages)
+	result, err := compaction.Compact(ctx, m.provider, m.config.Model, m.config.Compaction, compactionMsgs, instructions)
+	if err != nil {
+		m.messages = append(m.messages, messageItem{role: "error", content: fmt.Sprintf("Compaction failed: %v", err)})
+		m.refreshViewport()
+		m.textarea.Reset()
+		m.textarea.Focus()
+		return
+	}
+
+	// Replace messages with compacted version.
+	m.messages = make([]messageItem, len(result.NewMessages))
+	for i, msg := range result.NewMessages {
+		m.messages[i] = compactionToMessageItem(msg)
+	}
+
+	msg := fmt.Sprintf("Context compacted — %d tokens summarized.", result.TokensBefore)
+	m.messages = append(m.messages, messageItem{role: "system", content: msg})
+	m.refreshViewport()
+	m.textarea.Reset()
+	m.textarea.Focus()
+}
+
+// messagesToCompaction converts the TUI messageItem slice to compaction.MessageItem slice.
+func messagesToCompaction(msgs []messageItem) []compaction.MessageItem {
+	result := make([]compaction.MessageItem, len(msgs))
+	for i, msg := range msgs {
+		result[i] = messageToCompactionItem(msg)
+	}
+	return result
+}
+
 func (m *Model) startAgent(ctx context.Context, input string) {
 	// Capture the channel locally so this goroutine only ever touches
 	// its own instance, even if m.agentEvents is reassigned later.
@@ -1392,8 +1527,12 @@ func (m *Model) startAgent(ctx context.Context, input string) {
 	var llmMsgs []provider.Message
 	for _, msg := range m.messages {
 		switch msg.role {
-		case "user", "system":
-			llmMsgs = append(llmMsgs, provider.Message{Role: msg.role, Content: msg.content})
+		case "user", "system", "compaction":
+			role := msg.role
+			if role == "compaction" {
+				role = "system"
+			}
+			llmMsgs = append(llmMsgs, provider.Message{Role: role, Content: msg.content})
 		case "assistant":
 			llmMsg := provider.Message{Role: "assistant", Content: msg.content}
 			for _, tc := range msg.toolCalls {

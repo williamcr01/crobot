@@ -8,6 +8,14 @@ import (
 	"strings"
 )
 
+// CompactionConfig controls automatic context compaction.
+type CompactionConfig struct {
+	Enabled          bool   `json:"enabled"`
+	ReserveTokens    int    `json:"reserveTokens"`
+	KeepRecentTokens int    `json:"keepRecentTokens"`
+	Model            string `json:"model,omitempty"`
+}
+
 // PluginConfig controls WASM plugin loading and permissions.
 type PluginConfig struct {
 	Enabled     bool     `json:"enabled"`
@@ -17,17 +25,18 @@ type PluginConfig struct {
 
 // AgentConfig is the top-level configuration for the agent.
 type AgentConfig struct {
-	Provider      string       `json:"provider"`
-	Model         string       `json:"model"`
-	Thinking      string       `json:"thinking"`
-	MaxTurns      int          `json:"maxTurns"`
-	SystemPrompt  string       `json:"systemPrompt,omitempty"`
-	AppendPrompt  string       `json:"appendPrompt,omitempty"`
-	SessionDir    string       `json:"sessionDir"`
-	ShowBanner    bool         `json:"showBanner"`
-	SlashCommands bool         `json:"slashCommands"`
-	Reasoning     bool         `json:"reasoning"`
-	Plugins       PluginConfig `json:"plugins"`
+	Provider      string           `json:"provider"`
+	Model         string           `json:"model"`
+	Thinking      string           `json:"thinking"`
+	MaxTurns      int              `json:"maxTurns"`
+	SystemPrompt  string           `json:"systemPrompt,omitempty"`
+	AppendPrompt  string           `json:"appendPrompt,omitempty"`
+	SessionDir    string           `json:"sessionDir"`
+	ShowBanner    bool             `json:"showBanner"`
+	SlashCommands bool             `json:"slashCommands"`
+	Reasoning     bool             `json:"reasoning"`
+	Compaction    CompactionConfig `json:"compaction"`
+	Plugins       PluginConfig     `json:"plugins"`
 
 	HasAuthorizedProvider bool `json:"-"`
 }
@@ -40,9 +49,9 @@ var DEFAULTS = AgentConfig{
 	SystemPrompt: strings.Join([]string{
 		"You are Crobot, a coding assistant. You have access to the following tools:",
 		"file read,",
-		"file write",
-		"file edit",
-		"bash",
+		"file write,",
+		"file edit,",
+		"bash,",
 		"",
 		"Current working directory: {cwd}",
 	}, "\n"),
@@ -50,6 +59,11 @@ var DEFAULTS = AgentConfig{
 	ShowBanner:    true,
 	SlashCommands: true,
 	Reasoning:     true,
+	Compaction: CompactionConfig{
+		Enabled:          true,
+		ReserveTokens:    16384,
+		KeepRecentTokens: 20000,
+	},
 	Plugins: PluginConfig{
 		Enabled:     true,
 		Directories: []string{"~/.crobot/plugins"},
@@ -122,6 +136,20 @@ func LoadConfig() (*AgentConfig, error) {
 			}
 			cfg.Reasoning = legacy.Display.Reasoning
 		}
+		// Compaction nested merge.
+		if hasNestedKey(raw, "compaction", "enabled") {
+			cfg.Compaction.Enabled = file.Compaction.Enabled
+		}
+		if hasNestedKey(raw, "compaction", "reserveTokens") {
+			cfg.Compaction.ReserveTokens = file.Compaction.ReserveTokens
+		}
+		if hasNestedKey(raw, "compaction", "keepRecentTokens") {
+			cfg.Compaction.KeepRecentTokens = file.Compaction.KeepRecentTokens
+		}
+		if file.Compaction.Model != "" {
+			cfg.Compaction.Model = file.Compaction.Model
+		}
+
 		// Plugins nested merge.
 		if len(file.Plugins.Directories) > 0 {
 			cfg.Plugins.Directories = file.Plugins.Directories

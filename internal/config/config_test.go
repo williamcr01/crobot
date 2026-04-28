@@ -39,6 +39,15 @@ func TestDefaults(t *testing.T) {
 	if len(cfg.Plugins.Directories) != 1 || cfg.Plugins.Directories[0] != "~/.crobot/plugins" {
 		t.Errorf("expected ~/.crobot/plugins, got %v", cfg.Plugins.Directories)
 	}
+	if !cfg.Compaction.Enabled {
+		t.Error("expected compaction enabled by default")
+	}
+	if cfg.Compaction.ReserveTokens != 16384 {
+		t.Errorf("expected compaction reserveTokens 16384, got %d", cfg.Compaction.ReserveTokens)
+	}
+	if cfg.Compaction.KeepRecentTokens != 20000 {
+		t.Errorf("expected compaction keepRecentTokens 20000, got %d", cfg.Compaction.KeepRecentTokens)
+	}
 }
 
 func TestLoadConfig_BootstrapsUserConfigAndPlugins(t *testing.T) {
@@ -334,6 +343,37 @@ func TestSaveConfig_PreservesExistingUserConfig(t *testing.T) {
 		if !strings.Contains(content, want) {
 			t.Fatalf("expected %s in saved config, got %s", want, content)
 		}
+	}
+}
+
+func TestLoadConfig_CompactionSettings(t *testing.T) {
+	withTempHome(t)
+	defer os.Unsetenv("OPENROUTER_API_KEY")
+	os.Setenv("OPENROUTER_API_KEY", "sk-or-v1-test")
+	writeUserConfig(t, `{
+		"compaction": {
+			"enabled": false,
+			"reserveTokens": 8192,
+			"keepRecentTokens": 10000,
+			"model": "openai/gpt-4o-mini"
+		}
+	}`)
+
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Compaction.Enabled {
+		t.Error("expected compaction disabled")
+	}
+	if cfg.Compaction.ReserveTokens != 8192 {
+		t.Errorf("expected reserveTokens 8192, got %d", cfg.Compaction.ReserveTokens)
+	}
+	if cfg.Compaction.KeepRecentTokens != 10000 {
+		t.Errorf("expected keepRecentTokens 10000, got %d", cfg.Compaction.KeepRecentTokens)
+	}
+	if cfg.Compaction.Model != "openai/gpt-4o-mini" {
+		t.Errorf("expected compaction model openai/gpt-4o-mini, got %s", cfg.Compaction.Model)
 	}
 }
 

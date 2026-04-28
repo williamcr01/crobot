@@ -60,6 +60,12 @@ Override the default system prompt entirely:
     "reasoning": true,
     "inputStyle": "block"
   },
+  "compaction": {
+    "enabled": true,
+    "reserveTokens": 16384,
+    "keepRecentTokens": 20000,
+    "model": ""
+  },
   "plugins": {
     "enabled": true,
     "directories": ["~/.crobot/plugins"],
@@ -183,6 +189,42 @@ Valid values:
 - `"bordered"`
 - `"plain"`
 
+### `compaction.enabled`
+
+Enables automatic context compaction when the conversation exceeds the token threshold.
+
+Default: `true`.
+
+Manual compaction with `/compact` always works regardless of this setting.
+
+### `compaction.reserveTokens`
+
+Tokens reserved for the LLM's response. Compaction triggers when the estimated context exceeds `contextWindow - reserveTokens`.
+
+Default: `16384`.
+
+### `compaction.keepRecentTokens`
+
+Approximate tokens of recent conversation to preserve (not summarize) when compacting.
+
+Default: `20000`.
+
+### `compaction.model`
+
+Optional model override for summarization. When empty or unset, the current conversation model is used.
+
+Default: `""`.
+
+Example:
+
+```json
+{
+  "compaction": {
+    "model": "openai/gpt-4o-mini"
+  }
+}
+```
+
 ### `plugins.enabled`
 
 Enables plugin loading.
@@ -216,5 +258,6 @@ When changed from inside the app, Crobot auto-saves only:
 - `provider`
 - `model`
 - `thinking`
+- `compaction.model`
 
 Other settings are preserved but not automatically added or changed.

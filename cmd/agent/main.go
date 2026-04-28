@@ -211,8 +211,9 @@ func registerCommands(cmdReg *commands.Registry, cfg *config.AgentConfig) {
 	cmdReg.Register(commands.Command{
 		Name:        "compact",
 		Description: "Compact conversation context",
+		Args:        "[instructions]",
 		Handler: func(args []string) (string, error) {
-			return "Context compacted.", nil
+			return "Compacting context...", nil
 		},
 	})
 
