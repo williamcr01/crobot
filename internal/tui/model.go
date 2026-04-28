@@ -45,6 +45,7 @@ type messageItem struct {
 
 // tea messages from the agent goroutine.
 type agentEventMsg agent.Event
+type agentDoneMsg struct{}
 
 type loginResultMsg struct {
 	provider  string
@@ -270,6 +271,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 
 		case tea.KeyEsc:
+			if m.pending && m.agentCancel != nil {
+				m.agentCancel()
+				m.pending = false
+				m.textarea.Focus()
+				m.messages = append(m.messages, messageItem{role: "system", content: "Cancelled."})
+				m.refreshViewport()
+			}
 			return m, nil
 
 		case tea.KeyUp:
@@ -418,6 +426,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case agentEventMsg:
 		return m.handleAgentEvent(agent.Event(msg))
 
+	case agentDoneMsg:
+		m.pending = false
+		return m, nil
+
 	case spinner.TickMsg:
 		if m.pending {
 			var cmd tea.Cmd
@@ -459,7 +471,7 @@ func (m Model) waitForEvents() tea.Cmd {
 	return func() tea.Msg {
 		ev, ok := <-m.agentEvents
 		if !ok {
-			return nil
+			return agentDoneMsg{}
 		}
 		return agentEventMsg(ev)
 	}

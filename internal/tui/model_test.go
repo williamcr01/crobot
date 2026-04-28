@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -59,6 +60,31 @@ func TestHandleAgentEvent_ErrorClearsPending(t *testing.T) {
 	}
 	if len(m.messages) == 0 || m.messages[len(m.messages)-1].role != "error" {
 		t.Fatalf("expected error message to be appended, got %#v", m.messages)
+	}
+}
+
+func TestWaitForEvents_ReturnsAgentDoneWhenChannelClosed(t *testing.T) {
+	m := testModel()
+	close(m.agentEvents)
+
+	cmd := m.waitForEvents()
+	msg := cmd()
+
+	if _, ok := msg.(agentDoneMsg); !ok {
+		t.Fatalf("expected agentDoneMsg when channel is closed, got %T", msg)
+	}
+}
+
+func TestAgentDoneMsg_ClearsPending(t *testing.T) {
+	m := testModel()
+	m.pending = true
+	m.agentEvents = make(chan agent.Event, 1) // open channel
+
+	updated, _ := m.Update(agentDoneMsg{})
+	newModel := updated.(Model)
+
+	if newModel.pending {
+		t.Fatal("expected agentDoneMsg to clear pending")
 	}
 }
 
@@ -276,5 +302,52 @@ func TestOAuthProviderOptionUsesOpenAIOAuthID(t *testing.T) {
 	}
 	if providers[0].ID != "openai-oauth" {
 		t.Fatalf("expected openai-oauth provider ID, got %q", providers[0].ID)
+	}
+}
+
+func TestEscCancelsPendingAgent(t *testing.T) {
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	m.pending = true
+	m.agentCancel = cancel
+	m.agentEvents = make(chan agent.Event, 1)
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	updatedModel := updated.(Model)
+
+	if updatedModel.pending {
+		t.Fatal("expected ESC to clear pending")
+	}
+
+	// Verify context was cancelled.
+	select {
+	case <-ctx.Done():
+	default:
+		t.Fatal("expected context to be cancelled after ESC")
+	}
+
+	// Verify a system message was appended.
+	if len(updatedModel.messages) == 0 || updatedModel.messages[len(updatedModel.messages)-1].content != "Cancelled." {
+		t.Fatalf("expected Cancelled. system message, got %#v", updatedModel.messages)
+	}
+}
+
+func TestEscDoesNothingWhenNotPending(t *testing.T) {
+	m := NewModel(&config.AgentConfig{HasAuthorizedProvider: true}, nil, nil, nil, nil, nil, nil, nil)
+	m.ready = true
+	m.width = 80
+	m.height = 24
+	m.viewport = viewport.New(80, 20)
+
+	msgCount := len(m.messages)
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	updatedModel := updated.(Model)
+
+	if updatedModel.pending {
+		t.Fatal("expected ESC to have no effect when not pending")
+	}
+	if len(updatedModel.messages) != msgCount {
+		t.Fatalf("expected no new messages when not pending, had %d got %d", msgCount, len(updatedModel.messages))
 	}
 }
