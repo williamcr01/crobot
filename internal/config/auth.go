@@ -129,6 +129,36 @@ func RefreshOpenAIOAuth() error {
 	return SaveAuth(auth)
 }
 
+// OAuthProviders returns provider IDs that currently have OAuth credentials.
+func (a AuthConfig) OAuthProviders() []string {
+	providers := make([]string, 0)
+	if entry, ok := a["openai-oauth"]; ok && entry.Type == "oauth" && entry.Access != "" {
+		providers = append(providers, "openai-oauth")
+	}
+	if entry, ok := a["openai"]; ok && entry.Type == "oauth" && entry.Access != "" {
+		providers = append(providers, "openai-oauth")
+	}
+	return providers
+}
+
+// LogoutOAuthProvider removes locally stored OAuth credentials for provider.
+func LogoutOAuthProvider(provider string) error {
+	auth, err := LoadAuth()
+	if err != nil {
+		return err
+	}
+	switch provider {
+	case "openai-oauth":
+		delete(auth, "openai-oauth")
+		if entry, ok := auth["openai"]; ok && entry.Type == "oauth" {
+			delete(auth, "openai")
+		}
+	default:
+		delete(auth, provider)
+	}
+	return SaveAuth(auth)
+}
+
 // SaveAuth writes credentials to ~/.crobot/auth.json.
 func SaveAuth(auth AuthConfig) error {
 	path, err := AuthPath()

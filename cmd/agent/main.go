@@ -37,11 +37,16 @@ func main() {
 	var prov provider.Provider
 	cfg.HasAuthorizedProvider = auth.HasAuthorizedProvider()
 	if !cfg.HasAuthorizedProvider {
-		fmt.Fprintln(os.Stderr, "warning: No provider added. Add credentials to ~/.crobot/auth.json")
+		cfg.Provider = ""
+		cfg.Model = ""
+		_ = config.SaveConfig(cfg)
+		fmt.Fprintln(os.Stderr, "warning: No provider added. Add credentials to ~/.crobot/auth.json or use /login.")
 	} else if cfg.Provider != "" {
 		apiKey := auth.APIKey(cfg.Provider)
 		if apiKey == "" {
-			fmt.Fprintf(os.Stderr, "warning: Provider %q is not authorized in ~/.crobot/auth.json\n", cfg.Provider)
+			cfg.Provider = ""
+			cfg.Model = ""
+			_ = config.SaveConfig(cfg)
 		} else {
 			prov, err = provider.Create(cfg.Provider, apiKey)
 			if err != nil {
@@ -155,6 +160,14 @@ func registerCommands(cmdReg *commands.Registry, cfg *config.AgentConfig) {
 		Description: "Login to an OAuth provider",
 		Handler: func(args []string) (string, error) {
 			return "Use /login to open the OAuth provider picker.", nil
+		},
+	})
+
+	cmdReg.Register(commands.Command{
+		Name:        "logout",
+		Description: "Logout from an OAuth provider",
+		Handler: func(args []string) (string, error) {
+			return "Use /logout to open the OAuth provider picker.", nil
 		},
 	})
 

@@ -99,14 +99,11 @@ func isOpenAIOAuthToken(token string) bool {
 
 func openAIOAuthModels() []string {
 	return []string{
-		"gpt-5-codex",
-		"gpt-5",
-		"gpt-5-mini",
-		"gpt-5-nano",
-		"gpt-4.1",
-		"gpt-4.1-mini",
-		"gpt-4o",
-		"gpt-4o-mini",
+		"gpt-5.1",
+		"gpt-5.2",
+		"gpt-5.3",
+		"gpt-5.4",
+		"gpt-5.5",
 	}
 }
 
@@ -170,10 +167,34 @@ func (p *OpenAIProvider) buildChatRequest(req Request, stream bool) map[string]a
 		}
 		body["tools"] = tools
 	}
-	if req.Thinking != "" && req.Thinking != "none" {
-		body["reasoning_effort"] = req.Thinking
+	if effort, ok := openAIReasoningEffort(req.Model, req.Thinking); ok {
+		body["reasoning_effort"] = effort
 	}
 	return body
+}
+
+func openAIReasoningEffort(modelID, thinking string) (string, bool) {
+	if thinking == "" {
+		return "", false
+	}
+	id := modelID
+	if idx := strings.LastIndex(id, "/"); idx >= 0 {
+		id = id[idx+1:]
+	}
+
+	if (strings.HasPrefix(id, "gpt-5.2") || strings.HasPrefix(id, "gpt-5.3") || strings.HasPrefix(id, "gpt-5.4") || strings.HasPrefix(id, "gpt-5.5")) && thinking == "minimal" {
+		return "low", true
+	}
+	if id == "gpt-5.1" && thinking == "xhigh" {
+		return "high", true
+	}
+	if id == "gpt-5.1-codex-mini" {
+		if thinking == "high" || thinking == "xhigh" {
+			return "high", true
+		}
+		return "medium", true
+	}
+	return thinking, true
 }
 
 func toOpenAIToolCalls(calls []ToolCall) []map[string]any {

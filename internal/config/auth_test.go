@@ -116,6 +116,44 @@ func TestLoadAuthOpenAIApiKeyAndOAuthCanCoexist(t *testing.T) {
 	}
 }
 
+func TestLogoutOAuthProviderRemovesOpenAIOAuthAndLegacy(t *testing.T) {
+	withTempHome(t)
+	path, err := AuthPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := `{"openai":{"type":"oauth","access":"legacy"},"openai-oauth":{"type":"oauth","access":"current"},"openrouter":{"type":"apiKey","apiKey":"sk-or"}}`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	auth, err := LoadAuth()
+	if err != nil {
+		t.Fatalf("LoadAuth: %v", err)
+	}
+	providers := auth.OAuthProviders()
+	if len(providers) != 2 || providers[0] != "openai-oauth" || providers[1] != "openai-oauth" {
+		t.Fatalf("expected openai-oauth providers for current and legacy, got %#v", providers)
+	}
+
+	if err := LogoutOAuthProvider("openai-oauth"); err != nil {
+		t.Fatalf("LogoutOAuthProvider: %v", err)
+	}
+	auth, err = LoadAuth()
+	if err != nil {
+		t.Fatalf("LoadAuth: %v", err)
+	}
+	if got := auth.APIKey("openai-oauth"); got != "" {
+		t.Fatalf("expected oauth removed, got %q", got)
+	}
+	if got := auth.APIKey("openrouter"); got != "sk-or" {
+		t.Fatalf("expected openrouter preserved, got %q", got)
+	}
+}
+
 func TestLoadAuthLegacyOpenAIOAuthMapsToOpenAIOAuthProvider(t *testing.T) {
 	withTempHome(t)
 	path, err := AuthPath()

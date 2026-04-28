@@ -52,11 +52,18 @@ type loginResultMsg struct {
 	err       error
 }
 
+type logoutResultMsg struct {
+	provider string
+	err      error
+}
+
 // sessionWriter is the subset of session.Manager used by the TUI.
 type sessionWriter interface {
 	Append(rec session.Record) error
 	Path() string
 }
+
+const noProviderWarning = "No provider added. Add credentials to ~/.crobot/auth.json or use /login."
 
 // Model is the root Bubble Tea model for the agent TUI.
 type Model struct {
@@ -93,6 +100,11 @@ type Model struct {
 	loginPickerActive bool
 	loginPickerFilter string
 	loginPickerIndex  int
+
+	// Logout picker modal state
+	logoutPickerActive bool
+	logoutPickerFilter string
+	logoutPickerIndex  int
 }
 
 // NewModel creates a fully initialized TUI model.
@@ -119,7 +131,7 @@ func NewModel(
 	s := NewLoaderSpinner()
 	messages := []messageItem{}
 	if prov == nil && !cfg.HasAuthorizedProvider {
-		messages = append(messages, messageItem{role: "error", content: "No provider added. Add credentials to ~/.crobot/auth.json."})
+		messages = append(messages, messageItem{role: "error", content: noProviderWarning})
 	}
 
 	return &Model{
@@ -169,6 +181,40 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.textarea.SetWidth(msg.Width - 4)
 		return m, nil
 
+	case logoutResultMsg:
+		m.pending = false
+		m.textarea.Focus()
+		if msg.err != nil {
+			m.messages = append(m.messages, messageItem{role: "error", content: msg.err.Error()})
+		} else {
+			if m.config.Provider == msg.provider || (msg.provider == "openai-oauth" && m.config.Provider == "openai") {
+				m.provider = nil
+				m.config.Provider = ""
+				m.config.Model = ""
+				_ = config.SaveConfig(m.config)
+			}
+			m.modelReg = provider.NewModelRegistry()
+			if m.cmdReg != nil {
+				m.cmdReg.SetModelRegistry(m.modelReg)
+			}
+			auth, authErr := config.LoadAuth()
+			m.config.HasAuthorizedProvider = authErr == nil && auth.HasAuthorizedProvider()
+			if !m.config.HasAuthorizedProvider {
+				m.provider = nil
+				m.config.Provider = ""
+				m.config.Model = ""
+				_ = config.SaveConfig(m.config)
+				m.messages = append(m.messages, messageItem{role: "system", content: fmt.Sprintf("Logged out of %s", msg.provider)})
+				m.messages = append(m.messages, messageItem{role: "error", content: noProviderWarning})
+			} else if err := m.reloadAuthorizedProviders(); err != nil {
+				m.messages = append(m.messages, messageItem{role: "error", content: fmt.Sprintf("Logged out of %s; model refresh warning: %v", msg.provider, err)})
+			} else {
+				m.messages = append(m.messages, messageItem{role: "system", content: fmt.Sprintf("Logged out of %s", msg.provider)})
+			}
+		}
+		m.refreshViewport()
+		return m, nil
+
 	case loginResultMsg:
 		m.pending = false
 		m.textarea.Focus()
@@ -193,6 +239,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		// Picker modes: intercept navigation/action keys, let typing through.
+		if m.logoutPickerActive {
+			model, cmd, handled := m.handleLogoutPickerKey(msg)
+			if handled {
+				return model, cmd
+			}
+			m = model.(Model)
+		}
 		if m.loginPickerActive {
 			model, cmd, handled := m.handleLoginPickerKey(msg)
 			if handled {
@@ -287,6 +340,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 
+			// /logout: open the logged-in OAuth provider picker
+			if input == "/logout" {
+				m.logoutPickerActive = true
+				m.logoutPickerFilter = ""
+				m.logoutPickerIndex = 0
+				m.textarea.Reset()
+				m.textarea.Focus()
+				return m, nil
+			}
+
 			m.textarea.Reset()
 			m.textarea.Blur()
 
@@ -313,7 +376,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			input = expandFileRefs(m.toolReg, input)
 
 			if m.provider == nil {
-				message := "No provider added. Add credentials to ~/.crobot/auth.json."
+				message := noProviderWarning
 				if m.config.HasAuthorizedProvider {
 					message = "No provider selected. Select a provider before sending a message."
 				}
@@ -378,6 +441,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loginPickerFilter = m.textarea.Value()
 		if m.loginPickerFilter != prev {
 			m.loginPickerIndex = 0
+		}
+	}
+	if m.logoutPickerActive {
+		prev := m.logoutPickerFilter
+		m.logoutPickerFilter = m.textarea.Value()
+		if m.logoutPickerFilter != prev {
+			m.logoutPickerIndex = 0
 		}
 	}
 	m.clampCommandSuggestionIndex()
@@ -519,6 +589,12 @@ func (m Model) View() string {
 		b.WriteString(InputCursor.Render("█"))
 	} else if m.loginPickerActive {
 		b.WriteString(m.renderLoginPicker())
+		b.WriteString("\n")
+		b.WriteString(Dim.Render("filter: "))
+		b.WriteString(m.textarea.Value())
+		b.WriteString(InputCursor.Render("█"))
+	} else if m.logoutPickerActive {
+		b.WriteString(m.renderLogoutPicker())
 		b.WriteString("\n")
 		b.WriteString(Dim.Render("filter: "))
 		b.WriteString(m.textarea.Value())
@@ -846,6 +922,121 @@ func (m *Model) reloadAuthorizedProviders() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	return m.modelReg.LoadModels(ctx)
+}
+
+func (m Model) loggedInOAuthProviders() []loginProviderOption {
+	auth, err := config.LoadAuth()
+	if err != nil {
+		return nil
+	}
+	known := map[string]loginProviderOption{
+		"openai-oauth": {ID: "openai-oauth", Name: "OpenAI OAuth", Description: "ChatGPT Plus/Pro OAuth"},
+	}
+	seen := map[string]bool{}
+	filter := strings.ToLower(strings.TrimSpace(m.logoutPickerFilter))
+	var out []loginProviderOption
+	for _, id := range auth.OAuthProviders() {
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		p, ok := known[id]
+		if !ok {
+			p = loginProviderOption{ID: id, Name: id, Description: "OAuth"}
+		}
+		if filter == "" || strings.Contains(strings.ToLower(p.ID), filter) || strings.Contains(strings.ToLower(p.Name), filter) || strings.Contains(strings.ToLower(p.Description), filter) {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+func (m Model) handleLogoutPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
+	providers := m.loggedInOAuthProviders()
+	switch msg.Type {
+	case tea.KeyCtrlC:
+		m.logoutPickerActive = false
+		m.textarea.Reset()
+		m.textarea.Focus()
+		return m, tea.Quit, true
+	case tea.KeyEsc:
+		m.logoutPickerActive = false
+		m.textarea.Reset()
+		m.textarea.Focus()
+		return m, nil, true
+	case tea.KeyEnter, tea.KeyTab:
+		if len(providers) == 0 {
+			return m, nil, true
+		}
+		m.clampLogoutPickerIndex(providers)
+		selected := providers[m.logoutPickerIndex]
+		m.logoutPickerActive = false
+		m.textarea.Reset()
+		m.textarea.Blur()
+		m.pending = true
+		return m, m.logoutProviderCmd(selected.ID), true
+	case tea.KeyUp:
+		if len(providers) > 0 {
+			m.logoutPickerIndex--
+			m.clampLogoutPickerIndex(providers)
+		}
+		return m, nil, true
+	case tea.KeyDown:
+		if len(providers) > 0 {
+			m.logoutPickerIndex++
+			m.clampLogoutPickerIndex(providers)
+		}
+		return m, nil, true
+	}
+	return m, nil, false
+}
+
+func (m *Model) clampLogoutPickerIndex(providers []loginProviderOption) {
+	if len(providers) == 0 {
+		m.logoutPickerIndex = 0
+		return
+	}
+	if m.logoutPickerIndex < 0 {
+		m.logoutPickerIndex = 0
+	}
+	if m.logoutPickerIndex >= len(providers) {
+		m.logoutPickerIndex = len(providers) - 1
+	}
+}
+
+func (m Model) renderLogoutPicker() string {
+	providers := m.loggedInOAuthProviders()
+	var b strings.Builder
+	if len(providers) == 0 {
+		b.WriteString(Dim.Render("  No logged-in OAuth providers"))
+		b.WriteString("\n")
+	} else {
+		b.WriteString(Dim.Render(fmt.Sprintf("  logged-in OAuth providers (%d)", len(providers))))
+		b.WriteString("\n")
+		m.clampLogoutPickerIndex(providers)
+		for i, p := range providers {
+			prefix := "  "
+			style := Dim
+			if i == m.logoutPickerIndex {
+				prefix = "> "
+				style = UserPrompt
+			}
+			line := fmt.Sprintf("%s%s", prefix, p.Name)
+			if p.Description != "" {
+				line += Dim.Render(fmt.Sprintf("  (%s)", p.Description))
+			}
+			b.WriteString(style.Render(line))
+			b.WriteString("\n")
+		}
+	}
+	b.WriteString(Dim.Render("  esc: cancel  enter: logout  arrows: navigate  type: filter"))
+	return b.String()
+}
+
+func (m Model) logoutProviderCmd(providerID string) tea.Cmd {
+	return func() tea.Msg {
+		return logoutResultMsg{provider: providerID, err: config.LogoutOAuthProvider(providerID)}
+	}
 }
 
 func (m Model) loginProviderCmd(providerID string) tea.Cmd {

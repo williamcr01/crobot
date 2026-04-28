@@ -90,8 +90,42 @@ func TestOpenAIOAuthListModelsUsesStaticFallback(t *testing.T) {
 	if len(models) == 0 {
 		t.Fatal("expected static OAuth models")
 	}
-	if models[0] != "gpt-5-codex" {
-		t.Fatalf("expected gpt-5-codex first, got %q", models[0])
+	if models[0] != "gpt-5.1" {
+		t.Fatalf("expected gpt-5.1 first, got %q", models[0])
+	}
+	if models[len(models)-1] != "gpt-5.5" {
+		t.Fatalf("expected gpt-5.5 last, got %q", models[len(models)-1])
+	}
+}
+
+func TestOpenAIRequestMapsThinkingEffortLikePiCodex(t *testing.T) {
+	prov := &OpenAIProvider{name: "openai-oauth", apiKey: "oauth-token"}
+
+	tests := []struct {
+		model    string
+		thinking string
+		want     string
+	}{
+		{model: "gpt-5.1", thinking: "xhigh", want: "high"},
+		{model: "gpt-5.2", thinking: "minimal", want: "low"},
+		{model: "gpt-5.5", thinking: "medium", want: "medium"},
+		{model: "gpt-5.1-codex-mini", thinking: "low", want: "medium"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.model+"/"+tt.thinking, func(t *testing.T) {
+			body := prov.buildChatRequest(Request{Model: tt.model, Thinking: tt.thinking}, true)
+			if got := body["reasoning_effort"]; got != tt.want {
+				t.Fatalf("expected reasoning_effort %q, got %#v", tt.want, got)
+			}
+		})
+	}
+}
+
+func TestOpenAIRequestSendsNoneThinkingEffort(t *testing.T) {
+	prov := &OpenAIProvider{name: "openai-oauth", apiKey: "oauth-token"}
+	body := prov.buildChatRequest(Request{Model: "gpt-5.1", Thinking: "none"}, true)
+	if got := body["reasoning_effort"]; got != "none" {
+		t.Fatalf("expected reasoning_effort none, got %#v", got)
 	}
 }
 
