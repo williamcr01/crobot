@@ -50,7 +50,7 @@ var DEFAULTS = AgentConfig{
 		"",
 		"Current working directory: {cwd}",
 	}, "\n"),
-	SessionDir:    ".sessions",
+	SessionDir:    "~/.crobot/sessions",
 	ShowBanner:    true,
 	SlashCommands: true,
 	Display: DisplayConfig{
@@ -60,20 +60,31 @@ var DEFAULTS = AgentConfig{
 	},
 	Plugins: PluginConfig{
 		Enabled:     true,
-		Directories: []string{"./plugins", "~/.config/crobot/plugins"},
+		Directories: []string{"~/.crobot/plugins"},
 		Permissions: []string{"file_read", "file_write", "bash", "tool_call", "send_message"},
 	},
 }
 
-// LoadConfig loads configuration from defaults, agent.config.json, and environment variables.
+// LoadConfig loads configuration from defaults, ~/.crobot/agent.config.json, and environment variables.
 func LoadConfig() (*AgentConfig, error) {
 	cfg := DEFAULTS
+	configPath, err := ConfigPath()
+	if err != nil {
+		return nil, err
+	}
+	if err := EnsureBaseConfig(); err != nil {
+		return nil, err
+	}
 
-	// Merge from agent.config.json if present.
-	if data, err := os.ReadFile("agent.config.json"); err == nil {
+	// Merge from ~/.crobot/agent.config.json.
+	if data, err := os.ReadFile(configPath); err == nil {
 		var file AgentConfig
 		if err := json.Unmarshal(data, &file); err != nil {
-			return nil, fmt.Errorf("invalid agent.config.json: %w", err)
+			return nil, fmt.Errorf("invalid %s: %w", configPath, err)
+		}
+		var raw map[string]json.RawMessage
+		if err := json.Unmarshal(data, &raw); err != nil {
+			return nil, fmt.Errorf("invalid %s: %w", configPath, err)
 		}
 		if file.Provider != "" {
 			cfg.Provider = file.Provider
@@ -96,10 +107,10 @@ func LoadConfig() (*AgentConfig, error) {
 		if file.SessionDir != "" {
 			cfg.SessionDir = file.SessionDir
 		}
-		if _, ok := boolFieldSet(file.ShowBanner, "showBanner"); ok {
+		if hasKey(raw, "showBanner") {
 			cfg.ShowBanner = file.ShowBanner
 		}
-		if _, ok := boolFieldSet(file.SlashCommands, "slashCommands"); ok {
+		if hasKey(raw, "slashCommands") {
 			cfg.SlashCommands = file.SlashCommands
 		}
 		// Display nested merge.
@@ -109,7 +120,7 @@ func LoadConfig() (*AgentConfig, error) {
 		if file.Display.InputStyle != "" {
 			cfg.Display.InputStyle = file.Display.InputStyle
 		}
-		if _, ok := boolFieldSet(file.Display.Reasoning, "display.reasoning"); ok {
+		if hasNestedKey(raw, "display", "reasoning") {
 			cfg.Display.Reasoning = file.Display.Reasoning
 		}
 		// Plugins nested merge.
@@ -138,7 +149,7 @@ func LoadConfig() (*AgentConfig, error) {
 	}
 
 	if cfg.APIKey == "" {
-		return nil, fmt.Errorf("OPENROUTER_API_KEY is required: set it in agent.config.json, .env, or environment")
+		return nil, fmt.Errorf("OPENROUTER_API_KEY is required: set it in %s, .env, or environment", configPath)
 	}
 
 	// Validate provider.
@@ -161,31 +172,37 @@ func LoadConfig() (*AgentConfig, error) {
 		return nil, fmt.Errorf("invalid thinking: %q (valid: none, minimal, low, medium, high, xhigh)", cfg.Thinking)
 	}
 
-	// Expand ~ in plugin directories.
+	if cfg.SessionDir, err = expandHome(cfg.SessionDir); err != nil {
+		return nil, err
+	}
 	for i, dir := range cfg.Plugins.Directories {
-		if strings.HasPrefix(dir, "~/") {
-			home, err := os.UserHomeDir()
-			if err != nil {
-				return nil, fmt.Errorf("cannot resolve home directory: %w", err)
-			}
-			cfg.Plugins.Directories[i] = filepath.Join(home, dir[2:])
+		cfg.Plugins.Directories[i], err = expandHome(dir)
+		if err != nil {
+			return nil, err
 		}
 	}
 
 	return &cfg, nil
 }
 
-// SaveConfig writes only runtime-selected values to agent.config.json.
+// SaveConfig writes only runtime-selected values to ~/.crobot/agent.config.json.
 // It preserves existing user-authored config and only updates provider, model,
 // and thinking so defaults are not expanded into the file.
 func SaveConfig(cfg *AgentConfig) error {
+	configPath, err := ConfigPath()
+	if err != nil {
+		return err
+	}
+	if err := EnsureBaseConfig(); err != nil {
+		return err
+	}
 	raw := map[string]any{}
-	if data, err := os.ReadFile("agent.config.json"); err == nil {
+	if data, err := os.ReadFile(configPath); err == nil {
 		if err := json.Unmarshal(data, &raw); err != nil {
-			return fmt.Errorf("invalid agent.config.json: %w", err)
+			return fmt.Errorf("invalid %s: %w", configPath, err)
 		}
 	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("read agent.config.json: %w", err)
+		return fmt.Errorf("read %s: %w", configPath, err)
 	}
 
 	raw["provider"] = cfg.Provider
@@ -194,30 +211,86 @@ func SaveConfig(cfg *AgentConfig) error {
 
 	data, err := json.MarshalIndent(raw, "", "  ")
 	if err != nil {
-		return fmt.Errorf("marshal agent.config.json: %w", err)
+		return fmt.Errorf("marshal %s: %w", configPath, err)
 	}
 	data = append(data, '\n')
-	if err := os.WriteFile("agent.config.json", data, 0o644); err != nil {
-		return fmt.Errorf("write agent.config.json: %w", err)
+	if err := os.WriteFile(configPath, data, 0o644); err != nil {
+		return fmt.Errorf("write %s: %w", configPath, err)
 	}
 	return nil
 }
 
-// boolFieldSet checks whether a bool field was explicitly set in JSON.
-// This is a heuristic: for top-level fields, we compare to their zero value.
-// The caller should pass the field name for context. We use a simple approach:
-// we return true for "ok" when the field differs from the default zero-state
-// of a JSON bool (which is false). This works because the JSON unmarshaller
-// sets the field to false for missing keys AND for explicit false, so we can't
-// distinguish. As a practical compromise, we always apply file overrides
-// for bool fields when the struct has been merged.
-//
-// For the nested display.reasoning case, we just check the enclosing DisplayConfig
-// was provided. This is a pragmatic heuristic.
-func boolFieldSet(val bool, field string) (bool, bool) {
-	_ = val
-	_ = field
-	return true, true
+func expandHome(path string) (string, error) {
+	if strings.HasPrefix(path, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("cannot resolve home directory: %w", err)
+		}
+		return filepath.Join(home, path[2:]), nil
+	}
+	return path, nil
+}
+
+// ConfigDir returns the Crobot user configuration directory.
+func ConfigDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("cannot resolve home directory: %w", err)
+	}
+	return filepath.Join(home, ".crobot"), nil
+}
+
+// ConfigPath returns the Crobot user configuration file path.
+func ConfigPath() (string, error) {
+	dir, err := ConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "agent.config.json"), nil
+}
+
+// EnsureBaseConfig creates ~/.crobot, ~/.crobot/plugins, and the base config file when missing.
+func EnsureBaseConfig() error {
+	dir, err := ConfigDir()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "plugins"), 0o755); err != nil {
+		return fmt.Errorf("create plugin directory: %w", err)
+	}
+	path := filepath.Join(dir, "agent.config.json")
+	if _, err := os.Stat(path); err == nil {
+		return nil
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("stat %s: %w", path, err)
+	}
+	data, err := json.MarshalIndent(map[string]any{}, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal base config: %w", err)
+	}
+	data = append(data, '\n')
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	return nil
+}
+
+func hasKey(raw map[string]json.RawMessage, key string) bool {
+	_, ok := raw[key]
+	return ok
+}
+
+func hasNestedKey(raw map[string]json.RawMessage, parent, key string) bool {
+	parentRaw, ok := raw[parent]
+	if !ok {
+		return false
+	}
+	var nested map[string]json.RawMessage
+	if err := json.Unmarshal(parentRaw, &nested); err != nil {
+		return false
+	}
+	_, ok = nested[key]
+	return ok
 }
 
 // loadDotEnv reads a .env file and sets environment variables.

@@ -101,7 +101,8 @@ func TestViewShowsProviderModelAndThinkingAboveInput(t *testing.T) {
 
 func TestTabCyclesThinkingLevels(t *testing.T) {
 	withTempWorkingDir(t)
-	m := NewModel(&config.AgentConfig{Thinking: "none"}, nil, nil, nil, nil, nil)
+	t.Setenv("HOME", t.TempDir())
+	m := NewModel(&config.AgentConfig{Provider: "openrouter", Thinking: "none"}, nil, nil, nil, nil, nil)
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	updatedModel := updated.(Model)
@@ -109,7 +110,11 @@ func TestTabCyclesThinkingLevels(t *testing.T) {
 	if updatedModel.config.Thinking != "minimal" {
 		t.Fatalf("expected thinking to cycle to minimal, got %q", updatedModel.config.Thinking)
 	}
-	data, err := os.ReadFile("agent.config.json")
+	configPath, err := config.ConfigPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(configPath)
 	if err != nil {
 		t.Fatalf("expected agent.config.json to be written: %v", err)
 	}

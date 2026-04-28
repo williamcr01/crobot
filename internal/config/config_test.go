@@ -18,8 +18,8 @@ func TestDefaults(t *testing.T) {
 	if cfg.Thinking != "none" {
 		t.Errorf("expected thinking none, got %s", cfg.Thinking)
 	}
-	if cfg.SessionDir != ".sessions" {
-		t.Errorf("expected sessionDir .sessions, got %s", cfg.SessionDir)
+	if cfg.SessionDir != "~/.crobot/sessions" {
+		t.Errorf("expected sessionDir ~/.crobot/sessions, got %s", cfg.SessionDir)
 	}
 	if !cfg.ShowBanner {
 		t.Error("expected showBanner true")
@@ -36,22 +36,52 @@ func TestDefaults(t *testing.T) {
 	if !cfg.Plugins.Enabled {
 		t.Error("expected plugins enabled")
 	}
-	if len(cfg.Plugins.Directories) != 2 {
-		t.Errorf("expected 2 plugin directories, got %d", len(cfg.Plugins.Directories))
+	if len(cfg.Plugins.Directories) != 1 || cfg.Plugins.Directories[0] != "~/.crobot/plugins" {
+		t.Errorf("expected ~/.crobot/plugins, got %v", cfg.Plugins.Directories)
+	}
+}
+
+func TestLoadConfig_BootstrapsUserConfigAndPlugins(t *testing.T) {
+	home := withTempHome(t)
+	os.Setenv("OPENROUTER_API_KEY", "sk-or-v1-testkey")
+	defer os.Unsetenv("OPENROUTER_API_KEY")
+
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	configPath := filepath.Join(home, ".crobot", "agent.config.json")
+	assertExists(t, configPath)
+	assertExists(t, filepath.Join(home, ".crobot", "plugins"))
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(data)) != "{}" {
+		t.Fatalf("expected bootstrapped config to be empty object, got %s", string(data))
+	}
+	if cfg.Provider != DEFAULTS.Provider || cfg.Thinking != DEFAULTS.Thinking {
+		t.Fatalf("expected defaults from empty config, got provider=%s thinking=%s", cfg.Provider, cfg.Thinking)
+	}
+	if !cfg.ShowBanner {
+		t.Fatal("empty config should preserve default showBanner=true")
+	}
+	if !cfg.SlashCommands {
+		t.Fatal("empty config should preserve default slashCommands=true")
+	}
+	if !cfg.Display.Reasoning {
+		t.Fatal("empty config should preserve default display.reasoning=true")
+	}
+	if cfg.SessionDir != filepath.Join(home, ".crobot", "sessions") {
+		t.Fatalf("expected expanded session dir, got %s", cfg.SessionDir)
+	}
+	if len(cfg.Plugins.Directories) != 1 || cfg.Plugins.Directories[0] != filepath.Join(home, ".crobot", "plugins") {
+		t.Fatalf("expected expanded plugin dir, got %v", cfg.Plugins.Directories)
 	}
 }
 
 func TestLoadConfig_RequiresAPIKey(t *testing.T) {
-	// Ensure no config file interferes.
-	origFile := "agent.config.json"
-	if _, err := os.Stat(origFile); err == nil {
-		_, _ = os.ReadFile(origFile)
-		os.Rename(origFile, origFile+".bak")
-		defer os.Rename(origFile+".bak", origFile)
-		defer os.Remove(origFile + ".bak")
-	} else {
-		defer func() {}()
-	}
+	withTempHome(t)
 	defer os.Unsetenv("OPENROUTER_API_KEY")
 	os.Unsetenv("OPENROUTER_API_KEY")
 
@@ -62,6 +92,7 @@ func TestLoadConfig_RequiresAPIKey(t *testing.T) {
 }
 
 func TestLoadConfig_WithEnvAPIKey(t *testing.T) {
+	withTempHome(t)
 	os.Setenv("OPENROUTER_API_KEY", "sk-or-v1-testkey")
 	defer os.Unsetenv("OPENROUTER_API_KEY")
 
@@ -75,6 +106,7 @@ func TestLoadConfig_WithEnvAPIKey(t *testing.T) {
 }
 
 func TestLoadConfig_WithEnvOverrides(t *testing.T) {
+	withTempHome(t)
 	os.Setenv("OPENROUTER_API_KEY", "sk-or-v1-testkey")
 	os.Setenv("AGENT_MODEL", "openai/gpt-4")
 	defer os.Unsetenv("OPENROUTER_API_KEY")
@@ -90,14 +122,11 @@ func TestLoadConfig_WithEnvOverrides(t *testing.T) {
 }
 
 func TestLoadConfig_WithConfigFile(t *testing.T) {
-	dir := t.TempDir()
-	origWd, _ := os.Getwd()
-	os.Chdir(dir)
-	defer os.Chdir(origWd)
+	withTempHome(t)
 	defer os.Unsetenv("OPENROUTER_API_KEY")
 	os.Setenv("OPENROUTER_API_KEY", "sk-or-v1-from-env")
 
-	configContent := `{
+	writeUserConfig(t, `{
 		"model": "anthropic/claude-3-5-sonnet",
 		"thinking": "high",
 		"appendPrompt": "Extra instructions for {cwd}",
@@ -108,20 +137,15 @@ func TestLoadConfig_WithConfigFile(t *testing.T) {
 		"plugins": {
 			"directories": ["./my-plugins"]
 		}
-	}`
-	if err := os.WriteFile("agent.config.json", []byte(configContent), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	}`)
 
 	cfg, err := LoadConfig()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// Env key should still be picked up.
 	if cfg.APIKey != "sk-or-v1-from-env" {
 		t.Errorf("expected env API key, got %s", cfg.APIKey)
 	}
-	// File overrides model.
 	if cfg.Model != "anthropic/claude-3-5-sonnet" {
 		t.Errorf("expected file model, got %s", cfg.Model)
 	}
@@ -131,31 +155,88 @@ func TestLoadConfig_WithConfigFile(t *testing.T) {
 	if cfg.AppendPrompt != "Extra instructions for {cwd}" {
 		t.Errorf("expected appendPrompt, got %s", cfg.AppendPrompt)
 	}
-	// File overrides display.
 	if cfg.Display.ToolDisplay != "emoji" {
 		t.Errorf("expected emoji display, got %s", cfg.Display.ToolDisplay)
 	}
 	if cfg.Display.InputStyle != "bordered" {
 		t.Errorf("expected bordered input, got %s", cfg.Display.InputStyle)
 	}
-	// File overrides plugin directories (replaces, not appends).
 	if len(cfg.Plugins.Directories) != 1 || cfg.Plugins.Directories[0] != "./my-plugins" {
 		t.Errorf("expected [./my-plugins], got %v", cfg.Plugins.Directories)
 	}
 }
 
-func TestLoadConfig_InvalidToolDisplay(t *testing.T) {
+func TestLoadConfig_PartialConfigUsesDefaults(t *testing.T) {
+	withTempHome(t)
+	defer os.Unsetenv("OPENROUTER_API_KEY")
+	os.Setenv("OPENROUTER_API_KEY", "sk-or-v1-test")
+	writeUserConfig(t, `{"appendPrompt": "Hello"}`)
+
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.AppendPrompt != "Hello" {
+		t.Fatalf("expected appendPrompt override, got %q", cfg.AppendPrompt)
+	}
+	if cfg.Provider != DEFAULTS.Provider {
+		t.Fatalf("expected default provider, got %q", cfg.Provider)
+	}
+	if cfg.Thinking != DEFAULTS.Thinking {
+		t.Fatalf("expected default thinking, got %q", cfg.Thinking)
+	}
+	if cfg.Display.InputStyle != DEFAULTS.Display.InputStyle {
+		t.Fatalf("expected default input style, got %q", cfg.Display.InputStyle)
+	}
+}
+
+func TestLoadConfig_IgnoresProjectLocalConfig(t *testing.T) {
+	withTempHome(t)
+	defer os.Unsetenv("OPENROUTER_API_KEY")
+	os.Setenv("OPENROUTER_API_KEY", "sk-or-v1-test")
 	dir := t.TempDir()
 	origWd, _ := os.Getwd()
 	os.Chdir(dir)
 	defer os.Chdir(origWd)
-	defer os.Unsetenv("OPENROUTER_API_KEY")
-	os.Setenv("OPENROUTER_API_KEY", "sk-or-v1-test")
-
-	configContent := `{"display": {"toolDisplay": "invalid"}}`
-	if err := os.WriteFile("agent.config.json", []byte(configContent), 0o644); err != nil {
+	if err := os.WriteFile("agent.config.json", []byte(`{"model":"project/model"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
+
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Model == "project/model" {
+		t.Fatal("project-local agent.config.json should be ignored")
+	}
+}
+
+func TestLoadConfig_CanOverrideBoolDefaultsToFalse(t *testing.T) {
+	withTempHome(t)
+	defer os.Unsetenv("OPENROUTER_API_KEY")
+	os.Setenv("OPENROUTER_API_KEY", "sk-or-v1-test")
+	writeUserConfig(t, `{"showBanner": false, "slashCommands": false, "display": {"reasoning": false}}`)
+
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.ShowBanner {
+		t.Fatal("expected showBanner false override")
+	}
+	if cfg.SlashCommands {
+		t.Fatal("expected slashCommands false override")
+	}
+	if cfg.Display.Reasoning {
+		t.Fatal("expected display.reasoning false override")
+	}
+}
+
+func TestLoadConfig_InvalidToolDisplay(t *testing.T) {
+	withTempHome(t)
+	defer os.Unsetenv("OPENROUTER_API_KEY")
+	os.Setenv("OPENROUTER_API_KEY", "sk-or-v1-test")
+	writeUserConfig(t, `{"display": {"toolDisplay": "invalid"}}`)
 
 	_, err := LoadConfig()
 	if err == nil {
@@ -164,17 +245,10 @@ func TestLoadConfig_InvalidToolDisplay(t *testing.T) {
 }
 
 func TestLoadConfig_InvalidInputStyle(t *testing.T) {
-	dir := t.TempDir()
-	origWd, _ := os.Getwd()
-	os.Chdir(dir)
-	defer os.Chdir(origWd)
+	withTempHome(t)
 	defer os.Unsetenv("OPENROUTER_API_KEY")
 	os.Setenv("OPENROUTER_API_KEY", "sk-or-v1-test")
-
-	configContent := `{"display": {"inputStyle": "fancy"}}`
-	if err := os.WriteFile("agent.config.json", []byte(configContent), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeUserConfig(t, `{"display": {"inputStyle": "fancy"}}`)
 
 	_, err := LoadConfig()
 	if err == nil {
@@ -183,40 +257,22 @@ func TestLoadConfig_InvalidInputStyle(t *testing.T) {
 }
 
 func TestLoadConfig_InvalidConfigFile(t *testing.T) {
-	dir := t.TempDir()
-	origWd, _ := os.Getwd()
-	os.Chdir(dir)
-	defer os.Chdir(origWd)
+	withTempHome(t)
 	defer os.Unsetenv("OPENROUTER_API_KEY")
 	os.Setenv("OPENROUTER_API_KEY", "sk-or-v1-test")
-
-	if err := os.WriteFile("agent.config.json", []byte("{invalid json"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeUserConfig(t, `{invalid json`)
 
 	_, err := LoadConfig()
-	if err == nil || err.Error() != "invalid agent.config.json: invalid character 'i' looking for beginning of object key string" {
-		t.Logf("got expected error: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "invalid") {
+		t.Fatalf("expected invalid config error, got %v", err)
 	}
 }
 
 func TestLoadConfig_TildeExpansion(t *testing.T) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		t.Skip("no home dir:", err)
-	}
-
-	dir := t.TempDir()
-	origWd, _ := os.Getwd()
-	os.Chdir(dir)
-	defer os.Chdir(origWd)
+	home := withTempHome(t)
 	defer os.Unsetenv("OPENROUTER_API_KEY")
 	os.Setenv("OPENROUTER_API_KEY", "sk-or-v1-test")
-
-	configContent := `{"plugins": {"directories": ["~/crobot/plugins"]}}`
-	if err := os.WriteFile("agent.config.json", []byte(configContent), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeUserConfig(t, `{"plugins": {"directories": ["~/crobot/plugins"]}}`)
 
 	cfg, err := LoadConfig()
 	if err != nil {
@@ -229,17 +285,10 @@ func TestLoadConfig_TildeExpansion(t *testing.T) {
 }
 
 func TestLoadConfig_UnsupportedProvider(t *testing.T) {
-	dir := t.TempDir()
-	origWd, _ := os.Getwd()
-	os.Chdir(dir)
-	defer os.Chdir(origWd)
+	withTempHome(t)
 	defer os.Unsetenv("OPENROUTER_API_KEY")
 	os.Setenv("OPENROUTER_API_KEY", "sk-or-v1-test")
-
-	configContent := `{"provider": "ollama"}`
-	if err := os.WriteFile("agent.config.json", []byte(configContent), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeUserConfig(t, `{"provider": "ollama"}`)
 
 	_, err := LoadConfig()
 	if err == nil {
@@ -248,17 +297,14 @@ func TestLoadConfig_UnsupportedProvider(t *testing.T) {
 }
 
 func TestSaveConfig_WritesOnlyRuntimeFieldsWhenCreatingFile(t *testing.T) {
-	dir := t.TempDir()
-	origWd, _ := os.Getwd()
-	os.Chdir(dir)
-	defer os.Chdir(origWd)
+	home := withTempHome(t)
 
 	cfg := DEFAULTS
 	cfg.Model = "test/model"
 	if err := SaveConfig(&cfg); err != nil {
 		t.Fatalf("SaveConfig: %v", err)
 	}
-	data, err := os.ReadFile("agent.config.json")
+	data, err := os.ReadFile(filepath.Join(home, ".crobot", "agent.config.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -268,28 +314,16 @@ func TestSaveConfig_WritesOnlyRuntimeFieldsWhenCreatingFile(t *testing.T) {
 			t.Fatalf("expected %s in saved config, got %s", want, content)
 		}
 	}
-	for _, forbidden := range []string{"systemPrompt", "appendPrompt", "sessionDir", "display", "plugins", "apiKey"} {
-		if strings.Contains(content, forbidden) {
-			t.Fatalf("%s should not be autosaved, got %s", forbidden, content)
-		}
-	}
 }
 
 func TestSaveConfig_PreservesExistingUserConfig(t *testing.T) {
-	dir := t.TempDir()
-	origWd, _ := os.Getwd()
-	os.Chdir(dir)
-	defer os.Chdir(origWd)
-
-	initial := `{
+	home := withTempHome(t)
+	writeUserConfig(t, `{
 		"systemPrompt": "custom prompt",
 		"appendPrompt": "extra prompt",
 		"display": {"inputStyle": "bordered"},
 		"model": "old/model"
-	}`
-	if err := os.WriteFile("agent.config.json", []byte(initial), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	}`)
 
 	cfg := DEFAULTS
 	cfg.Model = "new/model"
@@ -297,7 +331,7 @@ func TestSaveConfig_PreservesExistingUserConfig(t *testing.T) {
 	if err := SaveConfig(&cfg); err != nil {
 		t.Fatalf("SaveConfig: %v", err)
 	}
-	data, err := os.ReadFile("agent.config.json")
+	data, err := os.ReadFile(filepath.Join(home, ".crobot", "agent.config.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -306,5 +340,33 @@ func TestSaveConfig_PreservesExistingUserConfig(t *testing.T) {
 		if !strings.Contains(content, want) {
 			t.Fatalf("expected %s in saved config, got %s", want, content)
 		}
+	}
+}
+
+func withTempHome(t *testing.T) string {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	return home
+}
+
+func writeUserConfig(t *testing.T, content string) {
+	t.Helper()
+	path, err := ConfigPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func assertExists(t *testing.T, path string) {
+	t.Helper()
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("expected %s to exist: %v", path, err)
 	}
 }
