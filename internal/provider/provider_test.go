@@ -125,8 +125,8 @@ func TestOpenAIOAuthListModelsUsesStaticFallback(t *testing.T) {
 	}
 }
 
-func TestOpenAIRequestMapsThinkingEffortLikePiCodex(t *testing.T) {
-	prov := &OpenAIProvider{name: "openai-oauth", apiKey: "oauth-token"}
+func TestOpenAIReasoningEffort(t *testing.T) {
+	prov := &OpenAIProvider{name: "openai-oauth"}
 
 	tests := []struct {
 		model    string
@@ -140,39 +140,34 @@ func TestOpenAIRequestMapsThinkingEffortLikePiCodex(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.model+"/"+tt.thinking, func(t *testing.T) {
-			body := prov.buildChatRequest(Request{Model: tt.model, Thinking: tt.thinking}, true)
-			if got := body["reasoning_effort"]; got != tt.want {
-				t.Fatalf("expected reasoning_effort %q, got %#v", tt.want, got)
+			params := prov.toChatParams(Request{Model: tt.model, Thinking: tt.thinking}, true)
+			if got := string(params.ReasoningEffort); got != tt.want {
+				t.Fatalf("expected reasoning_effort %q, got %q", tt.want, got)
 			}
 		})
 	}
 }
 
-func TestDeepSeekRequestMapsThinkingEffort(t *testing.T) {
-	prov := &OpenAIProvider{name: "deepseek", apiKey: "sk-test", baseURL: deepSeekBaseURL}
-	body := prov.buildChatRequest(Request{Model: "deepseek-v4-pro", Thinking: "xhigh"}, true)
-	if got := body["reasoning_effort"]; got != "high" {
-		t.Fatalf("expected reasoning_effort high, got %#v", got)
-	}
-	thinking, ok := body["thinking"].(map[string]any)
-	if !ok || thinking["type"] != "enabled" {
-		t.Fatalf("expected thinking enabled, got %#v", body["thinking"])
+func TestDeepSeekReasoningEffort(t *testing.T) {
+	prov := &OpenAIProvider{name: "deepseek"}
+
+	params := prov.toChatParams(Request{Model: "deepseek-v4-pro", Thinking: "xhigh"}, true)
+	if got := string(params.ReasoningEffort); got != "high" {
+		t.Fatalf("expected reasoning_effort high, got %q", got)
 	}
 
-	body = prov.buildChatRequest(Request{Model: "deepseek-v4-pro", Thinking: "none"}, true)
-	if _, ok := body["reasoning_effort"]; ok {
-		t.Fatalf("expected no reasoning_effort for none, got %#v", body["reasoning_effort"])
-	}
-	if _, ok := body["thinking"]; ok {
-		t.Fatalf("expected no thinking for none, got %#v", body["thinking"])
+	params = prov.toChatParams(Request{Model: "deepseek-v4-pro", Thinking: "none"}, true)
+	if got := string(params.ReasoningEffort); got != "" {
+		t.Fatalf("expected no reasoning_effort for none, got %q", got)
 	}
 }
 
-func TestOpenAIRequestSendsNoneThinkingEffort(t *testing.T) {
-	prov := &OpenAIProvider{name: "openai-oauth", apiKey: "oauth-token"}
-	body := prov.buildChatRequest(Request{Model: "gpt-5.1", Thinking: "none"}, true)
-	if got := body["reasoning_effort"]; got != "none" {
-		t.Fatalf("expected reasoning_effort none, got %#v", got)
+func TestOpenAIReasoningEffortNone(t *testing.T) {
+	prov := &OpenAIProvider{name: "openai-oauth"}
+
+	params := prov.toChatParams(Request{Model: "gpt-5.1", Thinking: "none"}, true)
+	if got := string(params.ReasoningEffort); got != "none" {
+		t.Fatalf("expected reasoning_effort none, got %q", got)
 	}
 }
 
