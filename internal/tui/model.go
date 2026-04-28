@@ -82,7 +82,8 @@ func NewModel(
 	sess sessionWriter,
 ) *Model {
 	ta := textarea.New()
-	ta.Placeholder = "Type a message..."
+	ta.Prompt = ""
+	ta.Placeholder = ""
 	ta.SetWidth(80)
 	ta.SetHeight(1)
 	ta.Focus()
@@ -382,18 +383,27 @@ func (m Model) View() string {
 		b.WriteString("\n")
 	}
 
+	input := m.renderInputView()
 	switch m.config.Display.InputStyle {
 	case "block":
-		b.WriteString(renderBlockInput(m.width, m.textarea.Value()))
+		b.WriteString(renderBlockInput(m.width, input))
 	case "bordered":
-		b.WriteString(renderBorderedInput(m.width, m.textarea.Value()))
+		b.WriteString(renderBorderedInput(m.width, input))
 	default:
-		b.WriteString(UserCaret.Render("> ") + m.textarea.Value())
+		b.WriteString(UserCaret.Render("> ") + input)
 	}
 	b.WriteString("\n")
 	b.WriteString(Dim.Render(compactCwd()))
 
 	return b.String()
+}
+
+func (m Model) renderInputView() string {
+	value := m.textarea.Value()
+	if m.pending {
+		return value
+	}
+	return value + InputCursor.Render("█")
 }
 
 func (m Model) commandSuggestions() []commands.Command {

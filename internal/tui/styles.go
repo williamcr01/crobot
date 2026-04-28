@@ -30,6 +30,7 @@ var (
 	// Message styles.
 	UserPrompt  = lipgloss.NewStyle().Foreground(lipgloss.Color("#93c5fd"))
 	UserCaret   = lipgloss.NewStyle().Foreground(lipgloss.Color("#22c55e"))
+	InputCursor = lipgloss.NewStyle().Foreground(lipgloss.Color("#ffffff"))
 	ErrorMessage = Red.Copy()
 )
 
