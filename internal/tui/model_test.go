@@ -9,6 +9,7 @@ import (
 
 	"crobot/internal/agent"
 	"crobot/internal/config"
+	"crobot/internal/provider"
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -190,6 +191,44 @@ func TestTabDoesNotCycleThinkingWhenPending(t *testing.T) {
 
 	if updatedModel.config.Thinking != "none" {
 		t.Fatalf("expected pending tab to leave thinking unchanged, got %q", updatedModel.config.Thinking)
+	}
+}
+
+func TestSelectModelRecreatesProviderWhenProviderChanges(t *testing.T) {
+	deepseek, err := provider.Create("deepseek", "sk-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := NewModel(&config.AgentConfig{Provider: "deepseek", Model: "deepseek-v4-pro"}, deepseek, nil, nil, nil, nil, nil, func(name string) string {
+		return map[string]string{"openrouter": "sk-or-test", "deepseek": "sk-test"}[name]
+	})
+
+	m.selectModel("openrouter", "openai/gpt-4o")
+
+	if m.provider == nil {
+		t.Fatal("expected provider to be recreated")
+	}
+	if got := m.provider.Name(); got != "openrouter" {
+		t.Fatalf("expected openrouter provider after switching model, got %q", got)
+	}
+}
+
+func TestSelectModelClearsStaleProviderWhenNewProviderUnauthorized(t *testing.T) {
+	deepseek, err := provider.Create("deepseek", "sk-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := NewModel(&config.AgentConfig{Provider: "deepseek", Model: "deepseek-v4-pro"}, deepseek, nil, nil, nil, nil, nil, func(name string) string {
+		if name == "deepseek" {
+			return "sk-test"
+		}
+		return ""
+	})
+
+	m.selectModel("openrouter", "openai/gpt-4o")
+
+	if m.provider != nil {
+		t.Fatalf("expected stale provider to be cleared, got %q", m.provider.Name())
 	}
 }
 

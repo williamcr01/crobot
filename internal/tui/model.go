@@ -916,6 +916,7 @@ func (m *Model) reloadAuthorizedProviders() error {
 	if err != nil {
 		return err
 	}
+	m.provider = nil
 	for _, providerName := range []string{"openrouter", "openai", "openai-oauth", "deepseek"} {
 		apiKey := auth.APIKey(providerName)
 		if apiKey == "" {
@@ -1156,14 +1157,18 @@ func (m *Model) selectModel(providerName, modelID string) {
 	m.config.Model = modelID
 	_ = config.SaveConfig(m.config)
 
-	// Lazy-create provider if not set yet.
-	if m.provider == nil && m.apiKeyFor != nil {
-		apiKey := m.apiKeyFor(m.config.Provider)
-		if apiKey != "" {
-			prov, err := provider.Create(m.config.Provider, apiKey)
-			if err == nil {
-				m.provider = prov
-				m.config.HasAuthorizedProvider = true
+	// Create the provider for the selected model. If the provider changed,
+	// discard the old client so requests do not go to a stale endpoint.
+	if m.provider == nil || m.provider.Name() != m.config.Provider {
+		m.provider = nil
+		if m.apiKeyFor != nil {
+			apiKey := m.apiKeyFor(m.config.Provider)
+			if apiKey != "" {
+				prov, err := provider.Create(m.config.Provider, apiKey)
+				if err == nil {
+					m.provider = prov
+					m.config.HasAuthorizedProvider = true
+				}
 			}
 		}
 	}
