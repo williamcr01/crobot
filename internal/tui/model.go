@@ -1732,7 +1732,7 @@ func (m *Model) startAgent(ctx context.Context, input string) {
 			}
 			llmMsgs = append(llmMsgs, provider.Message{Role: role, Content: msg.content})
 		case "assistant":
-			llmMsg := provider.Message{Role: "assistant", Content: msg.content}
+			llmMsg := provider.Message{Role: "assistant", Content: msg.content, ReasoningContent: msg.reasoning}
 			for _, tc := range msg.toolCalls {
 				if tc.callID != "" {
 					llmMsg.ToolCalls = append(llmMsg.ToolCalls, provider.ToolCall{
@@ -2057,7 +2057,9 @@ func wrapLine(line string, width int) string {
 			continue
 		}
 
-		if line[pos] == ' ' {
+		// Advance one rune.
+		r, size := decodeRune(line, pos)
+		if r == ' ' {
 			lastSpace = pos
 		}
 		visPos++
@@ -2071,7 +2073,7 @@ func wrapLine(line string, width int) string {
 				visPos = 0
 				lastSpace = -1
 			} else {
-				// Force break at the character that overflowed.
+				// Force break at rune boundary (before the character that overflowed).
 				b.WriteString(line[lineStart:pos])
 				b.WriteByte('\n')
 				lineStart = pos
@@ -2079,13 +2081,45 @@ func wrapLine(line string, width int) string {
 			}
 			continue
 		}
-		pos++
+		pos += size
 	}
 	// Remainder.
 	if lineStart < len(line) {
 		b.WriteString(strings.TrimLeft(line[lineStart:], " "))
 	}
 	return b.String()
+}
+
+// decodeRune decodes a single UTF-8 rune from s at byte position pos,
+// returning the rune and its byte size.
+func decodeRune(s string, pos int) (rune, int) {
+	if pos >= len(s) {
+		return 0, 0
+	}
+	b := s[pos]
+	if b < 0x80 {
+		return rune(b), 1
+	}
+	if b < 0xC0 {
+		return rune(b), 1 // continuation byte — treat as single byte
+	}
+	// Multi-byte sequence.
+	if b < 0xE0 {
+		if pos+2 > len(s) {
+			return rune(b), 1
+		}
+		return rune(b)&0x1F<<6 | rune(s[pos+1])&0x3F, 2
+	}
+	if b < 0xF0 {
+		if pos+3 > len(s) {
+			return rune(b), 1
+		}
+		return rune(b)&0x0F<<12 | rune(s[pos+1])&0x3F<<6 | rune(s[pos+2])&0x3F, 3
+	}
+	if pos+4 > len(s) {
+		return rune(b), 1
+	}
+	return rune(b)&0x07<<18 | rune(s[pos+1])&0x3F<<12 | rune(s[pos+2])&0x3F<<6 | rune(s[pos+3])&0x3F, 4
 }
 
 // ansiLen returns the visible character count of a string, skipping ANSI sequences.

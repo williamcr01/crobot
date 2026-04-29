@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mattn/go-runewidth"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/extension"
@@ -248,7 +249,12 @@ func (r *mdRenderer) renderListItem(w util.BufWriter, source []byte, node ast.No
 	// Determine bullet.
 	bullet := "• "
 	if isOrdered {
-		bullet = fmt.Sprintf("%d. ", n.Offset+1)
+		// Count previous siblings to determine item number.
+		num := parent.(*ast.List).Start
+		for sib := node.PreviousSibling(); sib != nil; sib = sib.PreviousSibling() {
+			num++
+		}
+		bullet = fmt.Sprintf("%d. ", num)
 	}
 
 	// Check for task checkbox.
@@ -345,7 +351,12 @@ func (r *mdRenderer) renderNestedList(w util.BufWriter, source []byte, node ast.
 		isOrdered := parent.Kind() == ast.KindList && parent.(*ast.List).IsOrdered()
 		bullet := "• "
 		if isOrdered {
-			bullet = fmt.Sprintf("%d. ", n.Offset+1)
+			// Count previous siblings to determine item number.
+			num := parent.(*ast.List).Start
+			for sib := child.PreviousSibling(); sib != nil; sib = sib.PreviousSibling() {
+				num++
+			}
+			bullet = fmt.Sprintf("%d. ", num)
 		}
 
 		for gc := n.FirstChild(); gc != nil; gc = gc.NextSibling() {
@@ -416,8 +427,7 @@ func (r *mdRenderer) renderTable(w util.BufWriter, source []byte, node ast.Node,
 		return ast.WalkContinue, nil
 	}
 
-	// We need to collect all rows and render as a block.
-	// Build table data first.
+	// Collect all cells as raw (unwrapped) text.
 	type rowData struct {
 		cells []string
 	}
@@ -428,7 +438,6 @@ func (r *mdRenderer) renderTable(w util.BufWriter, source []byte, node ast.Node,
 	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
 		switch child.Kind() {
 		case gast.KindTableHeader:
-			// TableHeader contains TableCell nodes directly (no intermediate TableRow).
 			rd := rowData{}
 			for cell := child.FirstChild(); cell != nil; cell = cell.NextSibling() {
 				if cell.Kind() == gast.KindTableCell {
@@ -449,7 +458,6 @@ func (r *mdRenderer) renderTable(w util.BufWriter, source []byte, node ast.Node,
 		}
 	}
 
-	// Recalculate alignments from header rows if body rows have more columns.
 	maxCols := 0
 	for _, row := range headerRows {
 		if len(row.cells) > maxCols {
@@ -464,23 +472,21 @@ func (r *mdRenderer) renderTable(w util.BufWriter, source []byte, node ast.Node,
 	if maxCols == 0 {
 		return ast.WalkSkipChildren, nil
 	}
-
-	// Ensure alignments match column count.
 	for len(alignments) < maxCols {
 		alignments = append(alignments, alignLeft)
 	}
 
-	// Compute column widths.
+	// Compute column widths: for each cell, wrap at available width, find longest line.
 	colWidths := make([]int, maxCols)
 	for _, row := range headerRows {
 		for i, cell := range row.cells {
-			colWidths[i] = max(colWidths[i], displayWidth(cell))
+			colWidths[i] = max(colWidths[i], longestLine(cell))
 		}
 	}
 	for _, row := range bodyRows {
 		for i, cell := range row.cells {
 			if i < maxCols {
-				colWidths[i] = max(colWidths[i], displayWidth(cell))
+				colWidths[i] = max(colWidths[i], longestLine(cell))
 			}
 		}
 	}
@@ -499,27 +505,30 @@ func (r *mdRenderer) renderTable(w util.BufWriter, source []byte, node ast.Node,
 	}
 	colWidths = shrinkColumns(colWidths, available)
 
+	// Wrap each cell at its column width.
+	wrapCells := func(row rowData) [][]string {
+		wrapped := make([][]string, maxCols)
+		for i, cell := range row.cells {
+			wrapped[i] = wrapToLines(cell, colWidths[i])
+		}
+		return wrapped
+	}
+
 	// Render.
 	w.WriteString("\n")
 	w.WriteString(renderTableTopBorder(colWidths))
 	w.WriteString("\n")
 
-	// Header rows.
 	for _, row := range headerRows {
-		cells := padRow(row.cells, maxCols)
-		w.WriteString(renderTableRow(cells, colWidths, alignments, TableHeader))
-		w.WriteString("\n")
+		writeTableRowLines(w, wrapCells(row), colWidths, alignments, TableHeader)
 	}
 	if len(headerRows) > 0 {
 		w.WriteString(renderTableSepBorder(colWidths))
 		w.WriteString("\n")
 	}
 
-	// Body rows.
 	for _, row := range bodyRows {
-		cells := padRow(row.cells, maxCols)
-		w.WriteString(renderTableRow(cells, colWidths, alignments, TableCell))
-		w.WriteString("\n")
+		writeTableRowLines(w, wrapCells(row), colWidths, alignments, TableCell)
 	}
 
 	w.WriteString(renderTableBotBorder(colWidths))
@@ -589,6 +598,10 @@ func collectInline(source []byte, node ast.Node, parentStyle lipgloss.Style) str
 
 		case ast.KindRawHTML:
 			raw := string(child.Text(source))
+			// Replace <br> variants with newlines before stripping tags.
+			raw = strings.ReplaceAll(raw, "<br/>", "\n")
+			raw = strings.ReplaceAll(raw, "<br />", "\n")
+			raw = strings.ReplaceAll(raw, "<br>", "\n")
 			b.WriteString(stripHTMLTags(raw))
 
 		default:
@@ -649,18 +662,37 @@ func renderTableFrame(widths []int, left, mid, right, horiz string) string {
 	return b.String()
 }
 
-func renderTableRow(cells []string, widths []int, aligns []alignment, style lipgloss.Style) string {
-	var b strings.Builder
-	b.WriteString(TableBorder.Render("│ "))
-	for i, cell := range cells {
-		if i > 0 {
-			b.WriteString(TableBorder.Render(" │ "))
+// writeTableRowLines renders a table row that may span multiple lines per cell.
+func writeTableRowLines(w util.BufWriter, cells [][]string, widths []int, aligns []alignment, style lipgloss.Style) {
+	// Determine max line count for this row.
+	maxLines := 0
+	for _, cellLines := range cells {
+		if len(cellLines) > maxLines {
+			maxLines = len(cellLines)
 		}
-		padded := padCell(cell, widths[i], alignFor(aligns, i))
-		b.WriteString(style.Render(padded))
 	}
-	b.WriteString(TableBorder.Render(" │"))
-	return b.String()
+	if maxLines == 0 {
+		maxLines = 1
+	}
+
+	for lineIdx := 0; lineIdx < maxLines; lineIdx++ {
+		var b strings.Builder
+		b.WriteString(TableBorder.Render("│ "))
+		for colIdx, cellLines := range cells {
+			if colIdx > 0 {
+				b.WriteString(TableBorder.Render(" │ "))
+			}
+			text := ""
+			if lineIdx < len(cellLines) {
+				text = cellLines[lineIdx]
+			}
+			padded := padCell(text, widths[colIdx], alignFor(aligns, colIdx))
+			b.WriteString(style.Render(padded))
+		}
+		b.WriteString(TableBorder.Render(" │"))
+		b.WriteByte('\n')
+		w.WriteString(b.String())
+	}
 }
 
 func alignFor(aligns []alignment, i int) alignment {
@@ -679,7 +711,7 @@ func padRow(row []string, count int) []string {
 
 func padCell(text string, width int, align alignment) string {
 	textLen := displayWidth(text)
-	if textLen >= width {
+	if textLen > width {
 		return truncateToWidth(text, width)
 	}
 	pad := width - textLen
@@ -693,6 +725,27 @@ func padCell(text string, width int, align alignment) string {
 	default:
 		return text + strings.Repeat(" ", pad)
 	}
+}
+
+// longestLine returns the display width of the longest line in a (possibly multi-line) string.
+func longestLine(text string) int {
+	longest := 0
+	for _, line := range strings.Split(text, "\n") {
+		w := displayWidth(line)
+		if w > longest {
+			longest = w
+		}
+	}
+	return longest
+}
+
+// wrapToLines wraps a string at the given width, returning one line per wrap.
+func wrapToLines(text string, width int) []string {
+	if text == "" {
+		return []string{""}
+	}
+	wrapped := wrapLine(text, width)
+	return strings.Split(wrapped, "\n")
 }
 
 func shrinkColumns(widths []int, available int) []int {
@@ -741,24 +794,45 @@ func shrinkColumns(widths []int, available int) []int {
 }
 
 func displayWidth(s string) int {
-	return len([]rune(stripStyles(s)))
+	return runewidth.StringWidth(stripStyles(s))
 }
 
 func stripStyles(s string) string {
 	var b strings.Builder
-	inEscape := false
 	for i := 0; i < len(s); i++ {
-		if s[i] == '\x1b' {
-			inEscape = true
+		if s[i] != 0x1b {
+			b.WriteByte(s[i])
 			continue
 		}
-		if inEscape {
-			if s[i] >= '@' && s[i] <= '~' {
-				inEscape = false
+		// ESC found — parse the escape sequence.
+		i++
+		if i >= len(s) {
+			break
+		}
+		switch s[i] {
+		case '[':
+			// CSI: skip parameter/intermediate bytes (0x30-0x3f, 0x20-0x2f)
+			// until final byte (0x40-0x7e).
+			for i++; i < len(s); i++ {
+				b := s[i]
+				if b >= 0x40 && b <= 0x7e {
+					break
+				}
 			}
-			continue
+		case ']':
+			// OSC: skip until ST (ESC \) or BEL (0x07).
+			for i++; i < len(s); i++ {
+				if s[i] == 0x07 {
+					break
+				}
+				if s[i] == 0x1b && i+1 < len(s) && s[i+1] == '\\' {
+					i++
+					break
+				}
+			}
+		default:
+			// Other escape: skip one character (simple ESC+X sequences).
 		}
-		b.WriteByte(s[i])
 	}
 	return b.String()
 }
