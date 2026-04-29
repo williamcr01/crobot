@@ -6,6 +6,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/anthropics/anthropic-sdk-go"
 	openai "github.com/openai/openai-go/v3"
 )
 
@@ -48,6 +49,19 @@ func TestCreateDeepSeek(t *testing.T) {
 	}
 	if prov.Name() != "deepseek" {
 		t.Errorf("expected name deepseek, got %s", prov.Name())
+	}
+}
+
+func TestCreateAnthropic(t *testing.T) {
+	prov, err := Create("anthropic", "sk-ant-test")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if prov == nil {
+		t.Fatal("expected non-nil provider")
+	}
+	if prov.Name() != "anthropic" {
+		t.Errorf("expected name anthropic, got %s", prov.Name())
 	}
 }
 
@@ -174,6 +188,110 @@ func TestOpenAIReasoningEffortNone(t *testing.T) {
 	params := prov.toChatParams(Request{Model: "gpt-5.1", Thinking: "none"}, true)
 	if got := string(params.ReasoningEffort); got != "none" {
 		t.Fatalf("expected reasoning_effort none, got %q", got)
+	}
+}
+
+func TestAnthropicMessageParams(t *testing.T) {
+	prov := &AnthropicProvider{}
+	params := prov.toMessageParams(Request{
+		Model:        "claude-sonnet-4-5",
+		Thinking:     "medium",
+		SystemPrompt: "system prompt",
+		Messages: []Message{
+			{Role: "user", Content: "hello"},
+			{Role: "assistant", Content: "I'll call a tool", ToolCalls: []ToolCall{{Name: "echo", ID: "toolu_1", Args: map[string]any{"message": "hi"}}}},
+			{Role: "tool", ToolCallID: "toolu_1", Content: "hi"},
+		},
+		Tools: []ToolDefinition{{Name: "echo", Description: "Echo", InputSchema: map[string]any{"type": "object", "properties": map[string]any{"message": map[string]any{"type": "string"}}}}},
+	})
+
+	if params.Model != anthropic.Model("claude-sonnet-4-5") {
+		t.Fatalf("unexpected model: %s", params.Model)
+	}
+	if len(params.System) != 1 || params.System[0].Text != "system prompt" {
+		t.Fatalf("unexpected system prompt: %#v", params.System)
+	}
+	if len(params.Messages) != 3 {
+		t.Fatalf("expected 3 messages, got %#v", params.Messages)
+	}
+	if params.Messages[1].Role != anthropic.MessageParamRoleAssistant || len(params.Messages[1].Content) != 2 {
+		t.Fatalf("expected assistant text plus tool_use blocks, got %#v", params.Messages[1])
+	}
+	if params.Messages[2].Role != anthropic.MessageParamRoleUser || len(params.Messages[2].Content) != 1 || params.Messages[2].Content[0].OfToolResult == nil {
+		t.Fatalf("expected tool result user message, got %#v", params.Messages[2])
+	}
+	if len(params.Tools) != 1 || params.Tools[0].OfTool == nil || params.Tools[0].OfTool.Name != "echo" {
+		t.Fatalf("unexpected tools: %#v", params.Tools)
+	}
+	if params.Thinking.OfEnabled == nil || params.Thinking.OfEnabled.BudgetTokens != 2048 {
+		t.Fatalf("expected medium thinking budget, got %#v", params.Thinking)
+	}
+}
+
+func TestAnthropicThinking(t *testing.T) {
+	tests := []struct {
+		thinking string
+		wantNil  bool
+		want     int64
+	}{
+		{thinking: "none", wantNil: true},
+		{thinking: "", wantNil: true},
+		{thinking: "minimal", want: 1024},
+		{thinking: "low", want: 1024},
+		{thinking: "medium", want: 2048},
+		{thinking: "high", want: 4096},
+		{thinking: "xhigh", want: 6144},
+	}
+	for _, tt := range tests {
+		t.Run(tt.thinking, func(t *testing.T) {
+			got := anthropicThinking(tt.thinking)
+			if tt.wantNil {
+				if got != nil {
+					t.Fatalf("expected nil thinking config, got %#v", got)
+				}
+				return
+			}
+			if got == nil || got.OfEnabled == nil || got.OfEnabled.BudgetTokens != tt.want {
+				t.Fatalf("expected budget %d, got %#v", tt.want, got)
+			}
+		})
+	}
+}
+
+func TestAnthropicToolSchemaMapping(t *testing.T) {
+	tools := anthropicTools([]ToolDefinition{
+		{
+			Name:        "search",
+			Description: "Search for documents",
+			InputSchema: map[string]any{
+				"type":                 "object",
+				"properties":           map[string]any{"query": map[string]any{"type": "string", "description": "search query"}},
+				"required":             []any{"query"},
+				"additionalProperties": false,
+			},
+		},
+	})
+	if len(tools) != 1 {
+		t.Fatalf("expected 1 tool, got %d", len(tools))
+	}
+	tool := tools[0].OfTool
+	if tool == nil {
+		t.Fatal("expected OfTool to be non-nil")
+	}
+	if tool.InputSchema.Properties == nil {
+		t.Fatal("expected Properties to be set from schema map")
+	}
+	if len(tool.InputSchema.Required) != 1 || tool.InputSchema.Required[0] != "query" {
+		t.Fatalf("expected Required to be [query], got %v", tool.InputSchema.Required)
+	}
+	if _, ok := tool.InputSchema.ExtraFields["additionalProperties"]; !ok {
+		t.Fatal("expected ExtraFields to contain additionalProperties")
+	}
+	if _, ok := tool.InputSchema.ExtraFields["properties"]; ok {
+		t.Fatal("properties should not be in ExtraFields")
+	}
+	if _, ok := tool.InputSchema.ExtraFields["type"]; ok {
+		t.Fatal("type should not be in ExtraFields")
 	}
 }
 

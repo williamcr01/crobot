@@ -330,12 +330,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			// /compact: trigger context compaction
-		if strings.HasPrefix(input, "/compact") {
-			cmd := m.handleCompactCommand(input)
-			return m, cmd
-		}
+			if strings.HasPrefix(input, "/compact") {
+				cmd := m.handleCompactCommand(input)
+				return m, cmd
+			}
 
-		// /model: open the model picker
+			// /model: open the model picker
 			if input == "/model" {
 				m.modelPickerActive = true
 				m.modelPickerFilter = ""
@@ -917,7 +917,7 @@ func (m *Model) reloadAuthorizedProviders() error {
 		return err
 	}
 	m.provider = nil
-	for _, providerName := range []string{"openrouter", "openai", "openai-codex", "deepseek"} {
+	for _, providerName := range []string{"openrouter", "openai", "openai-codex", "deepseek", "anthropic"} {
 		apiKey := auth.APIKey(providerName)
 		if apiKey == "" {
 			continue
