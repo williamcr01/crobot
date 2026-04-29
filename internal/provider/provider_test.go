@@ -6,8 +6,6 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/OpenRouterTeam/go-sdk/models/components"
-	"github.com/OpenRouterTeam/go-sdk/optionalnullable"
 	openai "github.com/openai/openai-go/v3"
 )
 
@@ -21,6 +19,9 @@ func TestCreateOpenRouter(t *testing.T) {
 	}
 	if prov.Name() != "openrouter" {
 		t.Errorf("expected name openrouter, got %s", prov.Name())
+	}
+	if _, ok := prov.(*OpenAIProvider); !ok {
+		t.Fatalf("expected OpenRouter to use OpenAI-compatible provider, got %T", prov)
 	}
 }
 
@@ -176,65 +177,27 @@ func TestOpenAIReasoningEffortNone(t *testing.T) {
 	}
 }
 
-func TestExtractOpenRouterReasoningDelta(t *testing.T) {
-	flat := "flat reasoning"
-	text := "detail text"
-	fallbackText := "fallback text"
+func TestOpenRouterReasoningUsesOpenAICompatibleParam(t *testing.T) {
+	prov := &OpenAIProvider{name: "openrouter"}
+	params := prov.toChatParams(Request{Model: "deepseek/deepseek-r1", Thinking: "medium"}, true)
 
-	tests := []struct {
-		name  string
-		delta components.ChatStreamDelta
-		want  string
-	}{
-		{
-			name: "flat reasoning",
-			delta: components.ChatStreamDelta{
-				Reasoning: optionalnullable.From(&flat),
-			},
-			want: flat,
-		},
-		{
-			name: "reasoning detail text",
-			delta: components.ChatStreamDelta{
-				ReasoningDetails: []components.ReasoningDetailUnion{
-					components.CreateReasoningDetailUnionReasoningText(components.ReasoningDetailText{
-						Text: optionalnullable.From(&text),
-					}),
-				},
-			},
-			want: text,
-		},
-		{
-			name: "reasoning detail summary",
-			delta: components.ChatStreamDelta{
-				ReasoningDetails: []components.ReasoningDetailUnion{
-					components.CreateReasoningDetailUnionReasoningSummary(components.ReasoningDetailSummary{
-						Summary: "summary text",
-					}),
-				},
-			},
-			want: "summary text",
-		},
-		{
-			name: "flat preferred over details",
-			delta: components.ChatStreamDelta{
-				Reasoning: optionalnullable.From(&flat),
-				ReasoningDetails: []components.ReasoningDetailUnion{
-					components.CreateReasoningDetailUnionReasoningText(components.ReasoningDetailText{
-						Text: optionalnullable.From(&fallbackText),
-					}),
-				},
-			},
-			want: flat,
-		},
+	data, err := json.Marshal(params)
+	if err != nil {
+		t.Fatalf("marshal params: %v", err)
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := extractOpenRouterReasoningDelta(tt.delta); got != tt.want {
-				t.Fatalf("expected %q, got %q", tt.want, got)
-			}
-		})
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("unmarshal params: %v", err)
+	}
+	reasoning, ok := raw["reasoning"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected reasoning object, got %s", string(data))
+	}
+	if reasoning["effort"] != "medium" {
+		t.Fatalf("expected reasoning effort medium, got %#v", reasoning["effort"])
+	}
+	if _, ok := raw["reasoning_effort"]; ok {
+		t.Fatalf("expected no OpenAI reasoning_effort for OpenRouter, got %s", string(data))
 	}
 }
 
@@ -249,6 +212,8 @@ func TestExtractOpenAIReasoningDeltaFromExtraFields(t *testing.T) {
 		{name: "reasoning_text", raw: `{"reasoning_text":"compat thought"}`, want: "compat thought"},
 		{name: "first non-empty alias", raw: `{"reasoning_content":"first","reasoning":"second"}`, want: "first"},
 		{name: "ignore empty", raw: `{"reasoning_content":"","reasoning":"fallback"}`, want: "fallback"},
+		{name: "reasoning detail text", raw: `{"reasoning_details":[{"type":"reasoning.text","text":"detail thought"}]}`, want: "detail thought"},
+		{name: "reasoning detail summary", raw: `{"reasoning_details":[{"type":"reasoning.summary","summary":"summary thought"}]}`, want: "summary thought"},
 		{name: "none", raw: `{"content":"answer"}`, want: ""},
 	}
 

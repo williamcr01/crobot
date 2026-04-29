@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/OpenRouterTeam/go-sdk/models/components"
-
 	"crobot/internal/provider"
 )
 
@@ -60,36 +58,6 @@ func (r *Registry) ToProviderTools() []provider.ToolDefinition {
 			Description: t.Description,
 			InputSchema: t.InputSchema,
 		})
-	}
-	return out
-}
-
-// ToChatFunctionTools converts the registry's tools to OpenRouter SDK ChatFunctionTool values.
-// Plugin-backed tools are included alongside native tools.
-func (r *Registry) ToChatFunctionTools() []components.ChatFunctionTool {
-	// Note: The OpenRouter SDK defines ChatFunctionTool as a union type.
-	// Regular function tools use ChatFunctionToolFunction wrapper.
-	// Server tools (web_search, datetime) are handled in the provider layer.
-	var out []components.ChatFunctionTool
-	for _, t := range r.tools {
-		params := t.InputSchema
-		if params == nil {
-			params = map[string]any{
-				"type":                 "object",
-				"properties":           map[string]any{},
-				"additionalProperties": false,
-			}
-		}
-		out = append(out, components.CreateChatFunctionToolChatFunctionToolFunction(
-			components.ChatFunctionToolFunction{
-				Function: components.ChatFunctionToolFunctionFunction{
-					Name:        t.Name,
-					Description: &t.Description,
-					Parameters:  params,
-				},
-				Type: components.ChatFunctionToolTypeFunction,
-			},
-		))
 	}
 	return out
 }

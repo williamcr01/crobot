@@ -8,6 +8,7 @@ import (
 
 	openai "github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/option"
+	"github.com/openai/openai-go/v3/packages/respjson"
 	"github.com/openai/openai-go/v3/shared"
 )
 
@@ -197,6 +198,15 @@ func (p *OpenAIProvider) convertTools(tools []ToolDefinition) []openai.ChatCompl
 }
 
 func (p *OpenAIProvider) setReasoningEffort(params *openai.ChatCompletionNewParams, req Request) {
+	if p.name == "openrouter" {
+		if req.Thinking == "" {
+			return
+		}
+		params.SetExtraFields(map[string]any{
+			"reasoning": map[string]any{"effort": req.Thinking},
+		})
+		return
+	}
 	if p.name == "deepseek" {
 		if effort, ok := deepSeekReasoningEffort(req.Thinking); ok {
 			params.ReasoningEffort = shared.ReasoningEffort(effort)
@@ -267,6 +277,9 @@ func (p *OpenAIProvider) mapResponse(c *openai.ChatCompletion) *Response {
 	if len(c.Choices) > 0 {
 		msg := c.Choices[0].Message
 		out.Text = msg.Content
+		if reasoning := extractOpenAIMessageReasoning(msg); reasoning != "" {
+			out.Text += reasoning
+		}
 		for _, tc := range msg.ToolCalls {
 			out.ToolCalls = append(out.ToolCalls, ToolCall{
 				Name: tc.Function.Name,
@@ -373,10 +386,29 @@ func (p *OpenAIProvider) streamLoop(ctx context.Context, stream interface {
 func extractOpenAIReasoningDelta(delta openai.ChatCompletionChunkChoiceDelta) string {
 	// openai-go v3.33.0 does not expose OpenAI-compatible reasoning fields as
 	// typed struct members, but unknown JSON fields are preserved in ExtraFields.
-	// DeepSeek and several OpenAI-compatible endpoints stream reasoning under
-	// one of these aliases.
+	return extractOpenAIReasoningFields(delta.JSON.ExtraFields)
+}
+
+func extractOpenAIMessageReasoning(msg openai.ChatCompletionMessage) string {
+	return extractOpenAIReasoningFields(msg.JSON.ExtraFields)
+}
+
+func parseToolArgs(raw string) map[string]any {
+	if raw == "" {
+		return nil
+	}
+	var m map[string]any
+	if err := json.Unmarshal([]byte(raw), &m); err != nil {
+		return map[string]any{"raw": raw}
+	}
+	return m
+}
+
+func extractOpenAIReasoningFields(fields map[string]respjson.Field) string {
+	// DeepSeek, OpenRouter, and several OpenAI-compatible endpoints stream
+	// reasoning under one of these flat aliases.
 	for _, name := range []string{"reasoning_content", "reasoning", "reasoning_text"} {
-		field, ok := delta.JSON.ExtraFields[name]
+		field, ok := fields[name]
 		if !ok || field.Raw() == "" || field.Raw() == "null" {
 			continue
 		}
@@ -385,5 +417,28 @@ func extractOpenAIReasoningDelta(delta openai.ChatCompletionChunkChoiceDelta) st
 			return reasoning
 		}
 	}
-	return ""
+
+	// OpenRouter may also normalize reasoning into reasoning_details.
+	field, ok := fields["reasoning_details"]
+	if !ok || field.Raw() == "" || field.Raw() == "null" {
+		return ""
+	}
+	var details []struct {
+		Type    string `json:"type"`
+		Text    string `json:"text"`
+		Summary string `json:"summary"`
+	}
+	if err := json.Unmarshal([]byte(field.Raw()), &details); err != nil {
+		return ""
+	}
+	var out strings.Builder
+	for _, detail := range details {
+		switch detail.Type {
+		case "reasoning.text":
+			out.WriteString(detail.Text)
+		case "reasoning.summary":
+			out.WriteString(detail.Summary)
+		}
+	}
+	return out.String()
 }
