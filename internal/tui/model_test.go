@@ -425,27 +425,6 @@ func TestWrapText_WrapsAllMessages(t *testing.T) {
 		}
 	}
 }
-
-// stripANSI removes ANSI escape sequences from a string.
-func stripANSI(s string) string {
-	var b strings.Builder
-	inEscape := false
-	for i := 0; i < len(s); i++ {
-		if s[i] == '\x1b' {
-			inEscape = true
-			continue
-		}
-		if inEscape {
-			if s[i] >= '@' && s[i] <= '~' {
-				inEscape = false
-			}
-			continue
-		}
-		b.WriteByte(s[i])
-	}
-	return b.String()
-}
-
 func TestEscDoesNothingWhenNotPending(t *testing.T) {
 	m := NewModel(&config.AgentConfig{HasAuthorizedProvider: true}, nil, nil, nil, nil, nil, nil, nil)
 	m.ready = true

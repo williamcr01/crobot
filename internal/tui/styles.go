@@ -53,6 +53,8 @@ var (
 	ImageStyle   = Dim.Copy()
 
 	// Markdown block styles.
+	BodyTextStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#d6d3d1")) // warm off-white for body text
+	ThinkingStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#78716c"))  // warm gray for reasoning
 	CodeBlockStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#9ca3af")).
 			Background(lipgloss.Color("#1a1a2e"))
 	QuoteStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#9ca3af"))
