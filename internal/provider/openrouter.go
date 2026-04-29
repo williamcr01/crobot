@@ -250,14 +250,15 @@ func (p *OpenRouterProvider) streamLoop(
 		for _, choice := range chunk.Choices {
 			delta := choice.Delta
 
+			// Reasoning delta. Prefer the flat field when present; otherwise fall
+			// back to reasoning_details, which some OpenRouter-routed models stream.
+			if reasoning := extractOpenRouterReasoningDelta(delta); reasoning != "" {
+				ch <- StreamEvent{ReasoningDelta: reasoning}
+			}
+
 			// Text delta.
 			if contentPtr, ok := delta.Content.Get(); ok && contentPtr != nil && *contentPtr != "" {
 				ch <- StreamEvent{TextDelta: *contentPtr}
-			}
-
-			// Reasoning delta.
-			if reasonPtr, ok := delta.Reasoning.Get(); ok && reasonPtr != nil && *reasonPtr != "" {
-				ch <- StreamEvent{ReasoningDelta: *reasonPtr}
 			}
 
 			// Tool call deltas.
@@ -331,6 +332,25 @@ func (p *OpenRouterProvider) streamLoop(
 	if err := es.Err(); err != nil {
 		ch <- StreamEvent{Error: fmt.Errorf("openrouter stream: %w", err)}
 	}
+}
+
+func extractOpenRouterReasoningDelta(delta components.ChatStreamDelta) string {
+	if reasonPtr, ok := delta.Reasoning.Get(); ok && reasonPtr != nil && *reasonPtr != "" {
+		return *reasonPtr
+	}
+
+	var out strings.Builder
+	for _, detail := range delta.ReasoningDetails {
+		if detail.ReasoningDetailText != nil {
+			if textPtr, ok := detail.ReasoningDetailText.Text.Get(); ok && textPtr != nil && *textPtr != "" {
+				out.WriteString(*textPtr)
+			}
+		}
+		if detail.ReasoningDetailSummary != nil && detail.ReasoningDetailSummary.Summary != "" {
+			out.WriteString(detail.ReasoningDetailSummary.Summary)
+		}
+	}
+	return out.String()
 }
 
 func toChatToolCalls(calls []ToolCall) []components.ChatToolCall {

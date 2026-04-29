@@ -285,7 +285,11 @@ func (p *OpenAIProvider) mapResponse(c *openai.ChatCompletion) *Response {
 }
 
 // streamLoop reads SSE chunks from the SDK stream and emits StreamEvents.
-func (p *OpenAIProvider) streamLoop(ctx context.Context, stream interface{ Next() bool; Current() openai.ChatCompletionChunk; Err() error }, ch chan<- StreamEvent) {
+func (p *OpenAIProvider) streamLoop(ctx context.Context, stream interface {
+	Next() bool
+	Current() openai.ChatCompletionChunk
+	Err() error
+}, ch chan<- StreamEvent) {
 	defer close(ch)
 
 	type pendingTool struct {
@@ -311,6 +315,10 @@ func (p *OpenAIProvider) streamLoop(ctx context.Context, stream interface{ Next(
 		for _, choice := range chunk.Choices {
 			if choice.Delta.Content != "" {
 				ch <- StreamEvent{TextDelta: choice.Delta.Content}
+			}
+
+			if reasoning := extractOpenAIReasoningDelta(choice.Delta); reasoning != "" {
+				ch <- StreamEvent{ReasoningDelta: reasoning}
 			}
 
 			for _, tc := range choice.Delta.ToolCalls {
@@ -360,4 +368,22 @@ func (p *OpenAIProvider) streamLoop(ctx context.Context, stream interface{ Next(
 	if err := stream.Err(); err != nil {
 		ch <- StreamEvent{Error: fmt.Errorf("%s stream: %w", p.name, err)}
 	}
+}
+
+func extractOpenAIReasoningDelta(delta openai.ChatCompletionChunkChoiceDelta) string {
+	// openai-go v3.33.0 does not expose OpenAI-compatible reasoning fields as
+	// typed struct members, but unknown JSON fields are preserved in ExtraFields.
+	// DeepSeek and several OpenAI-compatible endpoints stream reasoning under
+	// one of these aliases.
+	for _, name := range []string{"reasoning_content", "reasoning", "reasoning_text"} {
+		field, ok := delta.JSON.ExtraFields[name]
+		if !ok || field.Raw() == "" || field.Raw() == "null" {
+			continue
+		}
+		var reasoning string
+		if err := json.Unmarshal([]byte(field.Raw()), &reasoning); err == nil && reasoning != "" {
+			return reasoning
+		}
+	}
+	return ""
 }

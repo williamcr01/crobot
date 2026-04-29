@@ -2,8 +2,13 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
+
+	"github.com/OpenRouterTeam/go-sdk/models/components"
+	"github.com/OpenRouterTeam/go-sdk/optionalnullable"
+	openai "github.com/openai/openai-go/v3"
 )
 
 func TestCreateOpenRouter(t *testing.T) {
@@ -168,6 +173,95 @@ func TestOpenAIReasoningEffortNone(t *testing.T) {
 	params := prov.toChatParams(Request{Model: "gpt-5.1", Thinking: "none"}, true)
 	if got := string(params.ReasoningEffort); got != "none" {
 		t.Fatalf("expected reasoning_effort none, got %q", got)
+	}
+}
+
+func TestExtractOpenRouterReasoningDelta(t *testing.T) {
+	flat := "flat reasoning"
+	text := "detail text"
+	fallbackText := "fallback text"
+
+	tests := []struct {
+		name  string
+		delta components.ChatStreamDelta
+		want  string
+	}{
+		{
+			name: "flat reasoning",
+			delta: components.ChatStreamDelta{
+				Reasoning: optionalnullable.From(&flat),
+			},
+			want: flat,
+		},
+		{
+			name: "reasoning detail text",
+			delta: components.ChatStreamDelta{
+				ReasoningDetails: []components.ReasoningDetailUnion{
+					components.CreateReasoningDetailUnionReasoningText(components.ReasoningDetailText{
+						Text: optionalnullable.From(&text),
+					}),
+				},
+			},
+			want: text,
+		},
+		{
+			name: "reasoning detail summary",
+			delta: components.ChatStreamDelta{
+				ReasoningDetails: []components.ReasoningDetailUnion{
+					components.CreateReasoningDetailUnionReasoningSummary(components.ReasoningDetailSummary{
+						Summary: "summary text",
+					}),
+				},
+			},
+			want: "summary text",
+		},
+		{
+			name: "flat preferred over details",
+			delta: components.ChatStreamDelta{
+				Reasoning: optionalnullable.From(&flat),
+				ReasoningDetails: []components.ReasoningDetailUnion{
+					components.CreateReasoningDetailUnionReasoningText(components.ReasoningDetailText{
+						Text: optionalnullable.From(&fallbackText),
+					}),
+				},
+			},
+			want: flat,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := extractOpenRouterReasoningDelta(tt.delta); got != tt.want {
+				t.Fatalf("expected %q, got %q", tt.want, got)
+			}
+		})
+	}
+}
+
+func TestExtractOpenAIReasoningDeltaFromExtraFields(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{name: "reasoning_content", raw: `{"reasoning_content":"deepseek thought"}`, want: "deepseek thought"},
+		{name: "reasoning", raw: `{"reasoning":"openrouter thought"}`, want: "openrouter thought"},
+		{name: "reasoning_text", raw: `{"reasoning_text":"compat thought"}`, want: "compat thought"},
+		{name: "first non-empty alias", raw: `{"reasoning_content":"first","reasoning":"second"}`, want: "first"},
+		{name: "ignore empty", raw: `{"reasoning_content":"","reasoning":"fallback"}`, want: "fallback"},
+		{name: "none", raw: `{"content":"answer"}`, want: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var delta openai.ChatCompletionChunkChoiceDelta
+			if err := json.Unmarshal([]byte(tt.raw), &delta); err != nil {
+				t.Fatalf("unmarshal delta: %v", err)
+			}
+			if got := extractOpenAIReasoningDelta(delta); got != tt.want {
+				t.Fatalf("expected %q, got %q", tt.want, got)
+			}
+		})
 	}
 }
 
