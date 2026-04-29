@@ -19,12 +19,12 @@ var (
 	Red    = lipgloss.NewStyle().Foreground(lipgloss.Color("#ef4444"))
 	Gray   = lipgloss.NewStyle().Foreground(lipgloss.Color("#9ca3af"))
 
-	// Tool display styles — light grey background for all states.
-	ToolBg = lipgloss.Color("#3a3a3e")
+	// Tool display styles — dark navy background matching code blocks.
+	ToolBg = lipgloss.Color("#1a1a2e")
 
 	// Tool text styles.
 	ToolTitle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#ffffff"))
-	ToolOutput = lipgloss.NewStyle().Foreground(lipgloss.Color("#e0e0e0"))
+	ToolOutput = lipgloss.NewStyle().Foreground(lipgloss.Color("#9ca3af"))
 	ToolMeta   = lipgloss.NewStyle().Foreground(lipgloss.Color("#9ca3af"))
 	BashHeader = lipgloss.NewStyle().Foreground(lipgloss.Color("#22c55e")).Bold(true)
 
@@ -37,6 +37,36 @@ var (
 	UserCaret   = lipgloss.NewStyle().Foreground(lipgloss.Color("#22c55e"))
 	InputCursor = lipgloss.NewStyle().Foreground(lipgloss.Color("#ffffff"))
 	ErrorMessage = Red.Copy()
+
+	// Markdown heading styles.
+	H1Style = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#22d3ee"))   // cyan
+	H2Style = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#e5e7eb"))   // white
+	H3Style = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#d1d5db"))   // light gray
+	H4Style = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#9ca3af"))   // dim
+
+	// Markdown inline styles.
+	BoldStyle    = lipgloss.NewStyle().Bold(true)
+	ItalicStyle  = lipgloss.NewStyle().Italic(true)
+	CodeStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#f59e0b"))                                 // amber
+	StrikeStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#6b7280")).Strikethrough(true)              // dim strikethrough
+	LinkStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#93c5fd")).Underline(true)                  // blue underlined
+	ImageStyle   = Dim.Copy()
+
+	// Markdown block styles.
+	CodeBlockStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#9ca3af")).
+			Background(lipgloss.Color("#1a1a2e"))
+	QuoteStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#9ca3af"))
+	QuoteBar   = lipgloss.NewStyle().Foreground(lipgloss.Color("#4b5563"))
+	HRStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#374151"))
+
+	// Markdown task list styles.
+	TaskDoneStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#22c55e")) // green
+	TaskOpenStyle = Dim.Copy()
+
+	// Markdown table styles.
+	TableBorder  = lipgloss.NewStyle().Foreground(lipgloss.Color("#4b5563"))
+	TableHeader  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#e5e7eb"))
+	TableCell    = lipgloss.NewStyle().Foreground(lipgloss.Color("#d1d5db"))
 )
 
 // previewLines caps output preview at this many lines when the tool call is not expanded.
