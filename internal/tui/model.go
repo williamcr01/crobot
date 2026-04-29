@@ -24,6 +24,15 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// toolState tracks the lifecycle of a tool call in the UI.
+type toolState int
+
+const (
+	toolPending toolState = iota // args received, not yet executing
+	toolRunning                  // executing
+	toolDone                     // finished (success or error)
+)
+
 // toolRenderItem holds rendered state for one tool call in the view.
 type toolRenderItem struct {
 	name     string
@@ -33,6 +42,7 @@ type toolRenderItem struct {
 	output   string
 	success  bool
 	duration time.Duration
+	state    toolState
 }
 
 // messageItem holds one rendered message in the conversation view.
@@ -47,6 +57,8 @@ type messageItem struct {
 // tea messages from the agent goroutine.
 type agentEventMsg agent.Event
 type agentDoneMsg struct{}
+
+type compactionDoneMsg struct{}
 
 type loginResultMsg struct {
 	provider  string
@@ -92,6 +104,9 @@ type Model struct {
 	commandSuggestionIndex int
 	agentCancel            context.CancelFunc
 	agentEvents            chan agent.Event
+
+	// Tracks the previous compaction summary for iterative summarization.
+	previousCompactionSummary string
 
 	// Model picker modal state
 	modelPickerActive bool
@@ -441,6 +456,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case compactionDoneMsg:
+		m.refreshViewport()
+		m.textarea.Reset()
+		m.textarea.Focus()
+		return m, nil
+
 	case spinner.TickMsg:
 		if m.pending {
 			var cmd tea.Cmd
@@ -516,7 +537,7 @@ func (m Model) handleAgentEvent(ev agent.Event) (tea.Model, tea.Cmd) {
 		}
 
 	case "tool_call_start":
-		// Tool calls are handled by tool_call_end.
+		// Handled by tool_call_end.
 
 	case "tool_call_end":
 		if ev.ToolCallEnd != nil {
@@ -525,9 +546,24 @@ func (m Model) handleAgentEvent(ev agent.Event) (tea.Model, tea.Cmd) {
 				last.toolCalls = append(last.toolCalls, toolRenderItem{
 					name:    ev.ToolCallEnd.Name,
 					callID:  ev.ToolCallEnd.CallID,
-					args:    summarizeArgs(ev.ToolCallEnd.Name, ev.ToolCallEnd.Args),
+					args:    formatToolCallLine(ev.ToolCallEnd.Name, ev.ToolCallEnd.Args),
 					rawArgs: ev.ToolCallEnd.Args,
+					state:   toolPending,
 				})
+				m.refreshViewport()
+			}
+		}
+
+	case "tool_exec_start":
+		if ev.ToolExecStart != nil {
+			if len(m.messages) > 0 && m.messages[len(m.messages)-1].role == "assistant" {
+				last := &m.messages[len(m.messages)-1]
+				for i := len(last.toolCalls) - 1; i >= 0; i-- {
+					if last.toolCalls[i].callID == ev.ToolExecStart.CallID {
+						last.toolCalls[i].state = toolRunning
+						break
+					}
+				}
 				m.refreshViewport()
 			}
 		}
@@ -537,13 +573,16 @@ func (m Model) handleAgentEvent(ev agent.Event) (tea.Model, tea.Cmd) {
 			ter := ev.ToolExecResult
 			if len(m.messages) > 0 && m.messages[len(m.messages)-1].role == "assistant" {
 				last := &m.messages[len(m.messages)-1]
-				if len(last.toolCalls) > 0 {
-					tc := &last.toolCalls[len(last.toolCalls)-1]
-					tc.output = truncateDisplay(ter.Output, 500)
-					tc.success = ter.Success
-					tc.duration = time.Duration(ter.Duration) * time.Millisecond
-					m.refreshViewport()
+				for i := len(last.toolCalls) - 1; i >= 0; i-- {
+					if last.toolCalls[i].callID == ter.CallID {
+						last.toolCalls[i].output = ter.Output
+						last.toolCalls[i].success = ter.Success
+						last.toolCalls[i].duration = time.Duration(ter.Duration) * time.Millisecond
+						last.toolCalls[i].state = toolDone
+						break
+					}
 				}
+				m.refreshViewport()
 			}
 		}
 
@@ -1356,7 +1395,7 @@ func (m Model) renderMessages() string {
 				b.WriteString("\n")
 			}
 			for _, tc := range msg.toolCalls {
-				b.WriteString(RenderToolBox(tc.name, tc.args, tc.output, tc.duration.Milliseconds(), tc.success, m.width-4))
+				b.WriteString(RenderToolCall(tc, m.width-4))
 				b.WriteString("\n")
 			}
 			if msg.usage != "" {
@@ -1459,10 +1498,7 @@ func (m *Model) handleCompactCommand(input string) tea.Cmd {
 	}
 
 	// Extract custom instructions from "/compact <instructions>".
-	instructions := ""
-	if len(input) > 8 && input[8] == ' ' {
-		instructions = input[9:]
-	}
+	instructions := strings.TrimSpace(strings.TrimPrefix(input, "/compact"))
 
 	m.messages = append(m.messages, messageItem{role: "system", content: "Compacting context..."})
 	m.refreshViewport()
@@ -1476,7 +1512,7 @@ func (m *Model) handleCompactCommand(input string) tea.Cmd {
 func (m *Model) compactCmd(instructions string) tea.Cmd {
 	return func() tea.Msg {
 		m.runCompaction(instructions)
-		return nil
+		return compactionDoneMsg{}
 	}
 }
 
@@ -1496,7 +1532,7 @@ func (m *Model) runCompaction(instructions string) {
 	defer cancel()
 
 	compactionMsgs := messagesToCompaction(m.messages)
-	result, err := compaction.Compact(ctx, m.provider, m.config.Model, m.config.Compaction, compactionMsgs, instructions)
+	result, err := compaction.Compact(ctx, m.provider, m.config.Model, m.config.Compaction, compactionMsgs, instructions, m.previousCompactionSummary)
 	if err != nil {
 		m.messages = append(m.messages, messageItem{role: "error", content: fmt.Sprintf("Compaction failed: %v", err)})
 		m.refreshViewport()
@@ -1504,6 +1540,9 @@ func (m *Model) runCompaction(instructions string) {
 		m.textarea.Focus()
 		return
 	}
+
+	// Store summary for iterative compaction.
+	m.previousCompactionSummary = result.Summary
 
 	// Replace messages with compacted version.
 	m.messages = make([]messageItem, len(result.NewMessages))
@@ -1694,19 +1733,128 @@ func truncateDisplay(s string, maxLen int) string {
 	return s[:maxLen] + "... (truncated)"
 }
 
-func summarizeArgs(name string, args map[string]any) string {
+// formatToolCallLine produces a concise natural-language description of a tool
+// call, following the pi-mono pattern: bold tool name followed by context-specific
+// formatting of the most salient argument.
+func formatToolCallLine(name string, args map[string]any) string {
 	if args == nil {
-		return ""
+		return name
 	}
-	key := summarizeKey(name)
-	if v, ok := args[key]; ok {
-		val := fmt.Sprintf("%v", v)
-		if len(val) > 40 {
-			val = val[:40] + "..."
+	switch name {
+	case "bash":
+		if cmd, ok := args["command"].(string); ok && cmd != "" {
+			return "$ " + cmd
 		}
-		return key + "=" + val
+		return name
+	case "file_read", "read":
+		return formatFilePathCall(name, args, "path", "offset", "limit")
+	case "file_write", "write":
+		return formatFilePathCall(name, args, "path", "", "")
+	case "file_edit", "edit":
+		return formatFilePathCall(name, args, "path", "", "")
+	case "grep":
+		path, _ := args["path"].(string)
+		pattern, _ := args["pattern"].(string)
+		var b strings.Builder
+		b.WriteString(name)
+		if pattern != "" {
+			b.WriteString(" /")
+			b.WriteString(pattern)
+			b.WriteString("/")
+		}
+		if path != "" && path != "." {
+			b.WriteString(" in ")
+			b.WriteString(shortenDisplayPath(path))
+		}
+		return b.String()
+	case "find":
+		path, _ := args["path"].(string)
+		glob, _ := args["glob"].(string)
+		var b strings.Builder
+		b.WriteString(name)
+		if glob != "" {
+			b.WriteString(" ")
+			b.WriteString(glob)
+		}
+		if path != "" && path != "." {
+			b.WriteString(" in ")
+			b.WriteString(shortenDisplayPath(path))
+		}
+		return b.String()
+	case "ls":
+		path, _ := args["path"].(string)
+		if path != "" && path != "." {
+			return name + " " + shortenDisplayPath(path)
+		}
+		return name
+	default:
+		key := summarizeKey(name)
+		if v, ok := args[key]; ok {
+			val := fmt.Sprintf("%v", v)
+			if len(val) > 60 {
+				val = val[:60] + "..."
+			}
+			return name + " " + val
+		}
+		return name
 	}
-	return ""
+}
+
+// formatFilePathCall formats a file read/write/edit call line:
+//   read path	o\file.go:1-20
+//   write path	o\file.go
+func formatFilePathCall(name string, args map[string]any, pathKey, offsetKey, limitKey string) string {
+	path, _ := args[pathKey].(string)
+	if path == "" {
+		return name
+	}
+	short := shortenDisplayPath(path)
+
+	// Check for alternate key names.
+	offset := getIntArg(args, offsetKey, "offset", "start_line")
+	limit := getIntArg(args, limitKey, "limit", "end_line")
+
+	if offset > 0 || limit > 0 {
+		start := offset
+		if start <= 0 {
+			start = 1
+		}
+		if limit > 0 {
+			return fmt.Sprintf("%s %s:%d-%d", name, short, start, start+limit-1)
+		}
+		return fmt.Sprintf("%s %s:%d", name, short, start)
+	}
+	return name + " " + short
+}
+
+// getIntArg tries multiple key names for an integer argument.
+func getIntArg(args map[string]any, keys ...string) int {
+	for _, k := range keys {
+		if k == "" {
+			continue
+		}
+		switch v := args[k].(type) {
+		case float64:
+			return int(v)
+		case int:
+			return v
+		case int64:
+			return int(v)
+		}
+	}
+	return 0
+}
+
+// shortenDisplayPath shortens a file path for display by trimming the cwd prefix.
+func shortenDisplayPath(p string) string {
+	cwd := getCwd()
+	if strings.HasPrefix(p, cwd+"/") {
+		return p[len(cwd)+1:]
+	}
+	if strings.HasPrefix(p, cwd) && p != cwd {
+		return p[len(cwd):]
+	}
+	return p
 }
 
 // wrapText word-wraps text to fit within the given width. It preserves existing
