@@ -320,6 +320,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.completeCommandSuggestion(suggestions)
 					return m, nil
 				}
+				return m, nil
+			}
+
+		case tea.KeyShiftTab:
+			if !m.pending {
 				if err := m.cycleThinkingLevel(); err != nil {
 					m.messages = append(m.messages, messageItem{role: "error", content: err.Error()})
 					m.refreshViewport()
@@ -697,7 +702,7 @@ func (m Model) renderStatusLine() string {
 	providerName := valueOrDefault(m.config.Provider, "unknown")
 	modelName := valueOrDefault(m.config.Model, "unknown")
 	thinking := valueOrDefault(m.config.Thinking, "none")
-	return Dim.Render(fmt.Sprintf("provider: %s  model: %s  thinking: %s  tab: cycle thinking", providerName, modelName, thinking))
+	return Dim.Render(fmt.Sprintf("provider: %s  model: %s  thinking: %s  shift+tab: cycle thinking", providerName, modelName, thinking))
 }
 
 func (m *Model) cycleThinkingLevel() error {
@@ -1511,6 +1516,14 @@ func (m *Model) handleCompactCommand(input string) tea.Cmd {
 // compactCmd returns a tea.Cmd that runs compaction asynchronously.
 func (m *Model) compactCmd(instructions string) tea.Cmd {
 	return func() tea.Msg {
+		defer func() {
+			if r := recover(); r != nil {
+				m.messages = append(m.messages, messageItem{role: "error", content: fmt.Sprintf("Compaction panic: %v", r)})
+				m.refreshViewport()
+				m.textarea.Reset()
+				m.textarea.Focus()
+			}
+		}()
 		m.runCompaction(instructions)
 		return compactionDoneMsg{}
 	}
@@ -1528,6 +1541,11 @@ func (m *Model) runAutoCompactCmd() tea.Cmd {
 
 // runCompaction performs the compaction, updates messages, and restores focus.
 func (m *Model) runCompaction(instructions string) {
+	if m.provider == nil {
+		m.messages = append(m.messages, messageItem{role: "error", content: "Compaction failed: no provider configured"})
+		return
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 

@@ -158,12 +158,12 @@ func TestViewShowsProviderModelAndThinkingAboveInput(t *testing.T) {
 	}
 }
 
-func TestTabCyclesThinkingLevels(t *testing.T) {
+func TestShiftTabCyclesThinkingLevels(t *testing.T) {
 	withTempWorkingDir(t)
 	t.Setenv("HOME", t.TempDir())
 	m := NewModel(&config.AgentConfig{Provider: "openrouter", Thinking: "none"}, nil, nil, nil, nil, nil, nil, nil)
 
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
 	updatedModel := updated.(Model)
 
 	if updatedModel.config.Thinking != "minimal" {
@@ -182,11 +182,11 @@ func TestTabCyclesThinkingLevels(t *testing.T) {
 	}
 }
 
-func TestTabDoesNotCycleThinkingWhenPending(t *testing.T) {
+func TestShiftTabDoesNotCycleThinkingWhenPending(t *testing.T) {
 	m := NewModel(&config.AgentConfig{Thinking: "none"}, nil, nil, nil, nil, nil, nil, nil)
 	m.pending = true
 
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
 	updatedModel := updated.(Model)
 
 	if updatedModel.config.Thinking != "none" {
