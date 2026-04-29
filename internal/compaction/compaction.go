@@ -115,9 +115,17 @@ func estimateContextTokens(messages []MessageItem) int {
 
 // serializeMessages converts messages to a plain-text format for the LLM summarizer.
 // Tool results are truncated to 2000 chars to keep summarization requests manageable.
+// The total output is capped at maxSerializedChars to prevent the summarization
+// prompt from exceeding model context limits and causing hangs.
 func serializeMessages(messages []MessageItem) string {
+	const maxSerializedChars = 100_000
 	var b strings.Builder
+	truncated := false
 	for _, msg := range messages {
+		if b.Len() >= maxSerializedChars {
+			truncated = true
+			break
+		}
 		switch msg.Role {
 		case roleUser:
 			b.WriteString("[User]: ")
@@ -144,6 +152,9 @@ func serializeMessages(messages []MessageItem) string {
 			b.WriteString(output)
 			b.WriteString("\n")
 		}
+	}
+	if truncated {
+		b.WriteString("\n[ ... earlier messages truncated to stay within context limits ... ]\n")
 	}
 	return b.String()
 }
@@ -273,22 +284,36 @@ Use this EXACT format:
 Keep each section concise. Preserve exact file paths, function names, and error messages.`
 
 // generateSummary calls the LLM to produce a compaction summary from messages.
+// If previousSummary is non-empty, it uses the update prompt to merge new
+// messages into the existing summary (iterative summarization).
 func generateSummary(
 	ctx context.Context,
 	prov provider.Provider,
 	modelID string,
 	messages []MessageItem,
 	customInstructions string,
+	previousSummary string,
 ) (string, error) {
 	conversationText := serializeMessages(messages)
 
-	// Use initial summarization prompt (no previous summary support yet).
-	prompt := summarizationPrompt
+	// Choose initial or update prompt based on whether we have a previous summary.
+	var prompt string
+	if previousSummary != "" {
+		prompt = updateSummarizationPrompt
+	} else {
+		prompt = summarizationPrompt
+	}
 	if customInstructions != "" {
 		prompt += "\n\nAdditional focus: " + customInstructions
 	}
 
-	promptText := "<conversation>\n" + conversationText + "\n</conversation>\n\n" + prompt
+	var promptText string
+	if previousSummary != "" {
+		promptText = "<conversation>\n" + conversationText + "\n</conversation>\n\n" +
+			"<previous-summary>\n" + previousSummary + "\n</previous-summary>\n\n" + prompt
+	} else {
+		promptText = "<conversation>\n" + conversationText + "\n</conversation>\n\n" + prompt
+	}
 
 	req := provider.Request{
 		Model:        modelID,
@@ -323,6 +348,10 @@ type Result struct {
 //
 // The provider is used for summarization. If compactionModel is non-empty,
 // it overrides the model used for summarization.
+//
+// If previousSummary is non-empty, the LLM performs an iterative update
+// instead of generating a fresh summary, preserving context from earlier
+// compactions.
 func Compact(
 	ctx context.Context,
 	prov provider.Provider,
@@ -330,6 +359,7 @@ func Compact(
 	settings config.CompactionConfig,
 	messages []MessageItem,
 	customInstructions string,
+	previousSummary string,
 ) (*Result, error) {
 	if !CanCompact(messages) {
 		return nil, fmt.Errorf("nothing to compact")
@@ -355,7 +385,7 @@ func Compact(
 		summarizationModel = settings.Model
 	}
 
-	summary, err := generateSummary(ctx, prov, summarizationModel, messagesToSummarize, customInstructions)
+	summary, err := generateSummary(ctx, prov, summarizationModel, messagesToSummarize, customInstructions, previousSummary)
 	if err != nil {
 		return nil, err
 	}

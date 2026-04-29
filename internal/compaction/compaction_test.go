@@ -207,7 +207,7 @@ func TestCompact_TooSmall(t *testing.T) {
 		ReserveTokens:    16384,
 		KeepRecentTokens: 20000,
 	}
-	_, err := Compact(nil, nil, "", settings, msgs, "")
+	_, err := Compact(nil, nil, "", settings, msgs, "", "")
 	if err == nil {
 		t.Error("expected error for session too small")
 	}
