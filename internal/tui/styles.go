@@ -71,17 +71,13 @@ var (
 	TableCell    = lipgloss.NewStyle().Foreground(lipgloss.Color("#d1d5db"))
 )
 
-// previewLines caps output preview at this many lines when the tool call is not expanded.
-const previewLines = 20
+// collapsedPreviewLines caps output preview at this many lines when collapsed.
+const collapsedPreviewLines = 10
 
 // RenderToolCall renders a tool call as a background-colored block (pi-mono style).
-// No box borders — the background color indicates state:
-//
-//	pending (args received, not executing) → ToolPendingBg
-//	running (executing)                     → ToolPendingBg
-//	done, success                           → ToolSuccessBg
-//	done, error                             → ToolErrorBg
-func RenderToolCall(tc toolRenderItem, width int) string {
+// No box borders. When expanded is false and output exceeds collapsedPreviewLines,
+// only a preview is shown with a "ctrl+o to expand" hint.
+func RenderToolCall(tc toolRenderItem, width int, expanded bool) string {
 	inner := width - 4
 	if inner < 20 {
 		inner = 20
@@ -135,7 +131,12 @@ func RenderToolCall(tc toolRenderItem, width int) string {
 	// Output preview.
 	if tc.output != "" {
 		b.WriteString("\n")
-		preview := formatOutputPreview(tc.output, inner-2)
+		collapsed := !expanded
+		maxLines := 1<<31 - 1 // effectively unlimited when expanded
+		if collapsed {
+			maxLines = collapsedPreviewLines
+		}
+		preview := formatOutputPreview(tc.output, inner-2, maxLines, collapsed)
 		outputBlock := lipgloss.NewStyle().
 			Background(bgColor).
 			Width(inner).
@@ -175,8 +176,8 @@ func formatSingleToolCallLine(tc toolRenderItem) string {
 	return label + " " + ToolOutput.Render(tc.args)
 }
 
-// formatOutputPreview returns a preview of the tool output, capped at previewLines.
-func formatOutputPreview(output string, width int) string {
+// formatOutputPreview returns a preview of the tool output, capped at maxLines.
+func formatOutputPreview(output string, width int, maxLines int, collapsed bool) string {
 	lines := strings.Split(output, "\n")
 
 	// Strip trailing empty lines.
@@ -185,9 +186,9 @@ func formatOutputPreview(output string, width int) string {
 	}
 
 	hidden := 0
-	if len(lines) > previewLines {
-		hidden = len(lines) - previewLines
-		lines = lines[:previewLines]
+	if len(lines) > maxLines {
+		hidden = len(lines) - maxLines
+		lines = lines[:maxLines]
 	}
 
 	var b strings.Builder
@@ -198,7 +199,10 @@ func formatOutputPreview(output string, width int) string {
 		b.WriteString(ToolOutput.Render(truncateToWidth(line, width)))
 	}
 
-	if hidden > 0 {
+	if collapsed && hidden > 0 {
+		b.WriteByte('\n')
+		b.WriteString(ToolMeta.Render(fmt.Sprintf("… %d more lines (ctrl+o to expand)", hidden)))
+	} else if hidden > 0 {
 		b.WriteByte('\n')
 		b.WriteString(ToolMeta.Render(fmt.Sprintf("… %d more lines", hidden)))
 	}

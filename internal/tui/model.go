@@ -129,6 +129,9 @@ type Model struct {
 	// Text selection state for mouse drag-select + copy.
 	selection  selectionState
 	plainLines []string // unstyled viewport content lines, 1:1 with styled lines
+
+	// Global toggle for tool output expansion (ctrl+o).
+	toolOutputExpanded bool
 }
 
 // NewModel creates a fully initialized TUI model.
@@ -304,6 +307,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.pending && m.agentCancel != nil {
 				m.agentCancel()
 			}
+			return m, nil
+
+		case tea.KeyCtrlO:
+			m.toolOutputExpanded = !m.toolOutputExpanded
+			m.refreshViewport()
 			return m, nil
 
 		case tea.KeyEsc:
@@ -1446,7 +1454,7 @@ func (m Model) renderMessages() string {
 				b.WriteString(RenderMarkdown(msg.content, wrapWidth))
 			}
 			for _, tc := range msg.toolCalls {
-				b.WriteString(RenderToolCall(tc, m.width-4))
+				b.WriteString(RenderToolCall(tc, m.width-4, m.toolOutputExpanded))
 				b.WriteString("\n")
 			}
 			if msg.usage != "" {
@@ -2014,34 +2022,93 @@ func wrapText(text string, width int) string {
 }
 
 // wrapLine wraps a single line (no embedded newlines) to the given width.
+// Handles ANSI escape sequences without breaking them.
 func wrapLine(line string, width int) string {
-	if len(line) <= width {
+	if ansiLen(line) <= width {
 		return line
 	}
 	var b strings.Builder
-	remaining := line
-	first := true
-	for len(remaining) > 0 {
-		if !first {
-			b.WriteByte('\n')
+	pos := 0
+	visPos := 0
+	lineStart := 0
+	lastSpace := -1
+
+	for pos < len(line) {
+		// Skip ANSI escape sequence.
+		if line[pos] == 0x1b {
+			pos++
+			if pos < len(line) && line[pos] == '[' {
+				for pos++; pos < len(line); pos++ {
+					if line[pos] >= '@' && line[pos] <= '~' {
+						pos++
+						break
+					}
+				}
+			} else if pos < len(line) && line[pos] == ']' {
+				for pos++; pos < len(line); pos++ {
+					if line[pos] == 0x07 || (line[pos] == 0x1b && pos+1 < len(line) && line[pos+1] == '\\') {
+						pos += 2
+						break
+					}
+				}
+			} else {
+				pos++
+			}
+			continue
 		}
-		first = false
-		if len(remaining) <= width {
-			b.WriteString(remaining)
-			break
+
+		if line[pos] == ' ' {
+			lastSpace = pos
 		}
-		// Try to break at the last space within width.
-		breakAt := strings.LastIndexByte(remaining[:width+1], ' ')
-		if breakAt <= 0 {
-			// No space found — force break at width.
-			breakAt = width
+		visPos++
+
+		if visPos > width {
+			if lastSpace > lineStart {
+				b.WriteString(line[lineStart:lastSpace])
+				b.WriteByte('\n')
+				pos = lastSpace + 1
+				lineStart = pos
+				visPos = 0
+				lastSpace = -1
+			} else {
+				// Force break at the character that overflowed.
+				b.WriteString(line[lineStart:pos])
+				b.WriteByte('\n')
+				lineStart = pos
+				visPos = 0
+			}
+			continue
 		}
-		b.WriteString(remaining[:breakAt])
-		// Skip past the break point and any leading whitespace.
-		remaining = remaining[breakAt:]
-		remaining = strings.TrimLeft(remaining, " ")
+		pos++
+	}
+	// Remainder.
+	if lineStart < len(line) {
+		b.WriteString(strings.TrimLeft(line[lineStart:], " "))
 	}
 	return b.String()
+}
+
+// ansiLen returns the visible character count of a string, skipping ANSI sequences.
+func ansiLen(s string) int {
+	n := 0
+	inANSI := false
+	for i := 0; i < len(s); i++ {
+		if s[i] == 0x1b {
+			inANSI = true
+			continue
+		}
+		if inANSI {
+			if s[i] >= '@' && s[i] <= '~' {
+				if s[i] == '[' {
+					continue
+				}
+				inANSI = false
+			}
+			continue
+		}
+		n++
+	}
+	return n
 }
 
 func summarizeKey(name string) string {
