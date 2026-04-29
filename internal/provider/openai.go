@@ -145,10 +145,16 @@ func (p *OpenAIProvider) convertMessage(m Message) openai.ChatCompletionMessageP
 	switch m.Role {
 	case "assistant":
 		if len(m.ToolCalls) > 0 {
-			assistant := &openai.ChatCompletionAssistantMessageParam{
-				Content: openai.ChatCompletionAssistantMessageParamContentUnion{
+			assistant := &openai.ChatCompletionAssistantMessageParam{}
+			if m.Content != "" {
+				assistant.Content = openai.ChatCompletionAssistantMessageParamContentUnion{
 					OfString: openai.String(m.Content),
-				},
+				}
+			}
+			if m.ReasoningContent != "" {
+				assistant.SetExtraFields(map[string]any{
+					"reasoning_content": m.ReasoningContent,
+				})
 			}
 			for _, tc := range m.ToolCalls {
 				args, _ := json.Marshal(tc.Args)
@@ -277,9 +283,7 @@ func (p *OpenAIProvider) mapResponse(c *openai.ChatCompletion) *Response {
 	if len(c.Choices) > 0 {
 		msg := c.Choices[0].Message
 		out.Text = msg.Content
-		if reasoning := extractOpenAIMessageReasoning(msg); reasoning != "" {
-			out.Text += reasoning
-		}
+		out.ReasoningContent = extractOpenAIMessageReasoning(msg)
 		for _, tc := range msg.ToolCalls {
 			out.ToolCalls = append(out.ToolCalls, ToolCall{
 				Name: tc.Function.Name,

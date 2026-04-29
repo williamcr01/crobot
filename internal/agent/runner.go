@@ -187,9 +187,10 @@ func (r *runner) run(ctx context.Context) (*Result, error) {
 
 		// Add assistant message, preserving tool-call metadata for the follow-up request.
 		r.messages = append(r.messages, provider.Message{
-			Role:      "assistant",
-			Content:   step.Text,
-			ToolCalls: step.ToolCalls,
+			Role:             "assistant",
+			Content:          step.Text,
+			ReasoningContent: step.ReasoningContent,
+			ToolCalls:        step.ToolCalls,
 		})
 
 		// If there are NO tool calls, we're done.
@@ -252,9 +253,10 @@ func (r *runner) run(ctx context.Context) (*Result, error) {
 }
 
 type streamStep struct {
-	Text      string
-	ToolCalls []provider.ToolCall
-	Usage     *provider.Usage
+	Text             string
+	ReasoningContent string
+	ToolCalls        []provider.ToolCall
+	Usage            *provider.Usage
 }
 
 func (r *runner) streamWithRetry(ctx context.Context, req provider.Request) (*streamStep, error) {
@@ -289,6 +291,7 @@ func (r *runner) processStream(ctx context.Context, evCh <-chan provider.StreamE
 
 	var (
 		currentText      strings.Builder
+		currentReasoning strings.Builder
 		toolCalls        []provider.ToolCall
 		usage            *provider.Usage
 		toolCallsPending = make(map[string]*toolCallAccum)
@@ -319,6 +322,7 @@ func (r *runner) processStream(ctx context.Context, evCh <-chan provider.StreamE
 		}
 
 		if event.ReasoningDelta != "" {
+			currentReasoning.WriteString(event.ReasoningDelta)
 			r.emit(Event{Type: "reasoning_delta", ReasoningDelta: event.ReasoningDelta})
 		}
 
@@ -378,11 +382,13 @@ func (r *runner) processStream(ctx context.Context, evCh <-chan provider.StreamE
 	}
 
 	text := currentText.String()
+	reasoning := currentReasoning.String()
 
 	return &streamStep{
-		Text:      text,
-		ToolCalls: toolCalls,
-		Usage:     usage,
+		Text:             text,
+		ReasoningContent: reasoning,
+		ToolCalls:        toolCalls,
+		Usage:            usage,
 	}, nil
 }
 

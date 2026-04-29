@@ -4,10 +4,11 @@ import "context"
 
 // Message is a chat message in the conversation.
 type Message struct {
-	Role       string     `json:"role"`                   // "system", "user", "assistant", "tool"
-	Content    string     `json:"content"`                // Message text or tool result
-	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`   // Assistant tool calls
-	ToolCallID string     `json:"tool_call_id,omitempty"` // Tool result call ID
+	Role             string     `json:"role"`                      // "system", "user", "assistant", "tool"
+	Content          string     `json:"content"`                   // Message text or tool result
+	ReasoningContent string     `json:"reasoning_content,omitempty"` // Model reasoning (e.g. DeepSeek thinking)
+	ToolCalls        []ToolCall `json:"tool_calls,omitempty"`      // Assistant tool calls
+	ToolCallID       string     `json:"tool_call_id,omitempty"`    // Tool result call ID
 }
 
 // ToolDefinition describes a tool available to the model.
@@ -48,9 +49,10 @@ type Request struct {
 
 // Response is the result of a non-streaming provider call.
 type Response struct {
-	Text      string
-	ToolCalls []ToolCall
-	Usage     *Usage
+	Text             string
+	ReasoningContent string
+	ToolCalls        []ToolCall
+	Usage            *Usage
 }
 
 // StreamEvent is emitted during streaming. Exactly one field is set.
