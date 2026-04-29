@@ -14,7 +14,7 @@ import (
 
 func init() {
 	Register("openai", NewOpenAI)
-	Register("openai-oauth", NewOpenAIOAuth)
+	Register("openai-codex", NewOpenAIOAuth)
 	Register("deepseek", NewDeepSeek)
 }
 
@@ -44,10 +44,10 @@ func NewOpenAI(apiKey string) (Provider, error) {
 
 func NewOpenAIOAuth(apiKey string) (Provider, error) {
 	if strings.TrimSpace(apiKey) == "" {
-		return nil, fmt.Errorf("openai-oauth: missing OAuth access token")
+		return nil, fmt.Errorf("openai-codex: missing OAuth access token")
 	}
 	return &OpenAIProvider{
-		name:   "openai-oauth",
+		name:   "openai-codex",
 		apiKey: apiKey,
 		client: openai.NewClient(
 			option.WithAPIKey(apiKey),
@@ -96,7 +96,7 @@ func (p *OpenAIProvider) ListModels(ctx context.Context) ([]string, error) {
 	if p.name == "deepseek" {
 		return []string{"deepseek-v4-pro", "deepseek-v4-flash"}, nil
 	}
-	if p.name == "openai-oauth" || isOpenAIOAuthToken(p.apiKey) {
+	if p.name == "openai-codex" || isOpenAIOAuthToken(p.apiKey) {
 		return openAIOAuthModels(), nil
 	}
 

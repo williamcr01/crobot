@@ -339,8 +339,8 @@ func TestOAuthProviderOptionUsesOpenAIOAuthID(t *testing.T) {
 	if len(providers) != 1 {
 		t.Fatalf("expected one oauth provider, got %d", len(providers))
 	}
-	if providers[0].ID != "openai-oauth" {
-		t.Fatalf("expected openai-oauth provider ID, got %q", providers[0].ID)
+	if providers[0].ID != "openai-codex" {
+		t.Fatalf("expected openai-codex provider ID, got %q", providers[0].ID)
 	}
 }
 

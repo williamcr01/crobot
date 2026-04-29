@@ -53,7 +53,7 @@ OAuth tokens, compatible with pi-ai/OpenAI Codex login output, use a separate pr
 
 ```json
 {
-  "openai-oauth": {
+  "openai-codex": {
     "type": "oauth",
     "access": "eyJ...",
     "refresh": "...",
@@ -63,7 +63,7 @@ OAuth tokens, compatible with pi-ai/OpenAI Codex login output, use a separate pr
 }
 ```
 
-OAuth access tokens are sent as bearer tokens. Crobot refreshes them using the stored refresh token when they are close to expiry. `/login` writes OpenAI OAuth credentials to `openai-oauth`.
+OAuth access tokens are sent as bearer tokens. Crobot refreshes them using the stored refresh token when they are close to expiry. `/login` writes OpenAI OAuth credentials to `openai-codex`.
 
 Then select OpenAI in `~/.crobot/agent.config.json`:
 
@@ -130,7 +130,7 @@ Currently supported:
 
 - `openrouter`
 - `openai` (API key)
-- `openai-oauth` (ChatGPT/Codex OAuth)
+- `openai-codex` (ChatGPT/Codex OAuth)
 - `deepseek`
 
 ## Notes

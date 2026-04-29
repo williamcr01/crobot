@@ -78,12 +78,8 @@ func LoadAuth() (AuthConfig, error) {
 
 // APIKey returns an API key for provider, if present.
 func (a AuthConfig) APIKey(provider string) string {
-	if provider == "openai-oauth" {
-		if entry, ok := a["openai-oauth"]; ok && entry.Type == "oauth" {
-			return entry.Access
-		}
-		// Backward compatibility for auth files written before OAuth used a separate provider ID.
-		if entry, ok := a["openai"]; ok && entry.Type == "oauth" {
+	if provider == "openai-codex" {
+		if entry, ok := a["openai-codex"]; ok && entry.Type == "oauth" {
 			return entry.Access
 		}
 		return ""
@@ -108,10 +104,7 @@ func RefreshOpenAIOAuth() error {
 	if err != nil {
 		return err
 	}
-	entry, ok := auth["openai-oauth"]
-	if !ok {
-		entry, ok = auth["openai"]
-	}
+	entry, ok := auth["openai-codex"]
 	if !ok || entry.Type != "oauth" || entry.Refresh == "" {
 		return nil
 	}
@@ -125,18 +118,15 @@ func RefreshOpenAIOAuth() error {
 	if refreshed.AccountID == "" {
 		refreshed.AccountID = entry.AccountID
 	}
-	auth["openai-oauth"] = refreshed
+	auth["openai-codex"] = refreshed
 	return SaveAuth(auth)
 }
 
 // OAuthProviders returns provider IDs that currently have OAuth credentials.
 func (a AuthConfig) OAuthProviders() []string {
 	providers := make([]string, 0)
-	if entry, ok := a["openai-oauth"]; ok && entry.Type == "oauth" && entry.Access != "" {
-		providers = append(providers, "openai-oauth")
-	}
-	if entry, ok := a["openai"]; ok && entry.Type == "oauth" && entry.Access != "" {
-		providers = append(providers, "openai-oauth")
+	if entry, ok := a["openai-codex"]; ok && entry.Type == "oauth" && entry.Access != "" {
+		providers = append(providers, "openai-codex")
 	}
 	return providers
 }
@@ -148,11 +138,8 @@ func LogoutOAuthProvider(provider string) error {
 		return err
 	}
 	switch provider {
-	case "openai-oauth":
-		delete(auth, "openai-oauth")
-		if entry, ok := auth["openai"]; ok && entry.Type == "oauth" {
-			delete(auth, "openai")
-		}
+	case "openai-codex":
+		delete(auth, "openai-codex")
 	default:
 		delete(auth, provider)
 	}
@@ -207,5 +194,5 @@ func (a AuthConfig) HasAuthorizedProvider() bool {
 			return true
 		}
 	}
-	return a.APIKey("openai-oauth") != ""
+	return a.APIKey("openai-codex") != ""
 }

@@ -87,7 +87,7 @@ func LoginOpenAIOAuth(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	auth["openai-oauth"] = entry
+	auth["openai-codex"] = entry
 	if err := SaveAuth(auth); err != nil {
 		return "", err
 	}

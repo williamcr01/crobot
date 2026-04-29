@@ -189,7 +189,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.messages = append(m.messages, messageItem{role: "error", content: msg.err.Error()})
 		} else {
-			if m.config.Provider == msg.provider || (msg.provider == "openai-oauth" && m.config.Provider == "openai") {
+			if m.config.Provider == msg.provider || (msg.provider == "openai-codex" && m.config.Provider == "openai") {
 				m.provider = nil
 				m.config.Provider = ""
 				m.config.Model = ""
@@ -851,7 +851,7 @@ type loginProviderOption struct {
 }
 
 func oauthProviderOptions() []loginProviderOption {
-	return []loginProviderOption{{ID: "openai-oauth", Name: "OpenAI OAuth", Description: "ChatGPT Plus/Pro OAuth"}}
+	return []loginProviderOption{{ID: "openai-codex", Name: "OpenAI Codex", Description: "ChatGPT Plus/Pro OAuth"}}
 }
 
 func (m Model) filteredLoginProviders() []loginProviderOption {
@@ -917,7 +917,7 @@ func (m *Model) reloadAuthorizedProviders() error {
 		return err
 	}
 	m.provider = nil
-	for _, providerName := range []string{"openrouter", "openai", "openai-oauth", "deepseek"} {
+	for _, providerName := range []string{"openrouter", "openai", "openai-codex", "deepseek"} {
 		apiKey := auth.APIKey(providerName)
 		if apiKey == "" {
 			continue
@@ -954,7 +954,7 @@ func (m Model) loggedInOAuthProviders() []loginProviderOption {
 		return nil
 	}
 	known := map[string]loginProviderOption{
-		"openai-oauth": {ID: "openai-oauth", Name: "OpenAI OAuth", Description: "ChatGPT Plus/Pro OAuth"},
+		"openai-codex": {ID: "openai-codex", Name: "OpenAI Codex", Description: "ChatGPT Plus/Pro OAuth"},
 	}
 	seen := map[string]bool{}
 	filter := strings.ToLower(strings.TrimSpace(m.logoutPickerFilter))
@@ -1068,9 +1068,9 @@ func (m Model) loginProviderCmd(providerID string) tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
 		switch providerID {
-		case "openai-oauth":
+		case "openai-codex":
 			accountID, err := config.LoginOpenAIOAuth(ctx)
-			return loginResultMsg{provider: "openai-oauth", accountID: accountID, err: err}
+			return loginResultMsg{provider: "openai-codex", accountID: accountID, err: err}
 		default:
 			return loginResultMsg{provider: providerID, err: fmt.Errorf("unsupported oauth provider: %s", providerID)}
 		}

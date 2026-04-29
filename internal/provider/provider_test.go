@@ -52,15 +52,15 @@ func TestCreateDeepSeek(t *testing.T) {
 }
 
 func TestCreateOpenAIOAuth(t *testing.T) {
-	prov, err := Create("openai-oauth", "oauth-token")
+	prov, err := Create("openai-codex", "oauth-token")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if prov == nil {
 		t.Fatal("expected non-nil provider")
 	}
-	if prov.Name() != "openai-oauth" {
-		t.Errorf("expected name openai-oauth, got %s", prov.Name())
+	if prov.Name() != "openai-codex" {
+		t.Errorf("expected name openai-codex, got %s", prov.Name())
 	}
 }
 
@@ -132,7 +132,7 @@ func TestOpenAIOAuthListModelsUsesStaticFallback(t *testing.T) {
 }
 
 func TestOpenAIReasoningEffort(t *testing.T) {
-	prov := &OpenAIProvider{name: "openai-oauth"}
+	prov := &OpenAIProvider{name: "openai-codex"}
 
 	tests := []struct {
 		model    string
@@ -169,7 +169,7 @@ func TestDeepSeekReasoningEffort(t *testing.T) {
 }
 
 func TestOpenAIReasoningEffortNone(t *testing.T) {
-	prov := &OpenAIProvider{name: "openai-oauth"}
+	prov := &OpenAIProvider{name: "openai-codex"}
 
 	params := prov.toChatParams(Request{Model: "gpt-5.1", Thinking: "none"}, true)
 	if got := string(params.ReasoningEffort); got != "none" {
