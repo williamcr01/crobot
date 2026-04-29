@@ -17,13 +17,16 @@ type mockProvider struct {
 	responses []responseStep
 	stepIdx   int
 	requests  []provider.Request
+	cancel    context.CancelFunc // called mid-stream if cancelMid is set
 }
 
 type responseStep struct {
-	text      string
-	toolCalls []provider.ToolCall
-	usage     *provider.Usage
-	err       error
+	text       string
+	reasoning  string
+	toolCalls  []provider.ToolCall
+	usage      *provider.Usage
+	err        error
+	cancelMid  bool // cancel context after sending reasoning but before text
 }
 
 func (m *mockProvider) Name() string { return m.name }
@@ -42,6 +45,22 @@ func (m *mockProvider) Stream(ctx context.Context, req provider.Request) (<-chan
 	ch := make(chan provider.StreamEvent, 10)
 	go func() {
 		defer close(ch)
+
+		if step.reasoning != "" {
+			runes := []rune(step.reasoning)
+			mid := len(runes) / 2
+			for i, r := range runes {
+				if i == mid && step.cancelMid && m.cancel != nil {
+					m.cancel()
+					// Drain remaining to channel so sender doesn't block.
+					for j := i; j < len(runes); j++ {
+						ch <- provider.StreamEvent{ReasoningDelta: string(runes[j])}
+					}
+					return
+				}
+				ch <- provider.StreamEvent{ReasoningDelta: string(r)}
+			}
+		}
 
 		if step.text != "" {
 			for _, r := range step.text {
@@ -240,6 +259,44 @@ func TestRun_Cancellation(t *testing.T) {
 	_, err := Run(ctx, mock, "mock", "prompt", nil, tools.NewRegistry(), nil, nil)
 	if err == nil {
 		t.Fatal("expected cancellation error")
+	}
+}
+
+func TestRun_CancellationPreservesReasoning(t *testing.T) {
+	// Verify that processStream returns partial state (including reasoning)
+	// when the context is cancelled mid-stream.
+	mock := &mockProvider{
+		name: "mock",
+		responses: []responseStep{
+			{reasoning: "let me think about this...", cancelMid: true},
+		},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	mock.cancel = cancel
+
+	r := &runner{
+		prov:         mock,
+		model:        "mock",
+		systemPrompt: "system",
+		toolReg:      tools.NewRegistry(),
+		messages:     nil,
+		maxTurns:     50,
+	}
+
+	// streamWithRetry calls processStream which should return partial + error.
+	step, err := r.streamWithRetry(ctx, provider.Request{
+		Model:  "mock",
+		Stream: true,
+	})
+	if err == nil {
+		t.Fatal("expected cancellation error")
+	}
+	if step == nil {
+		t.Fatal("expected partial step on cancellation, got nil")
+	}
+	if step.ReasoningContent == "" {
+		t.Error("expected non-empty reasoning in partial step")
 	}
 }
 

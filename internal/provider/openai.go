@@ -170,7 +170,17 @@ func (p *OpenAIProvider) convertMessage(m Message) openai.ChatCompletionMessageP
 			}
 			return openai.ChatCompletionMessageParamUnion{OfAssistant: assistant}
 		}
-		return openai.AssistantMessage(m.Content)
+		assistant := &openai.ChatCompletionAssistantMessageParam{
+			Content: openai.ChatCompletionAssistantMessageParamContentUnion{
+				OfString: openai.String(m.Content),
+			},
+		}
+		if m.ReasoningContent != "" {
+			assistant.SetExtraFields(map[string]any{
+				"reasoning_content": m.ReasoningContent,
+			})
+		}
+		return openai.ChatCompletionMessageParamUnion{OfAssistant: assistant}
 
 	case "tool":
 		return openai.ToolMessage(m.Content, m.ToolCallID)

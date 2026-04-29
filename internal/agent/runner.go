@@ -180,18 +180,23 @@ func (r *runner) run(ctx context.Context) (*Result, error) {
 
 		// Stream with retry.
 		step, err := r.streamWithRetry(ctx, req)
+
+		// If we got a partial step (e.g. from cancellation), save its
+		// reasoning_content to the history so DeepSeek doesn't reject the
+		// next request (reasoning_content must be passed back to the API).
+		if step != nil {
+			r.messages = append(r.messages, provider.Message{
+				Role:             "assistant",
+				Content:          step.Text,
+				ReasoningContent: step.ReasoningContent,
+				ToolCalls:        step.ToolCalls,
+			})
+		}
+
 		if err != nil {
 			r.emit(Event{Type: "error", Error: err})
 			return nil, err
 		}
-
-		// Add assistant message, preserving tool-call metadata for the follow-up request.
-		r.messages = append(r.messages, provider.Message{
-			Role:             "assistant",
-			Content:          step.Text,
-			ReasoningContent: step.ReasoningContent,
-			ToolCalls:        step.ToolCalls,
-		})
 
 		// If there are NO tool calls, we're done.
 		if len(step.ToolCalls) == 0 {
@@ -308,7 +313,13 @@ func (r *runner) processStream(ctx context.Context, evCh <-chan provider.StreamE
 	for event := range evCh {
 		select {
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			// Return partial step so reasoning_content can be passed back to DeepSeek.
+			return &streamStep{
+				Text:             currentText.String(),
+				ReasoningContent: currentReasoning.String(),
+				ToolCalls:        toolCalls,
+				Usage:            usage,
+			}, ctx.Err()
 		default:
 		}
 
