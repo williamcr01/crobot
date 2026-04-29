@@ -58,7 +58,10 @@ type messageItem struct {
 type agentEventMsg agent.Event
 type agentDoneMsg struct{}
 
-type compactionDoneMsg struct{}
+type compactionResultMsg struct {
+	err    error
+	result *compaction.Result
+}
 
 type loginResultMsg struct {
 	provider  string
@@ -122,6 +125,10 @@ type Model struct {
 	logoutPickerActive bool
 	logoutPickerFilter string
 	logoutPickerIndex  int
+
+	// Text selection state for mouse drag-select + copy.
+	selection  selectionState
+	plainLines []string // unstyled viewport content lines, 1:1 with styled lines
 }
 
 // NewModel creates a fully initialized TUI model.
@@ -281,10 +288,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		switch msg.Type {
 		case tea.KeyCtrlC:
+			// If there's a selection, copy it.
+			if m.selection.hasSelection() || m.selection.finished {
+				text := m.selection.selectedText(m.plainLines)
+				m.selection.clear()
+				m.refreshViewport()
+				if text != "" {
+					m.messages = append(m.messages, messageItem{role: "system", content: "Copied to clipboard."})
+					m.refreshViewport()
+					return m, copyToClipboardCmd(text)
+				}
+				return m, nil
+			}
+			// Cancel pending agent if running.
 			if m.pending && m.agentCancel != nil {
 				m.agentCancel()
 			}
-			return m, tea.Quit
+			return m, nil
 
 		case tea.KeyEsc:
 			if m.pending && m.agentCancel != nil {
@@ -292,6 +312,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.pending = false
 				m.textarea.Focus()
 				m.messages = append(m.messages, messageItem{role: "system", content: "Cancelled."})
+				m.refreshViewport()
+			}
+			if m.selection.hasSelection() || m.selection.finished {
+				m.selection.clear()
 				m.refreshViewport()
 			}
 			return m, nil
@@ -351,8 +375,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			// /compact: trigger context compaction
 			if strings.HasPrefix(input, "/compact") {
-				cmd := m.handleCompactCommand(input)
-				return m, cmd
+				if !compaction.CanCompact(messagesToCompaction(m.messages)) {
+					m.messages = append(m.messages, messageItem{role: "error", content: "Nothing to compact (session already compacted or empty)."})
+					m.refreshViewport()
+					m.textarea.Reset()
+					m.textarea.Focus()
+					return m, nil
+				}
+				instructions := strings.TrimSpace(strings.TrimPrefix(input, "/compact"))
+				m.messages = append(m.messages, messageItem{role: "system", content: "Compacting context..."})
+				m.refreshViewport()
+				m.textarea.Reset()
+				m.textarea.Blur()
+				return m, m.startCompaction(instructions)
 			}
 
 			// /model: open the model picker
@@ -421,6 +456,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 
+			if m.selection.hasSelection() || m.selection.finished {
+				m.selection.clear()
+			}
+
 			m.messages = append(m.messages, messageItem{role: "user", content: input})
 			m.refreshViewport()
 
@@ -440,12 +479,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		if m.shouldHandleViewportKey(msg) {
+			if m.selection.hasSelection() || m.selection.finished {
+				m.selection.clear()
+				m.refreshViewport()
+			}
 			var cmd tea.Cmd
 			m.viewport, cmd = m.viewport.Update(msg)
 			return m, cmd
 		}
 
 	case tea.MouseMsg:
+		if m.handleMouseSelection(msg) {
+			m.refreshViewport()
+			return m, nil
+		}
 		var cmd tea.Cmd
 		m.viewport, cmd = m.viewport.Update(msg)
 		return m, cmd
@@ -461,11 +508,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case compactionDoneMsg:
-		m.refreshViewport()
-		m.textarea.Reset()
-		m.textarea.Focus()
-		return m, nil
+	case compactionResultMsg:
+		return m.handleCompactionResult(msg)
 
 	case spinner.TickMsg:
 		if m.pending {
@@ -477,6 +521,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	var cmd tea.Cmd
+	prevValue := m.textarea.Value()
 	m.textarea, cmd = m.textarea.Update(msg)
 	if m.modelPickerActive {
 		prev := m.modelPickerFilter
@@ -498,6 +543,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.logoutPickerFilter != prev {
 			m.logoutPickerIndex = 0
 		}
+	}
+	// Clear selection when user starts typing.
+	if m.textarea.Value() != prevValue && (m.selection.hasSelection() || m.selection.finished) {
+		m.selection.clear()
+		m.refreshViewport()
 	}
 	m.clampCommandSuggestionIndex()
 	return m, cmd
@@ -771,13 +821,10 @@ func (m Model) handleModelPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 
 	switch msg.Type {
 	case tea.KeyCtrlC:
-		if m.pending && m.agentCancel != nil {
-			m.agentCancel()
-		}
 		m.modelPickerActive = false
 		m.textarea.Reset()
 		m.textarea.Focus()
-		return m, tea.Quit, true
+		return m, nil, true
 
 	case tea.KeyEsc:
 		m.modelPickerActive = false
@@ -920,7 +967,7 @@ func (m Model) handleLoginPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 		m.loginPickerActive = false
 		m.textarea.Reset()
 		m.textarea.Focus()
-		return m, tea.Quit, true
+		return m, nil, true
 	case tea.KeyEsc:
 		m.loginPickerActive = false
 		m.textarea.Reset()
@@ -1026,7 +1073,7 @@ func (m Model) handleLogoutPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) 
 		m.logoutPickerActive = false
 		m.textarea.Reset()
 		m.textarea.Focus()
-		return m, tea.Quit, true
+		return m, nil, true
 	case tea.KeyEsc:
 		m.logoutPickerActive = false
 		m.textarea.Reset()
@@ -1390,14 +1437,13 @@ func (m Model) renderMessages() string {
 			b.WriteString("\n\n")
 		case "assistant":
 			if msg.reasoning != "" && m.config.Reasoning {
-				b.WriteString(Dim.Render("thinking"))
+				b.WriteString(ThinkingStyle.Render("thinking"))
 				b.WriteString("\n")
-				b.WriteString(Dim.Render(wrapText(msg.reasoning, wrapWidth)))
+				b.WriteString(ThinkingStyle.Render(wrapText(msg.reasoning, wrapWidth)))
 				b.WriteString("\n")
 			}
 			if msg.content != "" {
-				b.WriteString(wrapText(msg.content, wrapWidth))
-				b.WriteString("\n")
+				b.WriteString(RenderMarkdown(msg.content, wrapWidth))
 			}
 			for _, tc := range msg.toolCalls {
 				b.WriteString(RenderToolCall(tc, m.width-4))
@@ -1441,12 +1487,100 @@ func (m Model) shouldHandleViewportKey(msg tea.KeyMsg) bool {
 	}
 }
 
+// handleMouseSelection processes mouse events for text selection in the viewport.
+// Returns true if the event was consumed (selection-related).
+func (m *Model) handleMouseSelection(msg tea.MouseMsg) bool {
+	// Only handle in the viewport area (Y < viewport height).
+	// Use dynamic height since View() applies it at render time.
+	vpHeight := m.dynamicViewportHeight()
+	if msg.Y >= vpHeight {
+		// Click outside viewport — clear selection if any.
+		if m.selection.hasSelection() || m.selection.finished {
+			m.selection.clear()
+			return true
+		}
+		return false
+	}
+
+	// Map screen Y to content line index.
+	contentLine := m.viewport.YOffset + msg.Y
+
+	// Get the styled line to map screen X to plain text column.
+	// Use a viewport copy with the dynamic height, since View() uses Height internally.
+	// Note: vp.View() may return fewer lines than vpHeight if content is shorter.
+	vp := m.viewport
+	vp.Height = vpHeight
+	styledLines := strings.Split(vp.View(), "\n")
+	if msg.Y < 0 {
+		return false
+	}
+
+	var styledLine string
+	if msg.Y < len(styledLines) {
+		styledLine = styledLines[msg.Y]
+	}
+	plainCol := styledColToPlainOffset(styledLine, msg.X)
+
+	switch {
+	case msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft:
+		// Start selection.
+		m.selection.active = true
+		m.selection.finished = false
+		m.selection.startLine = contentLine
+		m.selection.startCol = plainCol
+		m.selection.endLine = contentLine
+		m.selection.endCol = plainCol
+		return true
+
+	case msg.Action == tea.MouseActionMotion && msg.Button == tea.MouseButtonLeft:
+		// Update selection while dragging.
+		if !m.selection.active {
+			return false
+		}
+		m.selection.endLine = contentLine
+		m.selection.endCol = plainCol
+		return true
+
+	case msg.Action == tea.MouseActionRelease && msg.Button == tea.MouseButtonLeft:
+		// Finish selection.
+		if !m.selection.active {
+			return false
+		}
+		m.selection.active = false
+		m.selection.finished = true
+		m.selection.endLine = contentLine
+		m.selection.endCol = plainCol
+		return true
+
+	case msg.Button == tea.MouseButtonWheelUp || msg.Button == tea.MouseButtonWheelDown:
+		// Allow viewport scrolling — clear selection on scroll.
+		if m.selection.hasSelection() || m.selection.finished {
+			m.selection.clear()
+			m.refreshViewport()
+		}
+		return false
+	}
+
+	return false
+}
+
 func (m *Model) refreshViewport() {
 	wasAtBottom := m.viewport.AtBottom()
-	m.viewport.SetContent(m.renderMessages())
+	content := m.renderViewportContent()
+	m.viewport.SetContent(content)
+	m.plainLines = strings.Split(stripANSI(content), "\n")
 	if wasAtBottom {
 		m.viewport.GotoBottom()
 	}
+}
+
+// renderViewportContent returns the full viewport content, with selection overlay if active.
+func (m Model) renderViewportContent() string {
+	content := m.renderMessages()
+	if m.selection.hasSelection() || m.selection.finished {
+		content = overlaySelection(content, m.selection)
+	}
+	return content
 }
 
 // --- Agent runner goroutine ---
@@ -1491,42 +1625,64 @@ func compactionToMessageItem(msg compaction.MessageItem) messageItem {
 	return result
 }
 
-// handleCompactCommand processes a /compact command, optionally with custom instructions.
-// Returns a tea.Cmd that runs compaction asynchronously.
-func (m *Model) handleCompactCommand(input string) tea.Cmd {
-	if !compaction.CanCompact(messagesToCompaction(m.messages)) {
-		m.messages = append(m.messages, messageItem{role: "error", content: "Nothing to compact (session already compacted or empty)."})
+// startCompaction launches compaction in a goroutine and returns a tea.Cmd that
+// waits for the result via a channel. This mirrors the agent pattern (chan-based)
+// and ensures Bubble Tea's event loop stays engaged during the LLM call.
+func (m *Model) startCompaction(instructions string) tea.Cmd {
+	ch := make(chan compactionResultMsg, 1)
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				ch <- compactionResultMsg{err: fmt.Errorf("compaction panic: %v", r)}
+			}
+		}()
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+
+		if m.provider == nil {
+			ch <- compactionResultMsg{err: fmt.Errorf("no provider configured")}
+			return
+		}
+
+		compactionMsgs := messagesToCompaction(m.messages)
+		result, err := compaction.Compact(ctx, m.provider, m.config.Model, m.config.Compaction, compactionMsgs, instructions, m.previousCompactionSummary)
+		if err != nil {
+			ch <- compactionResultMsg{err: err}
+			return
+		}
+		ch <- compactionResultMsg{result: result}
+	}()
+	return func() tea.Msg {
+		return <-ch
+	}
+}
+
+// handleCompactionResult applies the compaction result to the model state.
+func (m *Model) handleCompactionResult(msg compactionResultMsg) (tea.Model, tea.Cmd) {
+	if msg.err != nil {
+		m.messages = append(m.messages, messageItem{role: "error", content: fmt.Sprintf("Compaction failed: %v", msg.err)})
 		m.refreshViewport()
 		m.textarea.Reset()
 		m.textarea.Focus()
-		return nil
+		return m, nil
 	}
 
-	// Extract custom instructions from "/compact <instructions>".
-	instructions := strings.TrimSpace(strings.TrimPrefix(input, "/compact"))
+	result := msg.result
+	// Store summary for iterative compaction.
+	m.previousCompactionSummary = result.Summary
 
-	m.messages = append(m.messages, messageItem{role: "system", content: "Compacting context..."})
+	// Replace messages with compacted version.
+	m.messages = make([]messageItem, len(result.NewMessages))
+	for i, mi := range result.NewMessages {
+		m.messages[i] = compactionToMessageItem(mi)
+	}
+
+	status := fmt.Sprintf("Context compacted — %d tokens summarized.", result.TokensBefore)
+	m.messages = append(m.messages, messageItem{role: "system", content: status})
 	m.refreshViewport()
 	m.textarea.Reset()
-	m.textarea.Blur()
-
-	return m.compactCmd(instructions)
-}
-
-// compactCmd returns a tea.Cmd that runs compaction asynchronously.
-func (m *Model) compactCmd(instructions string) tea.Cmd {
-	return func() tea.Msg {
-		defer func() {
-			if r := recover(); r != nil {
-				m.messages = append(m.messages, messageItem{role: "error", content: fmt.Sprintf("Compaction panic: %v", r)})
-				m.refreshViewport()
-				m.textarea.Reset()
-				m.textarea.Focus()
-			}
-		}()
-		m.runCompaction(instructions)
-		return compactionDoneMsg{}
-	}
+	m.textarea.Focus()
+	return m, nil
 }
 
 // shouldAutoCompact checks whether auto-compaction should trigger.
@@ -1536,43 +1692,7 @@ func (m *Model) shouldAutoCompact() bool {
 
 // runAutoCompactCmd returns a tea.Cmd that runs auto-compaction in the background.
 func (m *Model) runAutoCompactCmd() tea.Cmd {
-	return m.compactCmd("")
-}
-
-// runCompaction performs the compaction, updates messages, and restores focus.
-func (m *Model) runCompaction(instructions string) {
-	if m.provider == nil {
-		m.messages = append(m.messages, messageItem{role: "error", content: "Compaction failed: no provider configured"})
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-
-	compactionMsgs := messagesToCompaction(m.messages)
-	result, err := compaction.Compact(ctx, m.provider, m.config.Model, m.config.Compaction, compactionMsgs, instructions, m.previousCompactionSummary)
-	if err != nil {
-		m.messages = append(m.messages, messageItem{role: "error", content: fmt.Sprintf("Compaction failed: %v", err)})
-		m.refreshViewport()
-		m.textarea.Reset()
-		m.textarea.Focus()
-		return
-	}
-
-	// Store summary for iterative compaction.
-	m.previousCompactionSummary = result.Summary
-
-	// Replace messages with compacted version.
-	m.messages = make([]messageItem, len(result.NewMessages))
-	for i, msg := range result.NewMessages {
-		m.messages[i] = compactionToMessageItem(msg)
-	}
-
-	msg := fmt.Sprintf("Context compacted — %d tokens summarized.", result.TokensBefore)
-	m.messages = append(m.messages, messageItem{role: "system", content: msg})
-	m.refreshViewport()
-	m.textarea.Reset()
-	m.textarea.Focus()
+	return m.startCompaction("")
 }
 
 // messagesToCompaction converts the TUI messageItem slice to compaction.MessageItem slice.
