@@ -122,6 +122,18 @@ func TestNewModelConfiguresTextareaInput(t *testing.T) {
 	}
 }
 
+func TestGhosttyShiftEnterInsertsNewline(t *testing.T) {
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil)
+	m.textarea.SetValue("hello")
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlJ})
+	updatedModel := updated.(Model)
+
+	if got := updatedModel.textarea.Value(); got != "hello\n" {
+		t.Fatalf("expected ctrl+j/LF to insert newline, got %q", got)
+	}
+}
+
 func TestViewUsesInputViewForInput(t *testing.T) {
 	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil)
 	m.ready = true

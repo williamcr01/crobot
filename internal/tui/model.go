@@ -154,6 +154,8 @@ func NewModel(
 	ta.Focus()
 	ta.CharLimit = 0
 	ta.ShowLineNumbers = false
+	// Bubble Tea v1 parses LF (\n) as ctrl+j. Ghostty sends LF for Shift+Enter.
+	ta.KeyMap.InsertNewline.SetKeys("enter", "ctrl+m", "ctrl+j")
 	ta.KeyMap.InsertNewline.SetEnabled(true)
 
 	s := NewLoaderSpinner()
