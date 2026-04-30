@@ -28,10 +28,6 @@ var (
 	ToolMeta   = lipgloss.NewStyle().Foreground(lipgloss.Color("#9ca3af"))
 	BashHeader = lipgloss.NewStyle().Foreground(lipgloss.Color("#22c55e")).Bold(true)
 
-	// Input styles.
-	BlockInputBg = lipgloss.Color("#2a2a2a")
-	BlockInputFg = lipgloss.Color("#e5e7eb")
-
 	// Message styles.
 	UserPrompt  = lipgloss.NewStyle().Foreground(lipgloss.Color("#93c5fd"))
 	UserCaret   = lipgloss.NewStyle().Foreground(lipgloss.Color("#22c55e"))

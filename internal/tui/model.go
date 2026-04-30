@@ -21,7 +21,6 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
 // toolState tracks the lifecycle of a tool call in the UI.
@@ -740,7 +739,7 @@ func (m Model) View() string {
 		b.WriteString(m.renderStatusLine())
 		b.WriteString("\n")
 		input := m.renderInputView()
-		b.WriteString(renderBlockInput(m.width, input))
+		b.WriteString("> " + input)
 	}
 	b.WriteString("\n")
 	b.WriteString(Dim.Render(compactCwd()))
@@ -1824,27 +1823,6 @@ func expandFileRefs(reg *tools.Registry, input string) string {
 }
 
 // --- Input style renderers ---
-
-func renderBlockInput(width int, val string) string {
-	w := width - 4
-	if w < 20 {
-		w = 20
-	}
-	return lipgloss.NewStyle().
-		Background(BlockInputBg).
-		Padding(0, 1).
-		Width(w).
-		Render("> " + val)
-}
-
-func renderBorderedInput(width int, val string) string {
-	w := width - 4
-	if w < 20 {
-		w = 20
-	}
-	line := strings.Repeat("─", w)
-	return fmt.Sprintf("%s\n> %s\n%s", Dim.Render(line), val, Dim.Render(line))
-}
 
 // --- Helpers ---
 
