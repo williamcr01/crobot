@@ -262,7 +262,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if modelLoadErr != nil {
 				content += fmt.Sprintf("; model refresh warning: %v", modelLoadErr)
 			}
-			m.messages = append(m.messages, messageItem{role: "system", content: content})
+			m.messages = append(m.messages, messageItem{role: "system", content: content, ephemeral: true})
 		}
 		m.refreshViewport()
 		return m, nil
@@ -300,7 +300,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selection.clear()
 				m.refreshViewport()
 				if text != "" {
-					m.messages = append(m.messages, messageItem{role: "system", content: "Copied to clipboard."})
+					m.messages = append(m.messages, messageItem{role: "system", content: "Copied to clipboard.", ephemeral: true})
 					m.refreshViewport()
 					return m, copyToClipboardCmd(text)
 				}
@@ -322,7 +322,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.agentCancel()
 				m.pending = false
 				m.textarea.Focus()
-				m.messages = append(m.messages, messageItem{role: "system", content: "Cancelled."})
+				m.messages = append(m.messages, messageItem{role: "system", content: "Cancelled.", ephemeral: true})
 				m.refreshViewport()
 			}
 			if m.selection.hasSelection() || m.selection.finished {
@@ -372,9 +372,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 
-			// Alt+Enter or Shift+Enter inserts a newline instead of submitting.
-			if msg.Alt || strings.Contains(msg.String(), "shift") {
-				break // fall through to textarea which handles InsertNewline
+			// Alt+Enter, Shift+Enter, or Ghostty's Shift+Enter inserts a newline.
+			isNewline := msg.Alt || strings.Contains(msg.String(), "shift")
+			// Ghostty sends \n (LF) for Shift+Enter; bubble tea doesn't recognize it.
+			if len(msg.Runes) == 1 && msg.Runes[0] == '\n' {
+				isNewline = true
+			}
+			if isNewline {
+				value := m.textarea.Value()
+				m.textarea.SetValue(value + "\n")
+				return m, nil
 			}
 
 			// Backslash workaround for terminals without Shift+Enter support:
@@ -407,7 +414,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 				instructions := strings.TrimSpace(strings.TrimPrefix(input, "/compact"))
-				m.messages = append(m.messages, messageItem{role: "system", content: "Compacting context..."})
+				m.messages = append(m.messages, messageItem{role: "system", content: "Compacting context...", ephemeral: true})
 				m.refreshViewport()
 				m.textarea.Reset()
 				m.textarea.Blur()
@@ -456,7 +463,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if err != nil {
 					m.messages = append(m.messages, messageItem{role: "error", content: err.Error()})
 				} else if result != "" {
-					m.messages = append(m.messages, messageItem{role: "system", content: result})
+					m.messages = append(m.messages, messageItem{role: "system", content: result, ephemeral: true})
 				}
 				m.refreshViewport()
 				m.textarea.Focus()
@@ -1037,7 +1044,7 @@ func (m Model) handleLoginPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 		m.textarea.Reset()
 		m.textarea.Blur()
 		m.pending = true
-		m.messages = append(m.messages, messageItem{role: "system", content: fmt.Sprintf("Opening browser for %s OAuth login...", selected.Name)})
+		m.messages = append(m.messages, messageItem{role: "system", content: fmt.Sprintf("Opening browser for %s OAuth login...", selected.Name), ephemeral: true})
 		m.refreshViewport()
 		return m, m.loginProviderCmd(selected.ID), true
 	case tea.KeyUp:
@@ -1758,7 +1765,7 @@ func (m *Model) handleCompactionResult(msg compactionResultMsg) (tea.Model, tea.
 	}
 
 	status := fmt.Sprintf("Context compacted — %d tokens summarized.", result.TokensBefore)
-	m.messages = append(m.messages, messageItem{role: "system", content: status})
+	m.messages = append(m.messages, messageItem{role: "system", content: status, ephemeral: true})
 	m.refreshViewport()
 	m.textarea.Reset()
 	m.textarea.Focus()
@@ -1796,6 +1803,12 @@ func (m *Model) startAgent(ctx context.Context, input string) {
 	// immediately followed by their matching tool results.
 	var llmMsgs []provider.Message
 	for _, msg := range m.messages {
+		// Skip ephemeral messages — they are UI-only notifications
+		// (model changes, login/logout, cancellation, compaction status, etc.)
+		// and should not pollute the agent's conversation history.
+		if msg.role != "assistant" && msg.role != "user" && msg.ephemeral {
+			continue
+		}
 		switch msg.role {
 		case "user", "system", "compaction":
 			role := msg.role
