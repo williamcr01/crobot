@@ -154,7 +154,7 @@ func NewModel(
 	ta.Focus()
 	ta.CharLimit = 0
 	ta.ShowLineNumbers = false
-	ta.KeyMap.InsertNewline = key.NewBinding(key.WithKeys("shift+enter"))
+	ta.KeyMap.InsertNewline = key.NewBinding(key.WithKeys("alt+enter", "shift+enter"))
 	ta.KeyMap.InsertNewline.SetEnabled(true)
 
 	s := NewLoaderSpinner()
@@ -371,8 +371,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 
-			// Shift+Enter inserts a newline instead of submitting.
-			if strings.Contains(msg.String(), "shift") {
+			// Alt+Enter or Shift+Enter inserts a newline instead of submitting.
+			if msg.Alt || strings.Contains(msg.String(), "shift") {
 				break // fall through to textarea which handles InsertNewline
 			}
 
