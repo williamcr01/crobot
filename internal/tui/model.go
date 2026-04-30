@@ -17,7 +17,6 @@ import (
 	"crobot/internal/session"
 	"crobot/internal/tools"
 
-	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -155,7 +154,6 @@ func NewModel(
 	ta.Focus()
 	ta.CharLimit = 0
 	ta.ShowLineNumbers = false
-	ta.KeyMap.InsertNewline = key.NewBinding(key.WithKeys("alt+enter", "shift+enter"))
 	ta.KeyMap.InsertNewline.SetEnabled(true)
 
 	s := NewLoaderSpinner()
@@ -372,20 +370,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 
-			// Alt+Enter, Shift+Enter, or Ghostty's Shift+Enter inserts a newline.
-			isNewline := msg.Alt || strings.Contains(msg.String(), "shift")
-			// Ghostty sends \n (LF) for Shift+Enter; bubble tea doesn't recognize it.
-			if len(msg.Runes) == 1 && msg.Runes[0] == '\n' {
-				isNewline = true
-			}
-			if isNewline {
-				value := m.textarea.Value()
-				m.textarea.SetValue(value + "\n")
-				return m, nil
-			}
-
-			// Backslash workaround for terminals without Shift+Enter support:
-			// typing \ then Enter inserts a newline instead of submitting.
+			// Backslash+Enter inserts a newline (pi-mono workaround for terminals
+			// without Shift+Enter support).
 			value := m.textarea.Value()
 			if strings.HasSuffix(value, "\\") {
 				m.textarea.SetValue(strings.TrimSuffix(value, "\\") + "\n")
