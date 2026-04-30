@@ -13,6 +13,7 @@ import (
 	"crobot/internal/commands"
 	"crobot/internal/compaction"
 	"crobot/internal/config"
+	"crobot/internal/conversation"
 	"crobot/internal/events"
 	"crobot/internal/prompt"
 	"crobot/internal/provider"
@@ -1855,27 +1856,28 @@ func centerContent(s string, width int) string {
 
 // --- Agent runner goroutine ---
 
-// messageToCompactionItem converts a TUI messageItem to a compaction.MessageItem.
-func messageToCompactionItem(msg messageItem) compaction.MessageItem {
-	result := compaction.MessageItem{
+// messageToConversation converts a TUI messageItem to the canonical conversation message.
+func messageToConversation(msg messageItem) conversation.Message {
+	result := conversation.Message{
 		Role:      msg.role,
 		Content:   msg.content,
 		Reasoning: msg.reasoning,
-		ToolCalls: make([]compaction.ToolRenderItem, len(msg.toolCalls)),
+		Usage:     msg.usageData,
+		ToolCalls: make([]conversation.ToolResult, len(msg.toolCalls)),
 	}
 	for i, tc := range msg.toolCalls {
-		result.ToolCalls[i] = compaction.ToolRenderItem{
+		result.ToolCalls[i] = conversation.ToolResult{
 			Name:    tc.name,
 			CallID:  tc.callID,
 			Output:  tc.output,
-			Args:    tc.args,
-			RawArgs: tc.rawArgs,
+			ArgsStr: tc.args,
+			Args:    tc.rawArgs,
 		}
 	}
 	return result
 }
 
-// compactionToMessageItem converts a compaction.MessageItem to a TUI messageItem.
+// compactionToMessageItem converts a compaction message to a TUI messageItem.
 func compactionToMessageItem(msg compaction.MessageItem) messageItem {
 	result := messageItem{
 		role:      msg.Role,
@@ -1965,11 +1967,38 @@ func (m *Model) runAutoCompactCmd() tea.Cmd {
 	return m.startCompaction("")
 }
 
-// messagesToCompaction converts the TUI messageItem slice to compaction.MessageItem slice.
+// messagesToConversation converts TUI messages to canonical conversation messages.
+func messagesToConversation(msgs []messageItem, includeEphemeral bool) []conversation.Message {
+	result := make([]conversation.Message, 0, len(msgs))
+	for _, msg := range msgs {
+		if !includeEphemeral && msg.role != "assistant" && msg.role != "user" && msg.ephemeral {
+			continue
+		}
+		result = append(result, messageToConversation(msg))
+	}
+	return result
+}
+
+// messagesToCompaction converts TUI messages to compaction messages.
 func messagesToCompaction(msgs []messageItem) []compaction.MessageItem {
-	result := make([]compaction.MessageItem, len(msgs))
-	for i, msg := range msgs {
-		result[i] = messageToCompactionItem(msg)
+	result := make([]compaction.MessageItem, 0, len(msgs))
+	for _, msg := range msgs {
+		compMsg := compaction.MessageItem{
+			Role:      msg.role,
+			Content:   msg.content,
+			Reasoning: msg.reasoning,
+			ToolCalls: make([]compaction.ToolRenderItem, len(msg.toolCalls)),
+		}
+		for i, tc := range msg.toolCalls {
+			compMsg.ToolCalls[i] = compaction.ToolRenderItem{
+				Name:    tc.name,
+				CallID:  tc.callID,
+				Output:  tc.output,
+				Args:    tc.args,
+				RawArgs: tc.rawArgs,
+			}
+		}
+		result = append(result, compMsg)
 	}
 	return result
 }
@@ -1982,46 +2011,8 @@ func (m *Model) startAgent(ctx context.Context, input string) {
 
 	sysPrompt := prompt.Build(*m.config, getCwd())
 
-	// Build conversation history for the LLM, preserving assistant tool calls
-	// immediately followed by their matching tool results.
-	var llmMsgs []provider.Message
-	for _, msg := range m.messages {
-		// Skip ephemeral messages — they are UI-only notifications
-		// (model changes, login/logout, cancellation, compaction status, etc.)
-		// and should not pollute the agent's conversation history.
-		if msg.role != "assistant" && msg.role != "user" && msg.ephemeral {
-			continue
-		}
-		switch msg.role {
-		case "user", "system", "compaction":
-			role := msg.role
-			if role == "compaction" {
-				role = "system"
-			}
-			llmMsgs = append(llmMsgs, provider.Message{Role: role, Content: msg.content})
-		case "assistant":
-			llmMsg := provider.Message{Role: "assistant", Content: msg.content, ReasoningContent: msg.reasoning}
-			for _, tc := range msg.toolCalls {
-				if tc.callID != "" {
-					llmMsg.ToolCalls = append(llmMsg.ToolCalls, provider.ToolCall{
-						Name: tc.name,
-						ID:   tc.callID,
-						Args: tc.rawArgs,
-					})
-				}
-			}
-			llmMsgs = append(llmMsgs, llmMsg)
-			for _, tc := range msg.toolCalls {
-				if tc.output != "" {
-					llmMsgs = append(llmMsgs, provider.Message{
-						Role:       "tool",
-						ToolCallID: tc.callID,
-						Content:    tc.output,
-					})
-				}
-			}
-		}
-	}
+	// Build conversation history for the LLM from the canonical conversation format.
+	llmMsgs := conversation.MessagesToProvider(messagesToConversation(m.messages, false))
 
 	// The latest user message is already in m.messages.
 	// Run the agent loop.
@@ -2194,8 +2185,9 @@ func formatToolCallLine(name string, args map[string]any) string {
 }
 
 // formatFilePathCall formats a file read/write/edit call line:
-//   read path	o\file.go:1-20
-//   write path	o\file.go
+//
+//	read path	o\file.go:1-20
+//	write path	o\file.go
 func formatFilePathCall(name string, args map[string]any, pathKey, offsetKey, limitKey string) string {
 	path, _ := args[pathKey].(string)
 	if path == "" {

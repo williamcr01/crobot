@@ -12,11 +12,11 @@ import (
 	"strings"
 
 	"crobot/internal/config"
+	"crobot/internal/conversation"
 	"crobot/internal/provider"
 )
 
-// MessageItem mirrors tui.MessageItem for cut-point detection.
-// Exported so the TUI can convert to/from it.
+// MessageItem is the compaction-facing conversation message.
 type MessageItem struct {
 	Role      string // "user", "assistant", "system", "error", "compaction"
 	Content   string
@@ -24,7 +24,7 @@ type MessageItem struct {
 	ToolCalls []ToolRenderItem
 }
 
-// ToolRenderItem holds rendered state for one tool call.
+// ToolRenderItem holds one tool call/result for compaction and display.
 type ToolRenderItem struct {
 	Name    string
 	CallID  string
@@ -169,42 +169,32 @@ func summarizedMessage(summary string, tokensBefore int) MessageItem {
 	}
 }
 
-// buildMessagesForAgent converts MessageItems to provider.Messages for the
-// agent runner. This mirrors the logic in tui/model.go startAgent().
+// buildMessagesForAgent converts messages to provider.Messages for the agent runner.
 func buildMessagesForAgent(messages []MessageItem) []provider.Message {
-	var llmMsgs []provider.Message
+	return conversation.MessagesToProvider(messagesToConversation(messages))
+}
+
+func messagesToConversation(messages []MessageItem) []conversation.Message {
+	result := make([]conversation.Message, 0, len(messages))
 	for _, msg := range messages {
-		switch msg.Role {
-		case roleUser, roleSystem, "compaction":
-			role := msg.Role
-			if role == "compaction" {
-				role = roleSystem
-			}
-			llmMsgs = append(llmMsgs, provider.Message{Role: role, Content: msg.Content})
-		case roleAssistant:
-			llmMsg := provider.Message{Role: "assistant", Content: msg.Content}
-			for _, tc := range msg.ToolCalls {
-				if tc.CallID != "" {
-					llmMsg.ToolCalls = append(llmMsg.ToolCalls, provider.ToolCall{
-						Name: tc.Name,
-						ID:   tc.CallID,
-						Args: tc.RawArgs,
-					})
-				}
-			}
-			llmMsgs = append(llmMsgs, llmMsg)
-			for _, tc := range msg.ToolCalls {
-				if tc.Output != "" {
-					llmMsgs = append(llmMsgs, provider.Message{
-						Role:       "tool",
-						ToolCallID: tc.CallID,
-						Content:    tc.Output,
-					})
-				}
+		convMsg := conversation.Message{
+			Role:      msg.Role,
+			Content:   msg.Content,
+			Reasoning: msg.Reasoning,
+			ToolCalls: make([]conversation.ToolResult, len(msg.ToolCalls)),
+		}
+		for i, tc := range msg.ToolCalls {
+			convMsg.ToolCalls[i] = conversation.ToolResult{
+				Name:    tc.Name,
+				CallID:  tc.CallID,
+				Args:    tc.RawArgs,
+				ArgsStr: tc.Args,
+				Output:  tc.Output,
 			}
 		}
+		result = append(result, convMsg)
 	}
-	return llmMsgs
+	return result
 }
 
 const summarizationSystemPrompt = `You are a context summarizer. Your job is to create structured, concise summaries of coding agent conversations. These summaries will replace the full conversation in the agent's context window so the agent can continue working efficiently.
@@ -334,10 +324,10 @@ func generateSummary(
 
 // Result holds the output of a compaction operation.
 type Result struct {
-	Summary       string
-	TokensBefore  int
-	KeptMessages  []MessageItem
-	NewMessages   []MessageItem // replacement messages for the TUI
+	Summary      string
+	TokensBefore int
+	KeptMessages []MessageItem
+	NewMessages  []MessageItem // replacement messages for the TUI
 }
 
 // Compact performs context compaction on the given messages.
