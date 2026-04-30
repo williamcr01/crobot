@@ -53,6 +53,7 @@ type messageItem struct {
 	reasoning string
 	usage     string
 	toolCalls []toolRenderItem
+	ephemeral bool // if true, not sent to the agent as conversation history
 }
 
 // tea messages from the agent goroutine.
@@ -233,12 +234,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.config.Provider = ""
 				m.config.Model = ""
 				_ = config.SaveConfig(m.config)
-				m.messages = append(m.messages, messageItem{role: "system", content: fmt.Sprintf("Logged out of %s", msg.provider)})
+				m.messages = append(m.messages, messageItem{role: "system", content: fmt.Sprintf("Logged out of %s", msg.provider), ephemeral: true})
 				m.messages = append(m.messages, messageItem{role: "error", content: noProviderWarning})
 			} else if err := m.reloadAuthorizedProviders(); err != nil {
 				m.messages = append(m.messages, messageItem{role: "error", content: fmt.Sprintf("Logged out of %s; model refresh warning: %v", msg.provider, err)})
 			} else {
-				m.messages = append(m.messages, messageItem{role: "system", content: fmt.Sprintf("Logged out of %s", msg.provider)})
+				m.messages = append(m.messages, messageItem{role: "system", content: fmt.Sprintf("Logged out of %s", msg.provider), ephemeral: true})
 			}
 		}
 		m.refreshViewport()
@@ -376,7 +377,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				break // fall through to textarea which handles InsertNewline
 			}
 
-			input := strings.TrimSpace(m.textarea.Value())
+			// Backslash workaround for terminals without Shift+Enter support:
+			// typing \ then Enter inserts a newline instead of submitting.
+			value := m.textarea.Value()
+			if strings.HasSuffix(value, "\\") {
+				m.textarea.SetValue(strings.TrimSuffix(value, "\\") + "\n")
+				return m, nil
+			}
+
+			input := strings.TrimSpace(value)
 
 			// Normal command suggestion handling
 			if suggestions := m.commandSuggestions(); len(suggestions) > 0 && !m.commandInputExactlyMatchesSuggestion(suggestions) {
@@ -1312,8 +1321,9 @@ func (m *Model) selectModel(providerName, modelID string) {
 	m.textarea.Reset()
 	m.commandSuggestionIndex = 0
 	m.messages = append(m.messages, messageItem{
-		role:    "system",
-		content: fmt.Sprintf("Model changed to %s (%s)", modelID, m.config.Provider),
+		role:      "system",
+		content:   fmt.Sprintf("Model changed to %s (%s)", modelID, m.config.Provider),
+		ephemeral: true,
 	})
 	m.refreshViewport()
 	m.textarea.Focus()
