@@ -155,8 +155,8 @@ func NewModel(
 	ta.Focus()
 	ta.CharLimit = 0
 	ta.ShowLineNumbers = false
-	// Bubble Tea v1 parses LF (\n) as ctrl+j. Ghostty sends LF for Shift+Enter.
-	ta.KeyMap.InsertNewline.SetKeys("enter", "ctrl+m", "ctrl+j")
+	// Bubble Tea v1 parses LF (\n) as ctrl+j. Several terminals emit LF for Shift+Enter.
+	ta.KeyMap.InsertNewline.SetKeys("ctrl+j")
 	ta.KeyMap.InsertNewline.SetEnabled(true)
 
 	s := NewLoaderSpinner()
@@ -377,15 +377,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 
-			// Backslash+Enter inserts a newline (pi-mono workaround for terminals
-			// without Shift+Enter support).
-			value := m.textarea.Value()
-			if strings.HasSuffix(value, "\\") {
-				m.textarea.SetValue(strings.TrimSuffix(value, "\\") + "\n")
-				return m, nil
-			}
-
-			input := strings.TrimSpace(value)
+			input := strings.TrimSpace(m.textarea.Value())
 
 			// Normal command suggestion handling
 			if suggestions := m.commandSuggestions(); len(suggestions) > 0 && !m.commandInputExactlyMatchesSuggestion(suggestions) {
