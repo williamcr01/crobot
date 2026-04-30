@@ -21,6 +21,7 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // toolState tracks the lifecycle of a tool call in the UI.
@@ -725,24 +726,41 @@ func (m Model) View() string {
 		b.WriteString(InputCursor.Render("█"))
 	} else {
 		if m.pending {
-			b.WriteString(m.spinner.View())
-			b.WriteString(" ")
-			b.WriteString(Dim.Render("Working"))
+			spinnerLine := m.spinner.View() + " " + Dim.Render("Working")
+			if m.config.Alignment == "centered" {
+				spinnerLine = centerContent(spinnerLine, m.width)
+			}
+			b.WriteString(spinnerLine)
 			b.WriteString("\n")
 		}
 
 		if suggestions := m.commandSuggestions(); len(suggestions) > 0 {
-			b.WriteString(m.renderCommandSuggestions(suggestions))
+			sug := m.renderCommandSuggestions(suggestions)
+			if m.config.Alignment == "centered" {
+				sug = centerContent(sug, m.width)
+			}
+			b.WriteString(sug)
 			b.WriteString("\n")
 		}
 
-		b.WriteString(m.renderStatusLine())
+		statusLine := m.renderStatusLine()
+		if m.config.Alignment == "centered" {
+			statusLine = centerContent(statusLine, m.width)
+		}
+		b.WriteString(statusLine)
 		b.WriteString("\n")
-		input := m.renderInputView()
-		b.WriteString("> " + input)
+		input := "> " + m.renderInputView()
+		if m.config.Alignment == "centered" {
+			input = centerContent(input, m.width)
+		}
+		b.WriteString(input)
 	}
 	b.WriteString("\n")
-	b.WriteString(Dim.Render(compactCwd()))
+	cwd := Dim.Render(compactCwd())
+	if m.config.Alignment == "centered" {
+		cwd = centerContent(cwd, m.width)
+	}
+	b.WriteString(cwd)
 
 	return b.String()
 }
@@ -759,7 +777,8 @@ func (m Model) renderStatusLine() string {
 	providerName := valueOrDefault(m.config.Provider, "unknown")
 	modelName := valueOrDefault(m.config.Model, "unknown")
 	thinking := valueOrDefault(m.config.Thinking, "none")
-	return Dim.Render(fmt.Sprintf("provider: %s  model: %s  thinking: %s  shift+tab: cycle thinking", providerName, modelName, thinking))
+	alignment := valueOrDefault(m.config.Alignment, "left")
+	return Dim.Render(fmt.Sprintf("provider: %s  model: %s  thinking: %s  alignment: %s  shift+tab: cycle thinking", providerName, modelName, thinking, alignment))
 }
 
 func (m *Model) cycleThinkingLevel() error {
@@ -1584,10 +1603,22 @@ func (m *Model) refreshViewport() {
 // renderViewportContent returns the full viewport content, with selection overlay if active.
 func (m Model) renderViewportContent() string {
 	content := m.renderMessages()
+	if m.config.Alignment == "centered" {
+		content = centerContent(content, m.width)
+	}
 	if m.selection.hasSelection() || m.selection.finished {
 		content = overlaySelection(content, m.selection)
 	}
 	return content
+}
+
+// centerContent center-aligns each line within the given width.
+func centerContent(s string, width int) string {
+	lines := strings.Split(s, "\n")
+	for i, line := range lines {
+		lines[i] = lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Render(line)
+	}
+	return strings.Join(lines, "\n")
 }
 
 // --- Agent runner goroutine ---

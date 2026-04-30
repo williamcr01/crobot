@@ -146,7 +146,7 @@ func TestViewShowsProviderModelAndThinkingAboveInput(t *testing.T) {
 	m.viewport.Height = 19
 
 	view := m.View()
-	status := "provider: openrouter  model: test/model  thinking: medium"
+	status := "provider: openrouter  model: test/model  thinking: medium  alignment: left"
 	input := "> "
 	statusIndex := strings.Index(view, status)
 	inputIndex := strings.LastIndex(view, input)

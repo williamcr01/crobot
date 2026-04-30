@@ -35,6 +35,7 @@ type AgentConfig struct {
 	ShowBanner    bool             `json:"showBanner"`
 	SlashCommands bool             `json:"slashCommands"`
 	Reasoning     bool             `json:"reasoning"`
+	Alignment     string           `json:"alignment"`
 	Compaction    CompactionConfig `json:"compaction"`
 	Plugins       PluginConfig     `json:"plugins"`
 
@@ -59,6 +60,7 @@ var DEFAULTS = AgentConfig{
 	ShowBanner:    true,
 	SlashCommands: true,
 	Reasoning:     true,
+	Alignment:     "left",
 	Compaction: CompactionConfig{
 		Enabled:          true,
 		ReserveTokens:    16384,
@@ -121,6 +123,9 @@ func LoadConfig() (*AgentConfig, error) {
 		}
 		if hasKey(raw, "slashCommands") {
 			cfg.SlashCommands = file.SlashCommands
+		}
+		if file.Alignment != "" {
+			cfg.Alignment = file.Alignment
 		}
 		if hasKey(raw, "reasoning") {
 			cfg.Reasoning = file.Reasoning
@@ -188,6 +193,10 @@ func LoadConfig() (*AgentConfig, error) {
 	validThinking := map[string]bool{"none": true, "minimal": true, "low": true, "medium": true, "high": true, "xhigh": true}
 	if !validThinking[cfg.Thinking] {
 		return nil, fmt.Errorf("invalid thinking: %q (valid: none, minimal, low, medium, high, xhigh)", cfg.Thinking)
+	}
+	validAlignment := map[string]bool{"left": true, "centered": true}
+	if !validAlignment[cfg.Alignment] {
+		return nil, fmt.Errorf("invalid alignment: %q (valid: left, centered)", cfg.Alignment)
 	}
 	if cfg.MaxTurns < -1 {
 		return nil, fmt.Errorf("invalid maxTurns: %d (must be -1 or greater)", cfg.MaxTurns)

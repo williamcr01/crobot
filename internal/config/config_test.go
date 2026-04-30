@@ -33,6 +33,9 @@ func TestDefaults(t *testing.T) {
 	if !cfg.Reasoning {
 		t.Error("expected reasoning true")
 	}
+	if cfg.Alignment != "left" {
+		t.Errorf("expected alignment left, got %s", cfg.Alignment)
+	}
 	if !cfg.Plugins.Enabled {
 		t.Error("expected plugins enabled")
 	}
@@ -343,6 +346,33 @@ func TestSaveConfig_PreservesExistingUserConfig(t *testing.T) {
 		if !strings.Contains(content, want) {
 			t.Fatalf("expected %s in saved config, got %s", want, content)
 		}
+	}
+}
+
+func TestLoadConfig_Alignment(t *testing.T) {
+	withTempHome(t)
+	defer os.Unsetenv("OPENROUTER_API_KEY")
+	os.Setenv("OPENROUTER_API_KEY", "sk-or-v1-test")
+	writeUserConfig(t, `{"alignment": "centered"}`)
+
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Alignment != "centered" {
+		t.Errorf("expected alignment centered, got %s", cfg.Alignment)
+	}
+}
+
+func TestLoadConfig_InvalidAlignment(t *testing.T) {
+	withTempHome(t)
+	defer os.Unsetenv("OPENROUTER_API_KEY")
+	os.Setenv("OPENROUTER_API_KEY", "sk-or-v1-test")
+	writeUserConfig(t, `{"alignment": "right"}`)
+
+	_, err := LoadConfig()
+	if err == nil || !strings.Contains(err.Error(), "invalid alignment") {
+		t.Fatalf("expected invalid alignment error, got %v", err)
 	}
 }
 
