@@ -17,6 +17,7 @@ import (
 	"crobot/internal/session"
 	"crobot/internal/tools"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -153,6 +154,7 @@ func NewModel(
 	ta.Focus()
 	ta.CharLimit = 0
 	ta.ShowLineNumbers = false
+	ta.KeyMap.InsertNewline = key.NewBinding(key.WithKeys("shift+enter"))
 	ta.KeyMap.InsertNewline.SetEnabled(true)
 
 	s := NewLoaderSpinner()
@@ -367,6 +369,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyEnter:
 			if m.pending {
 				return m, nil
+			}
+
+			// Shift+Enter inserts a newline instead of submitting.
+			if strings.Contains(msg.String(), "shift") {
+				break // fall through to textarea which handles InsertNewline
 			}
 
 			input := strings.TrimSpace(m.textarea.Value())
@@ -1460,6 +1467,12 @@ func (m Model) renderMessages() string {
 	wrapWidth := m.width
 	if wrapWidth < 40 {
 		wrapWidth = 40
+	}
+	if m.config.Alignment == "centered" {
+		wrapWidth = wrapWidth * 3 / 4
+		if wrapWidth < 40 {
+			wrapWidth = 40
+		}
 	}
 	if m.config.ShowBanner {
 		b.WriteString(Render(m.config.Model))
