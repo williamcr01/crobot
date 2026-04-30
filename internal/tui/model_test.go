@@ -210,7 +210,7 @@ func TestViewShowsProviderModelThinkingAndContextAboveInput(t *testing.T) {
 	m.messages = []messageItem{{role: "user", content: strings.Repeat("a", 400)}}
 
 	view := m.View()
-	status := "openrouter | test/model | medium | 168/128k | $0.00"
+	status := fmt.Sprintf("openrouter | test/model | medium | %d/128k | $0.00", m.estimatedContextUsed())
 	input := "> "
 	statusIndex := strings.Index(view, status)
 	inputIndex := strings.LastIndex(view, input)
@@ -312,7 +312,7 @@ func TestStatusLineUsesSelectedModelContextLength(t *testing.T) {
 func TestTurnUsageUpdatesCostWithoutClearingPending(t *testing.T) {
 	reg := provider.NewModelRegistry()
 	reg.AddProvider(metadataProvider{models: []provider.ModelInfo{{
-		ID: "priced-model",
+		ID:      "priced-model",
 		Pricing: provider.Pricing{InputPerMTok: 2, OutputPerMTok: 10},
 	}}})
 	if err := reg.LoadModels(context.Background()); err != nil {
@@ -338,7 +338,7 @@ func TestTurnUsageUpdatesCostWithoutClearingPending(t *testing.T) {
 func TestStatusLineShowsCumulativeCost(t *testing.T) {
 	reg := provider.NewModelRegistry()
 	reg.AddProvider(metadataProvider{models: []provider.ModelInfo{{
-		ID: "priced-model",
+		ID:      "priced-model",
 		Pricing: provider.Pricing{InputPerMTok: 2, OutputPerMTok: 10},
 	}}})
 	if err := reg.LoadModels(context.Background()); err != nil {

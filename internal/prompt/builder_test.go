@@ -114,3 +114,54 @@ func TestBuild_TrailingContent(t *testing.T) {
 		t.Errorf("expected trailing platform line, got %q", lastContent)
 	}
 }
+
+func TestBuild_AppendsAgentsFilesFromAncestors(t *testing.T) {
+	root := t.TempDir()
+	child := root + string(os.PathSeparator) + "pkg" + string(os.PathSeparator) + "subpkg"
+	if err := os.MkdirAll(child, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(root+string(os.PathSeparator)+"AGENTS.md", []byte("root rules"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	pkg := root + string(os.PathSeparator) + "pkg"
+	if err := os.WriteFile(pkg+string(os.PathSeparator)+"AGENT.md", []byte("pkg rules"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(child+string(os.PathSeparator)+"AGENTS.md", []byte("child rules"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	result := Build(config.DEFAULTS, child)
+
+	if !strings.Contains(result, "# Project Context") {
+		t.Error("result should include project context section")
+	}
+	rootIdx := strings.Index(result, "root rules")
+	pkgIdx := strings.Index(result, "pkg rules")
+	childIdx := strings.Index(result, "child rules")
+	if rootIdx == -1 || pkgIdx == -1 || childIdx == -1 {
+		t.Fatalf("expected all context files in prompt, got: %s", result)
+	}
+	if !(rootIdx < pkgIdx && pkgIdx < childIdx) {
+		t.Fatalf("expected root-to-cwd context ordering, got indexes root=%d pkg=%d child=%d", rootIdx, pkgIdx, childIdx)
+	}
+}
+
+func TestBuild_PrefersAgentsOverAgentInSameDirectory(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(dir+string(os.PathSeparator)+"AGENTS.md", []byte("agents rules"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dir+string(os.PathSeparator)+"AGENT.md", []byte("agent rules"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	result := Build(config.DEFAULTS, dir)
+	if !strings.Contains(result, "agents rules") {
+		t.Error("result should include AGENTS.md")
+	}
+	if strings.Contains(result, "agent rules") {
+		t.Error("result should prefer AGENTS.md over AGENT.md in the same directory")
+	}
+}
