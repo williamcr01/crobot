@@ -45,6 +45,7 @@ type AgentConfig struct {
 // DEFAULTS provides the base configuration before file and env overrides.
 var DEFAULTS = AgentConfig{
 	Provider: "",
+	Model:    "",
 	Thinking: "none",
 	MaxTurns: 50,
 	SystemPrompt: strings.Join([]string{
@@ -215,9 +216,9 @@ func LoadConfig() (*AgentConfig, error) {
 	return &cfg, nil
 }
 
-// SaveConfig writes only runtime-selected values to ~/.crobot/agent.config.json.
-// It preserves existing user-authored config and only updates provider, model,
-// and thinking so defaults are not expanded into the file.
+// SaveConfig writes only non-empty runtime fields to ~/.crobot/agent.config.json.
+// Empty fields are left unchanged, preserving the existing value on disk.
+// Call ClearProviderModel() to explicitly remove provider and model.
 func SaveConfig(cfg *AgentConfig) error {
 	configPath, err := ConfigPath()
 	if err != nil {
@@ -235,17 +236,55 @@ func SaveConfig(cfg *AgentConfig) error {
 		return fmt.Errorf("read %s: %w", configPath, err)
 	}
 
-	raw["provider"] = cfg.Provider
-	raw["model"] = cfg.Model
-	raw["thinking"] = cfg.Thinking
+	if cfg.Provider != "" {
+		raw["provider"] = cfg.Provider
+	}
+	if cfg.Model != "" {
+		raw["model"] = cfg.Model
+	}
+	if cfg.Thinking != "" {
+		raw["thinking"] = cfg.Thinking
+	}
+	if cfg.Alignment != "" {
+		raw["alignment"] = cfg.Alignment
+	}
 
+	return writeRawConfig(configPath, raw)
+}
+
+// ClearProviderModel removes the provider and model keys from the config file.
+// Used after logout or when no authorized provider exists.
+func ClearProviderModel() error {
+	configPath, err := ConfigPath()
+	if err != nil {
+		return err
+	}
+	if err := EnsureBaseConfig(); err != nil {
+		return err
+	}
+	raw := map[string]any{}
+	if data, err := os.ReadFile(configPath); err == nil {
+		if err := json.Unmarshal(data, &raw); err != nil {
+			return fmt.Errorf("invalid %s: %w", configPath, err)
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("read %s: %w", configPath, err)
+	}
+
+	delete(raw, "provider")
+	delete(raw, "model")
+
+	return writeRawConfig(configPath, raw)
+}
+
+func writeRawConfig(path string, raw map[string]any) error {
 	data, err := json.MarshalIndent(raw, "", "  ")
 	if err != nil {
-		return fmt.Errorf("marshal %s: %w", configPath, err)
+		return fmt.Errorf("marshal %s: %w", path, err)
 	}
 	data = append(data, '\n')
-	if err := os.WriteFile(configPath, data, 0o644); err != nil {
-		return fmt.Errorf("write %s: %w", configPath, err)
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
 	}
 	return nil
 }

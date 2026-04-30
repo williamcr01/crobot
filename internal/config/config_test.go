@@ -306,7 +306,9 @@ func TestSaveConfig_WritesOnlyRuntimeFieldsWhenCreatingFile(t *testing.T) {
 	home := withTempHome(t)
 
 	cfg := DEFAULTS
+	cfg.Provider = "openrouter"
 	cfg.Model = "test/model"
+	cfg.Alignment = "centered"
 	if err := SaveConfig(&cfg); err != nil {
 		t.Fatalf("SaveConfig: %v", err)
 	}
@@ -315,10 +317,53 @@ func TestSaveConfig_WritesOnlyRuntimeFieldsWhenCreatingFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	content := string(data)
-	for _, want := range []string{`"provider": ""`, `"model": "test/model"`, `"thinking": "none"`} {
+	for _, want := range []string{`"provider": "openrouter"`, `"model": "test/model"`, `"thinking": "none"`, `"alignment": "centered"`} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("expected %s in saved config, got %s", want, content)
 		}
+	}
+}
+
+func TestSaveConfig_SkipsEmptyFields(t *testing.T) {
+	home := withTempHome(t)
+	writeUserConfig(t, `{"model": "old/model", "thinking": "low"}`)
+
+	// Save with empty model — should preserve the old model.
+	cfg := DEFAULTS
+	cfg.Thinking = "high"
+	if err := SaveConfig(&cfg); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(home, ".crobot", "agent.config.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(data)
+	if !strings.Contains(content, `"model": "old/model"`) {
+		t.Fatalf("expected model to be preserved, got %s", content)
+	}
+	if !strings.Contains(content, `"thinking": "high"`) {
+		t.Fatalf("expected thinking to be updated, got %s", content)
+	}
+}
+
+func TestClearProviderModel(t *testing.T) {
+	home := withTempHome(t)
+	writeUserConfig(t, `{"provider": "openrouter", "model": "some/model", "thinking": "high"}`)
+
+	if err := ClearProviderModel(); err != nil {
+		t.Fatalf("ClearProviderModel: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(home, ".crobot", "agent.config.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(data)
+	if strings.Contains(content, `"provider"`) || strings.Contains(content, `"model"`) {
+		t.Fatalf("provider and model should be removed, got %s", content)
+	}
+	if !strings.Contains(content, `"thinking": "high"`) {
+		t.Fatalf("expected thinking to be preserved, got %s", content)
 	}
 }
 
@@ -334,6 +379,7 @@ func TestSaveConfig_PreservesExistingUserConfig(t *testing.T) {
 	cfg := DEFAULTS
 	cfg.Model = "new/model"
 	cfg.Thinking = "high"
+	cfg.Alignment = "centered"
 	if err := SaveConfig(&cfg); err != nil {
 		t.Fatalf("SaveConfig: %v", err)
 	}
@@ -342,7 +388,7 @@ func TestSaveConfig_PreservesExistingUserConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	content := string(data)
-	for _, want := range []string{`"systemPrompt": "custom prompt"`, `"appendPrompt": "extra prompt"`, `"inputStyle": "bordered"`, `"model": "new/model"`, `"thinking": "high"`} {
+	for _, want := range []string{`"systemPrompt": "custom prompt"`, `"appendPrompt": "extra prompt"`, `"inputStyle": "bordered"`, `"model": "new/model"`, `"thinking": "high"`, `"alignment": "centered"`} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("expected %s in saved config, got %s", want, content)
 		}

@@ -228,7 +228,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.provider = nil
 				m.config.Provider = ""
 				m.config.Model = ""
-				_ = config.SaveConfig(m.config)
+				_ = config.ClearProviderModel()
 			}
 			m.modelReg = provider.NewModelRegistry()
 			if m.cmdReg != nil {
@@ -240,7 +240,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.provider = nil
 				m.config.Provider = ""
 				m.config.Model = ""
-				_ = config.SaveConfig(m.config)
+				_ = config.ClearProviderModel()
 				m.messages = append(m.messages, messageItem{role: "system", content: fmt.Sprintf("Logged out of %s", msg.provider), ephemeral: true})
 				m.messages = append(m.messages, messageItem{role: "error", content: noProviderWarning})
 			} else if err := m.reloadAuthorizedProviders(); err != nil {

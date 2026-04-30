@@ -39,14 +39,14 @@ func main() {
 	if !cfg.HasAuthorizedProvider {
 		cfg.Provider = ""
 		cfg.Model = ""
-		_ = config.SaveConfig(cfg)
+		_ = config.ClearProviderModel()
 		fmt.Fprintln(os.Stderr, "warning: No provider added. Add credentials to ~/.crobot/auth.json or use /login.")
 	} else if cfg.Provider != "" {
 		apiKey := auth.APIKey(cfg.Provider)
 		if apiKey == "" {
 			cfg.Provider = ""
 			cfg.Model = ""
-			_ = config.SaveConfig(cfg)
+			_ = config.ClearProviderModel()
 		} else {
 			prov, err = provider.Create(cfg.Provider, apiKey)
 			if err != nil {
