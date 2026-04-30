@@ -707,23 +707,35 @@ func (m Model) View() string {
 	b.WriteString("\n")
 
 	if m.modelPickerActive {
-		b.WriteString(m.renderModelPicker())
+		picker := m.renderModelPicker()
+		filter := Dim.Render("filter: ") + m.textarea.Value() + InputCursor.Render("█")
+		if m.config.Alignment == "centered" {
+			picker = centerContent(picker, m.width)
+			filter = centerContent(filter, m.width)
+		}
+		b.WriteString(picker)
 		b.WriteString("\n")
-		b.WriteString(Dim.Render("filter: "))
-		b.WriteString(m.textarea.Value())
-		b.WriteString(InputCursor.Render("█"))
+		b.WriteString(filter)
 	} else if m.loginPickerActive {
-		b.WriteString(m.renderLoginPicker())
+		picker := m.renderLoginPicker()
+		filter := Dim.Render("filter: ") + m.textarea.Value() + InputCursor.Render("█")
+		if m.config.Alignment == "centered" {
+			picker = centerContent(picker, m.width)
+			filter = centerContent(filter, m.width)
+		}
+		b.WriteString(picker)
 		b.WriteString("\n")
-		b.WriteString(Dim.Render("filter: "))
-		b.WriteString(m.textarea.Value())
-		b.WriteString(InputCursor.Render("█"))
+		b.WriteString(filter)
 	} else if m.logoutPickerActive {
-		b.WriteString(m.renderLogoutPicker())
+		picker := m.renderLogoutPicker()
+		filter := Dim.Render("filter: ") + m.textarea.Value() + InputCursor.Render("█")
+		if m.config.Alignment == "centered" {
+			picker = centerContent(picker, m.width)
+			filter = centerContent(filter, m.width)
+		}
+		b.WriteString(picker)
 		b.WriteString("\n")
-		b.WriteString(Dim.Render("filter: "))
-		b.WriteString(m.textarea.Value())
-		b.WriteString(InputCursor.Render("█"))
+		b.WriteString(filter)
 	} else {
 		if m.pending {
 			spinnerLine := m.spinner.View() + " " + Dim.Render("Working")
@@ -1472,7 +1484,14 @@ func (m Model) renderMessages() string {
 				b.WriteString(RenderMarkdown(msg.content, wrapWidth))
 			}
 			for _, tc := range msg.toolCalls {
-				b.WriteString(RenderToolCall(tc, m.width-4, m.toolOutputExpanded))
+				tcWidth := m.width - 4
+				if m.config.Alignment == "centered" {
+					tcWidth = m.width * 3 / 4
+					if tcWidth < 40 {
+						tcWidth = 40
+					}
+				}
+				b.WriteString(RenderToolCall(tc, tcWidth, m.toolOutputExpanded))
 				b.WriteString("\n")
 			}
 			if msg.usage != "" {
