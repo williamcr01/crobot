@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"reflect"
 	"strings"
 	"time"
 
@@ -190,6 +191,10 @@ func (m Model) Init() tea.Cmd {
 
 // Update handles all messages.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if m.shouldInsertInputNewline(msg) {
+		return m.insertInputNewline()
+	}
+
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -570,6 +575,48 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	m.clampCommandSuggestionIndex()
 	return m, cmd
+}
+
+func (m Model) shouldInsertInputNewline(msg tea.Msg) bool {
+	if m.pending || m.modelPickerActive || m.loginPickerActive || m.logoutPickerActive {
+		return false
+	}
+
+	if keyMsg, ok := msg.(tea.KeyMsg); ok {
+		// Ghostty can send LF for Shift+Enter; Bubble Tea v1 names LF as ctrl+j.
+		// ESC+CR custom mappings are parsed by Bubble Tea v1 as alt+enter.
+		return keyMsg.Type == tea.KeyCtrlJ || (keyMsg.Type == tea.KeyEnter && keyMsg.Alt)
+	}
+
+	return isShiftEnterSequence(rawMsgBytes(msg))
+}
+
+func (m Model) insertInputNewline() (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	m.textarea, cmd = m.textarea.Update(tea.KeyMsg{Type: tea.KeyCtrlJ})
+	return m, cmd
+}
+
+func rawMsgBytes(msg tea.Msg) []byte {
+	v := reflect.ValueOf(msg)
+	if !v.IsValid() || v.Kind() != reflect.Slice || v.Type().Elem().Kind() != reflect.Uint8 {
+		return nil
+	}
+	out := make([]byte, v.Len())
+	reflect.Copy(reflect.ValueOf(out), v)
+	return out
+}
+
+func isShiftEnterSequence(raw []byte) bool {
+	if len(raw) == 0 {
+		return false
+	}
+	s := string(raw)
+	if s == "\x1b\r" || s == "\x1b[13;2~" || s == "\x1b[27;2;13~" || s == "\n" {
+		return true
+	}
+	// Kitty CSI-u: Enter is codepoint 13, keypad Enter is 57414, modifier 2 means Shift.
+	return (strings.HasPrefix(s, "\x1b[13;2") || strings.HasPrefix(s, "\x1b[57414;2")) && strings.HasSuffix(s, "u")
 }
 
 // waitForEvents returns a tea.Cmd that reads from the agentEvents channel.

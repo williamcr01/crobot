@@ -134,6 +134,34 @@ func TestGhosttyShiftEnterInsertsNewline(t *testing.T) {
 	}
 }
 
+func TestAltEnterInsertsNewline(t *testing.T) {
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil)
+	m.textarea.SetValue("hello")
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter, Alt: true})
+	updatedModel := updated.(Model)
+
+	if got := updatedModel.textarea.Value(); got != "hello\n" {
+		t.Fatalf("expected alt+enter to insert newline, got %q", got)
+	}
+}
+
+func TestShiftEnterRawSequences(t *testing.T) {
+	for _, seq := range [][]byte{
+		[]byte("\x1b\r"),
+		[]byte("\x1b[13;2~"),
+		[]byte("\x1b[27;2;13~"),
+		[]byte("\x1b[13;2u"),
+		[]byte("\x1b[13;2:1u"),
+		[]byte("\x1b[57414;2u"),
+		[]byte("\n"),
+	} {
+		if !isShiftEnterSequence(seq) {
+			t.Fatalf("expected %q to be recognized as Shift+Enter", seq)
+		}
+	}
+}
+
 func TestViewUsesInputViewForInput(t *testing.T) {
 	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil)
 	m.ready = true
