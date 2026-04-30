@@ -19,8 +19,8 @@ var (
 	Red    = lipgloss.NewStyle().Foreground(lipgloss.Color("#ef4444"))
 	Gray   = lipgloss.NewStyle().Foreground(lipgloss.Color("#9ca3af"))
 
-	// Tool display styles — dark navy background matching code blocks.
-	ToolBg = lipgloss.Color("#1a1a2e")
+	// Tool display styles — dark charcoal grey background matching code blocks.
+	ToolBg = lipgloss.Color("#222222")
 
 	// Tool text styles.
 	ToolTitle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#ffffff"))
@@ -52,7 +52,7 @@ var (
 	BodyTextStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#d6d3d1")) // warm off-white for body text
 	ThinkingStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#78716c"))  // warm gray for reasoning
 	CodeBlockStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#9ca3af")).
-			Background(lipgloss.Color("#1a1a2e"))
+			Background(lipgloss.Color("#222222"))
 	QuoteStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#9ca3af"))
 	QuoteBar   = lipgloss.NewStyle().Foreground(lipgloss.Color("#4b5563"))
 	HRStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#374151"))

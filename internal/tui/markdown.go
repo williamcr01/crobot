@@ -190,7 +190,7 @@ func (r *mdRenderer) renderFencedCodeBlock(w util.BufWriter, source []byte, node
 	}
 
 	blockStyle := lipgloss.NewStyle().
-		Background(lipgloss.Color("#1a1a2e")).
+		Background(lipgloss.Color("#222222")).
 		Width(r.width).
 		Padding(0, 1)
 
