@@ -241,6 +241,27 @@ func registerCommands(cmdReg *commands.Registry, cfg *config.AgentConfig) {
 			return "Plugins reloaded.", nil
 		},
 	})
+
+	cmdReg.Register(commands.Command{
+		Name:        "alignment",
+		Description: "Set output alignment",
+		Args:        "<left|centered>",
+		Handler: func(args []string) (string, error) {
+			if len(args) == 0 {
+				return "", fmt.Errorf("usage: /alignment <left|centered>")
+			}
+			val := args[0]
+			valid := map[string]bool{"left": true, "centered": true}
+			if !valid[val] {
+				return "", fmt.Errorf("invalid alignment: %s (valid: left, centered)", val)
+			}
+			cfg.Alignment = val
+			if err := config.SaveConfig(cfg); err != nil {
+				return "", err
+			}
+			return fmt.Sprintf("Alignment set to: %s", cfg.Alignment), nil
+		},
+	})
 }
 
 func getArg(args []string, idx int, fallback string) string {
