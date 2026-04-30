@@ -46,6 +46,22 @@ func (r *ModelRegistry) LoadModels(ctx context.Context) error {
 	r.models = r.models[:0]
 	var errs []error
 	for _, p := range r.providers {
+		if mip, ok := p.(ModelInfoProvider); ok {
+			models, err := mip.ListModelInfo(ctx)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("%s: %w", p.Name(), err))
+				continue
+			}
+			for _, m := range models {
+				r.models = append(r.models, commands.ModelInfo{
+					ID:            m.ID,
+					Provider:      p.Name(),
+					ContextLength: m.ContextLength,
+				})
+			}
+			continue
+		}
+
 		models, err := p.ListModels(ctx)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("%s: %w", p.Name(), err))

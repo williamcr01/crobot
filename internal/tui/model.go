@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"reflect"
@@ -839,8 +840,98 @@ func (m Model) renderStatusLine() string {
 	providerName := valueOrDefault(m.config.Provider, "unknown")
 	modelName := valueOrDefault(m.config.Model, "unknown")
 	thinking := valueOrDefault(m.config.Thinking, "none")
-	alignment := valueOrDefault(m.config.Alignment, "left")
-	return Dim.Render(fmt.Sprintf("provider: %s  model: %s  thinking: %s  alignment: %s  shift+tab: cycle thinking", providerName, modelName, thinking, alignment))
+	line := fmt.Sprintf("%s | %s | %s | %s/%s", providerName, modelName, thinking, formatTokenCount(m.estimatedContextUsed()), formatTokenCount(m.maxContextForCurrentModel()))
+	if m.width > 0 {
+		line = truncatePlainLine(line, m.width)
+	}
+	return Dim.Render(line)
+}
+
+func truncatePlainLine(line string, maxWidth int) string {
+	if maxWidth <= 0 || lipgloss.Width(line) <= maxWidth {
+		return line
+	}
+	if maxWidth == 1 {
+		return "…"
+	}
+	runes := []rune(line)
+	for len(runes) > 0 && lipgloss.Width(string(runes))+1 > maxWidth {
+		runes = runes[:len(runes)-1]
+	}
+	return string(runes) + "…"
+}
+
+func (m Model) estimatedContextUsed() int {
+	chars := len(prompt.Build(*m.config, getCwd()))
+
+	if m.toolReg != nil {
+		if toolBytes, err := json.Marshal(m.toolReg.ToProviderTools()); err == nil {
+			chars += len(toolBytes)
+		}
+	}
+
+	for _, msg := range m.messages {
+		if msg.role != "assistant" && msg.role != "user" && msg.ephemeral {
+			continue
+		}
+		switch msg.role {
+		case "user", "system", "compaction":
+			chars += len(msg.role) + len(msg.content)
+		case "assistant":
+			chars += len(msg.role) + len(msg.content) + len(msg.reasoning)
+			for _, tc := range msg.toolCalls {
+				if tc.callID != "" {
+					chars += len(tc.name) + len(tc.callID)
+					if argsBytes, err := json.Marshal(tc.rawArgs); err == nil {
+						chars += len(argsBytes)
+					} else {
+						chars += len(tc.args)
+					}
+				}
+				if tc.output != "" {
+					chars += len("tool") + len(tc.callID) + len(tc.output)
+				}
+			}
+		}
+	}
+
+	if input := strings.TrimSpace(m.textarea.Value()); input != "" && !m.pending {
+		chars += len("user") + len(input)
+	}
+
+	return (chars + 3) / 4
+}
+
+func (m Model) maxContextForCurrentModel() int {
+	if m.modelReg != nil {
+		for _, model := range m.modelReg.GetAll() {
+			if model.ID == m.config.Model && model.Provider == m.config.Provider && model.ContextLength > 0 {
+				return model.ContextLength
+			}
+		}
+		for _, model := range m.modelReg.GetAll() {
+			if model.ID == m.config.Model && model.ContextLength > 0 {
+				return model.ContextLength
+			}
+		}
+	}
+	return provider.ContextWindowForModel(m.config.Provider, m.config.Model)
+}
+
+func formatTokenCount(tokens int) string {
+	if tokens >= 1_000_000 {
+		if tokens%1_000_000 == 0 {
+			return fmt.Sprintf("%dM", tokens/1_000_000)
+		}
+		return fmt.Sprintf("%.1fM", float64(tokens)/1_000_000)
+	}
+	if tokens >= 1_000 {
+		if tokens%1_000 == 0 {
+			return fmt.Sprintf("%dk", tokens/1_000)
+		}
+		return fmt.Sprintf("%.1fk", float64(tokens)/1_000)
+	}
+	return fmt.Sprintf("%d", tokens)
 }
 
 func (m *Model) cycleThinkingLevel() error {

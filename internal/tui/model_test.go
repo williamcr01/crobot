@@ -13,6 +13,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 func testModel() Model {
@@ -20,6 +21,28 @@ func testModel() Model {
 	m.pending = true
 	m.agentEvents = make(chan agent.Event, 1)
 	return *m
+}
+
+type metadataProvider struct {
+	models []provider.ModelInfo
+}
+
+func (p metadataProvider) Name() string { return "metadata" }
+func (p metadataProvider) Send(context.Context, provider.Request) (*provider.Response, error) {
+	return nil, nil
+}
+func (p metadataProvider) Stream(context.Context, provider.Request) (<-chan provider.StreamEvent, error) {
+	return nil, nil
+}
+func (p metadataProvider) ListModels(context.Context) ([]string, error) {
+	ids := make([]string, 0, len(p.models))
+	for _, model := range p.models {
+		ids = append(ids, model.ID)
+	}
+	return ids, nil
+}
+func (p metadataProvider) ListModelInfo(context.Context) ([]provider.ModelInfo, error) {
+	return p.models, nil
 }
 
 func TestHandleAgentEvent_TurnEndKeepsPending(t *testing.T) {
@@ -177,16 +200,17 @@ func TestViewUsesInputViewForInput(t *testing.T) {
 	}
 }
 
-func TestViewShowsProviderModelAndThinkingAboveInput(t *testing.T) {
+func TestViewShowsProviderModelThinkingAndContextAboveInput(t *testing.T) {
 	m := NewModel(&config.AgentConfig{Provider: "openrouter", Model: "test/model", Thinking: "medium"}, nil, nil, nil, nil, nil, nil, nil)
 	m.ready = true
 	m.width = 80
 	m.height = 24
 	m.viewport.Width = 80
 	m.viewport.Height = 19
+	m.messages = []messageItem{{role: "user", content: strings.Repeat("a", 400)}}
 
 	view := m.View()
-	status := "provider: openrouter  model: test/model  thinking: medium  alignment: left"
+	status := "openrouter | test/model | medium | 168/128k"
 	input := "> "
 	statusIndex := strings.Index(view, status)
 	inputIndex := strings.LastIndex(view, input)
@@ -195,6 +219,16 @@ func TestViewShowsProviderModelAndThinkingAboveInput(t *testing.T) {
 	}
 	if inputIndex == -1 || statusIndex > inputIndex {
 		t.Fatalf("expected status line above input, view %q", view)
+	}
+}
+
+func TestStatusLineDoesNotExceedTerminalWidth(t *testing.T) {
+	m := NewModel(&config.AgentConfig{Provider: "openrouter", Model: "anthropic/claude-super-long-model-name-that-would-wrap-the-footer-and-break-the-tui", Thinking: "medium"}, nil, nil, nil, nil, nil, nil, nil)
+	m.width = 40
+
+	status := stripANSI(m.renderStatusLine())
+	if lipgloss.Width(status) > m.width {
+		t.Fatalf("expected status width <= %d, got %d: %q", m.width, lipgloss.Width(status), status)
 	}
 }
 
@@ -250,6 +284,41 @@ func TestSelectModelRecreatesProviderWhenProviderChanges(t *testing.T) {
 	}
 	if got := m.provider.Name(); got != "openrouter" {
 		t.Fatalf("expected openrouter provider after switching model, got %q", got)
+	}
+}
+
+func TestStatusLineUsesSelectedModelContextLength(t *testing.T) {
+	reg := provider.NewModelRegistry()
+	reg.AddProvider(metadataProvider{models: []provider.ModelInfo{
+		{ID: "small-model", ContextLength: 32_000},
+		{ID: "large-model", ContextLength: 1_000_000},
+	}})
+	if err := reg.LoadModels(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	m := NewModel(&config.AgentConfig{Provider: "metadata", Model: "small-model", Thinking: "none"}, nil, nil, nil, nil, reg, nil, nil)
+	m.width = 120
+	if got := stripANSI(m.renderStatusLine()); !strings.Contains(got, "/32k") {
+		t.Fatalf("expected small model context in status, got %q", got)
+	}
+
+	m.config.Model = "large-model"
+	if got := stripANSI(m.renderStatusLine()); !strings.Contains(got, "/1M") {
+		t.Fatalf("expected large model context after model change, got %q", got)
+	}
+}
+
+func TestStatusLineUsesStaticContextFallbackWhenRegistryMissingMetadata(t *testing.T) {
+	m := NewModel(&config.AgentConfig{Provider: "openrouter", Model: "anthropic/claude-sonnet-4-5", Thinking: "none"}, nil, nil, nil, nil, nil, nil, nil)
+	m.width = 120
+	if got := stripANSI(m.renderStatusLine()); !strings.Contains(got, "/200k") {
+		t.Fatalf("expected claude context fallback in status, got %q", got)
+	}
+
+	m.config.Model = "google/gemini-2.5-pro"
+	if got := stripANSI(m.renderStatusLine()); !strings.Contains(got, "/1M") {
+		t.Fatalf("expected gemini context fallback after model change, got %q", got)
 	}
 }
 

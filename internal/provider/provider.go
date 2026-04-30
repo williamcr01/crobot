@@ -66,6 +66,17 @@ type StreamEvent struct {
 	Error             error     // Stream error
 }
 
+// ModelInfo describes a model exposed by a provider.
+type ModelInfo struct {
+	ID            string
+	ContextLength int
+}
+
+// ModelInfoProvider is optionally implemented by providers that can return model metadata.
+type ModelInfoProvider interface {
+	ListModelInfo(ctx context.Context) ([]ModelInfo, error)
+}
+
 // Provider abstracts an LLM backend.
 type Provider interface {
 	// Name returns a human-readable provider identifier (e.g. "openrouter").

@@ -8,8 +8,9 @@ import (
 
 // ModelInfo represents a model from a provider.
 type ModelInfo struct {
-	ID       string
-	Provider string
+	ID            string
+	Provider      string
+	ContextLength int
 }
 
 // ModelRegistry interface for listing/filtering models.
