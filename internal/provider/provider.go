@@ -31,10 +31,31 @@ type ToolResult struct {
 	Output string `json:"output"`
 }
 
+// Pricing stores model pricing in USD per million tokens.
+type Pricing struct {
+	InputPerMTok      float64 `json:"input_per_mtok"`
+	OutputPerMTok     float64 `json:"output_per_mtok"`
+	CacheReadPerMTok  float64 `json:"cache_read_per_mtok"`
+	CacheWritePerMTok float64 `json:"cache_write_per_mtok"`
+}
+
+// Cost stores calculated request cost in USD.
+type Cost struct {
+	Input      float64 `json:"input"`
+	Output     float64 `json:"output"`
+	CacheRead  float64 `json:"cache_read"`
+	CacheWrite float64 `json:"cache_write"`
+	Total      float64 `json:"total"`
+}
+
 // Usage tracks token consumption.
 type Usage struct {
-	InputTokens  int `json:"input_tokens"`
-	OutputTokens int `json:"output_tokens"`
+	InputTokens      int  `json:"input_tokens"`
+	OutputTokens     int  `json:"output_tokens"`
+	CacheReadTokens  int  `json:"cache_read_tokens,omitempty"`
+	CacheWriteTokens int  `json:"cache_write_tokens,omitempty"`
+	Cost             Cost `json:"cost"`
+	Subscription     bool `json:"subscription,omitempty"`
 }
 
 // Request is the input to a provider Send or Stream call.
@@ -70,6 +91,7 @@ type StreamEvent struct {
 type ModelInfo struct {
 	ID            string
 	ContextLength int
+	Pricing       Pricing
 }
 
 // ModelInfoProvider is optionally implemented by providers that can return model metadata.

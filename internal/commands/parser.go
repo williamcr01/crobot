@@ -6,11 +6,20 @@ import (
 	"strings"
 )
 
+// Pricing stores model pricing in USD per million tokens.
+type Pricing struct {
+	InputPerMTok      float64
+	OutputPerMTok     float64
+	CacheReadPerMTok  float64
+	CacheWritePerMTok float64
+}
+
 // ModelInfo represents a model from a provider.
 type ModelInfo struct {
 	ID            string
 	Provider      string
 	ContextLength int
+	Pricing       Pricing
 }
 
 // ModelRegistry interface for listing/filtering models.

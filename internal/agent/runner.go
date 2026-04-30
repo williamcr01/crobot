@@ -35,6 +35,7 @@ type Event struct {
 	// Turn lifecycle.
 	TurnStart string // turn ID
 	TurnEnd   string // turn ID (empty = last)
+	TurnUsage *provider.Usage
 
 	// Error.
 	Error error
@@ -220,6 +221,8 @@ func (r *runner) run(ctx context.Context) (*Result, error) {
 			}
 			return result, nil
 		}
+
+		r.emit(Event{Type: "turn_usage", TurnUsage: step.Usage})
 
 		// Execute tool calls.
 		for _, tc := range step.ToolCalls {

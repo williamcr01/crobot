@@ -210,7 +210,7 @@ func TestViewShowsProviderModelThinkingAndContextAboveInput(t *testing.T) {
 	m.messages = []messageItem{{role: "user", content: strings.Repeat("a", 400)}}
 
 	view := m.View()
-	status := "openrouter | test/model | medium | 168/128k"
+	status := "openrouter | test/model | medium | 168/128k | $0.00"
 	input := "> "
 	statusIndex := strings.Index(view, status)
 	inputIndex := strings.LastIndex(view, input)
@@ -306,6 +306,63 @@ func TestStatusLineUsesSelectedModelContextLength(t *testing.T) {
 	m.config.Model = "large-model"
 	if got := stripANSI(m.renderStatusLine()); !strings.Contains(got, "/1M") {
 		t.Fatalf("expected large model context after model change, got %q", got)
+	}
+}
+
+func TestTurnUsageUpdatesCostWithoutClearingPending(t *testing.T) {
+	reg := provider.NewModelRegistry()
+	reg.AddProvider(metadataProvider{models: []provider.ModelInfo{{
+		ID: "priced-model",
+		Pricing: provider.Pricing{InputPerMTok: 2, OutputPerMTok: 10},
+	}}})
+	if err := reg.LoadModels(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	m := NewModel(&config.AgentConfig{Provider: "metadata", Model: "priced-model", Thinking: "none"}, nil, nil, nil, nil, reg, nil, nil)
+	m.pending = true
+	m.agentEvents = make(chan agent.Event)
+	m.messages = []messageItem{{role: "assistant"}}
+
+	updated, _ := m.handleAgentEvent(agent.Event{Type: "turn_usage", TurnUsage: &provider.Usage{InputTokens: 1_000_000, OutputTokens: 100_000}})
+	updatedModel := updated.(Model)
+
+	if !updatedModel.pending {
+		t.Fatal("expected turn usage to keep pending true")
+	}
+	if got := stripANSI(updatedModel.renderStatusLine()); !strings.Contains(got, "| $3.0000") {
+		t.Fatalf("expected cost update from turn usage, got %q", got)
+	}
+}
+
+func TestStatusLineShowsCumulativeCost(t *testing.T) {
+	reg := provider.NewModelRegistry()
+	reg.AddProvider(metadataProvider{models: []provider.ModelInfo{{
+		ID: "priced-model",
+		Pricing: provider.Pricing{InputPerMTok: 2, OutputPerMTok: 10},
+	}}})
+	if err := reg.LoadModels(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	m := NewModel(&config.AgentConfig{Provider: "metadata", Model: "priced-model", Thinking: "none"}, nil, nil, nil, nil, reg, nil, nil)
+	m.width = 120
+	usage := &provider.Usage{InputTokens: 1_000_000, OutputTokens: 100_000}
+	m.calculateUsageCost(usage)
+	m.messages = []messageItem{{role: "assistant", usageData: usage}}
+
+	if got := stripANSI(m.renderStatusLine()); !strings.Contains(got, "| $3.0000") {
+		t.Fatalf("expected cumulative cost in status, got %q", got)
+	}
+}
+
+func TestStatusLineShowsSubscriptionInsteadOfCost(t *testing.T) {
+	m := NewModel(&config.AgentConfig{Provider: "openai-codex", Model: "gpt-5.1", Thinking: "none"}, nil, nil, nil, nil, nil, nil, nil)
+	m.width = 120
+	m.messages = []messageItem{{role: "assistant", usageData: &provider.Usage{InputTokens: 1_000_000, OutputTokens: 100_000}}}
+
+	if got := stripANSI(m.renderStatusLine()); !strings.Contains(got, "| sub") {
+		t.Fatalf("expected subscription status, got %q", got)
 	}
 }
 

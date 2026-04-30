@@ -304,8 +304,9 @@ func (p *OpenAIProvider) mapResponse(c *openai.ChatCompletion) *Response {
 	}
 	if c.Usage.PromptTokens > 0 || c.Usage.CompletionTokens > 0 {
 		out.Usage = &Usage{
-			InputTokens:  int(c.Usage.PromptTokens),
-			OutputTokens: int(c.Usage.CompletionTokens),
+			InputTokens:     int(c.Usage.PromptTokens),
+			OutputTokens:    int(c.Usage.CompletionTokens),
+			CacheReadTokens: int(c.Usage.PromptTokensDetails.CachedTokens),
 		}
 	}
 	return out
@@ -386,8 +387,9 @@ func (p *OpenAIProvider) streamLoop(ctx context.Context, stream interface {
 
 		if chunk.Usage.PromptTokens > 0 || chunk.Usage.CompletionTokens > 0 {
 			ch <- StreamEvent{Done: &Usage{
-				InputTokens:  int(chunk.Usage.PromptTokens),
-				OutputTokens: int(chunk.Usage.CompletionTokens),
+				InputTokens:     int(chunk.Usage.PromptTokens),
+				OutputTokens:    int(chunk.Usage.CompletionTokens),
+				CacheReadTokens: int(chunk.Usage.PromptTokensDetails.CachedTokens),
 			}}
 		}
 	}

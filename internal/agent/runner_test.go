@@ -180,6 +180,18 @@ func TestRun_ToolCall(t *testing.T) {
 	if msgs[1].Role != "tool" || msgs[1].ToolCallID != "call_1" {
 		t.Fatalf("expected tool result with tool_call_id call_1, got %#v", msgs[1])
 	}
+	var sawTurnUsage bool
+	for _, ev := range events {
+		if ev.Type == "turn_usage" && ev.TurnUsage != nil {
+			sawTurnUsage = true
+			if ev.TurnUsage.InputTokens != 10 || ev.TurnUsage.OutputTokens != 5 {
+				t.Fatalf("unexpected turn usage: %#v", ev.TurnUsage)
+			}
+		}
+	}
+	if !sawTurnUsage {
+		t.Fatal("expected turn_usage event for tool-call turn")
+	}
 }
 
 func TestRun_ProviderErrorEmitsTypedErrorEvent(t *testing.T) {

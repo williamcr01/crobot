@@ -57,6 +57,12 @@ func (r *ModelRegistry) LoadModels(ctx context.Context) error {
 					ID:            m.ID,
 					Provider:      p.Name(),
 					ContextLength: m.ContextLength,
+					Pricing: commands.Pricing{
+						InputPerMTok:      m.Pricing.InputPerMTok,
+						OutputPerMTok:     m.Pricing.OutputPerMTok,
+						CacheReadPerMTok:  m.Pricing.CacheReadPerMTok,
+						CacheWritePerMTok: m.Pricing.CacheWritePerMTok,
+					},
 				})
 			}
 			continue

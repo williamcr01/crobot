@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
 	openai "github.com/openai/openai-go/v3"
@@ -64,6 +65,12 @@ func (p *OpenAIProvider) ListModelInfo(ctx context.Context) ([]ModelInfo, error)
 		Data []struct {
 			ID            string `json:"id"`
 			ContextLength int    `json:"context_length"`
+			Pricing       struct {
+				Prompt          string `json:"prompt"`
+				Completion      string `json:"completion"`
+				InputCacheRead  string `json:"input_cache_read"`
+				InputCacheWrite string `json:"input_cache_write"`
+			} `json:"pricing"`
 		} `json:"data"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
@@ -75,7 +82,24 @@ func (p *OpenAIProvider) ListModelInfo(ctx context.Context) ([]ModelInfo, error)
 		if item.ID == "" {
 			continue
 		}
-		models = append(models, ModelInfo{ID: item.ID, ContextLength: item.ContextLength})
+		models = append(models, ModelInfo{
+			ID:            item.ID,
+			ContextLength: item.ContextLength,
+			Pricing: Pricing{
+				InputPerMTok:      openRouterPricePerMillion(item.Pricing.Prompt),
+				OutputPerMTok:     openRouterPricePerMillion(item.Pricing.Completion),
+				CacheReadPerMTok:  openRouterPricePerMillion(item.Pricing.InputCacheRead),
+				CacheWritePerMTok: openRouterPricePerMillion(item.Pricing.InputCacheWrite),
+			},
+		})
 	}
 	return models, nil
+}
+
+func openRouterPricePerMillion(raw string) float64 {
+	price, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		return 0
+	}
+	return price * 1_000_000
 }

@@ -53,6 +53,7 @@ type messageItem struct {
 	content   string
 	reasoning string
 	usage     string
+	usageData *provider.Usage
 	toolCalls []toolRenderItem
 	ephemeral bool // if true, not sent to the agent as conversation history
 }
@@ -703,19 +704,16 @@ func (m Model) handleAgentEvent(ev agent.Event) (tea.Model, tea.Cmd) {
 	case "turn_end":
 		m.refreshViewport()
 
+	case "turn_usage":
+		m.attachUsageToLastAssistant(ev.TurnUsage)
+		m.refreshViewport()
+
 	case "message_end":
 		m.pending = false
 		m.textarea.Focus()
 
 		if ev.MessageEnd != nil {
-			usage := ""
-			if ev.MessageEnd.Usage != nil {
-				usage = fmt.Sprintf("  %d in / %d out",
-					ev.MessageEnd.Usage.InputTokens, ev.MessageEnd.Usage.OutputTokens)
-			}
-			if len(m.messages) > 0 && m.messages[len(m.messages)-1].role == "assistant" {
-				m.messages[len(m.messages)-1].usage = usage
-			}
+			m.attachUsageToLastAssistant(ev.MessageEnd.Usage)
 
 			if m.session != nil && ev.MessageEnd.Text != "" {
 				_ = m.session.Append(session.Record{
@@ -840,7 +838,7 @@ func (m Model) renderStatusLine() string {
 	providerName := valueOrDefault(m.config.Provider, "unknown")
 	modelName := valueOrDefault(m.config.Model, "unknown")
 	thinking := valueOrDefault(m.config.Thinking, "none")
-	line := fmt.Sprintf("%s | %s | %s | %s/%s", providerName, modelName, thinking, formatTokenCount(m.estimatedContextUsed()), formatTokenCount(m.maxContextForCurrentModel()))
+	line := fmt.Sprintf("%s | %s | %s | %s/%s | %s", providerName, modelName, thinking, formatTokenCount(m.estimatedContextUsed()), formatTokenCount(m.maxContextForCurrentModel()), m.renderCostStatus())
 	if m.width > 0 {
 		line = truncatePlainLine(line, m.width)
 	}
@@ -900,6 +898,73 @@ func (m Model) estimatedContextUsed() int {
 	}
 
 	return (chars + 3) / 4
+}
+
+func (m *Model) attachUsageToLastAssistant(usage *provider.Usage) {
+	if usage == nil || len(m.messages) == 0 || m.messages[len(m.messages)-1].role != "assistant" {
+		return
+	}
+	m.calculateUsageCost(usage)
+	m.messages[len(m.messages)-1].usage = fmt.Sprintf("  %d in / %d out", usage.InputTokens, usage.OutputTokens)
+	m.messages[len(m.messages)-1].usageData = usage
+}
+
+func (m Model) renderCostStatus() string {
+	cost, subscription := m.totalUsageCost()
+	if subscription {
+		return "sub"
+	}
+	return fmt.Sprintf("$%.4f", cost)
+}
+
+func (m Model) totalUsageCost() (float64, bool) {
+	subscription := provider.IsSubscriptionProvider(m.config.Provider)
+	var total float64
+	for _, msg := range m.messages {
+		if msg.usageData == nil {
+			continue
+		}
+		if msg.usageData.Subscription {
+			subscription = true
+		}
+		total += msg.usageData.Cost.Total
+	}
+	return total, subscription
+}
+
+func (m Model) calculateUsageCost(usage *provider.Usage) {
+	pricing := m.pricingForCurrentModel()
+	provider.CalculateCost(usage, pricing, provider.IsSubscriptionProvider(m.config.Provider))
+}
+
+func (m Model) pricingForCurrentModel() provider.Pricing {
+	if m.modelReg != nil {
+		for _, model := range m.modelReg.GetAll() {
+			if model.ID == m.config.Model && model.Provider == m.config.Provider && hasPricing(model.Pricing) {
+				return provider.Pricing{
+					InputPerMTok:      model.Pricing.InputPerMTok,
+					OutputPerMTok:     model.Pricing.OutputPerMTok,
+					CacheReadPerMTok:  model.Pricing.CacheReadPerMTok,
+					CacheWritePerMTok: model.Pricing.CacheWritePerMTok,
+				}
+			}
+		}
+		for _, model := range m.modelReg.GetAll() {
+			if model.ID == m.config.Model && hasPricing(model.Pricing) {
+				return provider.Pricing{
+					InputPerMTok:      model.Pricing.InputPerMTok,
+					OutputPerMTok:     model.Pricing.OutputPerMTok,
+					CacheReadPerMTok:  model.Pricing.CacheReadPerMTok,
+					CacheWritePerMTok: model.Pricing.CacheWritePerMTok,
+				}
+			}
+		}
+	}
+	return provider.PricingForModel(m.config.Provider, m.config.Model)
+}
+
+func hasPricing(pricing commands.Pricing) bool {
+	return pricing.InputPerMTok != 0 || pricing.OutputPerMTok != 0 || pricing.CacheReadPerMTok != 0 || pricing.CacheWritePerMTok != 0
 }
 
 func (m Model) maxContextForCurrentModel() int {

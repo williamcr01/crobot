@@ -196,13 +196,15 @@ func (p *AnthropicProvider) streamLoop(ctx context.Context, stream anthropicStre
 		event := stream.Current()
 		switch ev := event.AsAny().(type) {
 		case anthropic.MessageStartEvent:
-			usage = &Usage{InputTokens: int(ev.Message.Usage.InputTokens), OutputTokens: int(ev.Message.Usage.OutputTokens)}
+			usage = &Usage{InputTokens: int(ev.Message.Usage.InputTokens), OutputTokens: int(ev.Message.Usage.OutputTokens), CacheReadTokens: int(ev.Message.Usage.CacheReadInputTokens), CacheWriteTokens: int(ev.Message.Usage.CacheCreationInputTokens)}
 		case anthropic.MessageDeltaEvent:
 			if usage == nil {
 				usage = &Usage{}
 			}
 			usage.InputTokens = int(ev.Usage.InputTokens)
 			usage.OutputTokens = int(ev.Usage.OutputTokens)
+			usage.CacheReadTokens = int(ev.Usage.CacheReadInputTokens)
+			usage.CacheWriteTokens = int(ev.Usage.CacheCreationInputTokens)
 		case anthropic.ContentBlockStartEvent:
 			switch block := ev.ContentBlock.AsAny().(type) {
 			case anthropic.ToolUseBlock:
@@ -275,7 +277,7 @@ func mapAnthropicMessage(msg *anthropic.Message) *Response {
 		}
 	}
 	if msg.Usage.InputTokens > 0 || msg.Usage.OutputTokens > 0 {
-		out.Usage = &Usage{InputTokens: int(msg.Usage.InputTokens), OutputTokens: int(msg.Usage.OutputTokens)}
+		out.Usage = &Usage{InputTokens: int(msg.Usage.InputTokens), OutputTokens: int(msg.Usage.OutputTokens), CacheReadTokens: int(msg.Usage.CacheReadInputTokens), CacheWriteTokens: int(msg.Usage.CacheCreationInputTokens)}
 	}
 	return out
 }
