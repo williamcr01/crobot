@@ -99,6 +99,21 @@ func TestParseStartupArgs(t *testing.T) {
 	}
 }
 
+func TestParseStartupArgs_Version(t *testing.T) {
+	for _, name := range []string{"--version", "-v"} {
+		parsed, remaining, err := parseStartupArgs([]string{name})
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if !parsed.showVersion {
+			t.Fatalf("%s: expected showVersion=true", name)
+		}
+		if len(remaining) != 0 {
+			t.Fatalf("%s: unexpected remaining: %v", name, remaining)
+		}
+	}
+}
+
 func TestParseStartupArgs_Help(t *testing.T) {
 	for _, name := range []string{"--help"} {
 		parsed, remaining, err := parseStartupArgs([]string{name})
@@ -185,6 +200,8 @@ func TestCliHelpText(t *testing.T) {
 		"Usage:",
 		"--help",
 		"-h",
+		"--version",
+		"-v",
 		"--continue",
 		"-c",
 		"--session <path>",

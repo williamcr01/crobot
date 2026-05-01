@@ -14,8 +14,8 @@ const logo = `
    ╚═════╝╚═╝  ╚═╝ ╚═════╝ ╚═════╝  ╚═════╝    ╚═╝   
 `
 
-// Render returns the ASCII banner with model info.
-func Render(model string) string {
+// Render returns the ASCII banner with model and version info.
+func Render(model, version string) string {
 	if model == "" {
 		model = "(no model)"
 	}
@@ -26,6 +26,10 @@ func Render(model string) string {
 		b.WriteString("\x1b[0m") // reset
 		b.WriteString("\n")
 	}
-	b.WriteString(fmt.Sprintf("  \x1b[2mmodel\x1b[0m  \x1b[36m%s\x1b[0m\n", model))
+	line := fmt.Sprintf("  \x1b[2mmodel\x1b[0m  \x1b[36m%s\x1b[0m", model)
+	if version != "" && version != "dev" {
+		line += fmt.Sprintf("  \x1b[2mversion\x1b[0m  \x1b[36m%s\x1b[0m", version)
+	}
+	b.WriteString(line + "\n")
 	return b.String()
 }

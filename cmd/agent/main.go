@@ -30,6 +30,10 @@ func main() {
 		fmt.Print(cliHelpText())
 		return
 	}
+	if parsed.showVersion {
+		fmt.Print(cliVersionText())
+		return
+	}
 	os.Args = append([]string{os.Args[0]}, remainingArgs...)
 
 	// Load config.

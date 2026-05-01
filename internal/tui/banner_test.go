@@ -22,7 +22,7 @@ func TestBannerLogoLinesHaveEqualVisualWidth(t *testing.T) {
 }
 
 func TestCenteredBannerPreservesLogoLeftEdges(t *testing.T) {
-	centered := centerContent(Render("test/model"), 80)
+	centered := centerContent(Render("test/model", "v1.0.0"), 80)
 	lines := strings.Split(centered, "\n")
 	if len(lines) < 6 {
 		t.Fatalf("expected rendered logo lines, got %d", len(lines))

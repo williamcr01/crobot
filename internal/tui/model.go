@@ -21,6 +21,7 @@ import (
 	"crobot/internal/skills"
 	"crobot/internal/themes"
 	"crobot/internal/tools"
+	"crobot/internal/version"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
@@ -2286,7 +2287,7 @@ func (m Model) renderMessages() string {
 		}
 	}
 	if m.config.ShowBanner {
-		b.WriteString(Render(m.config.Model))
+		b.WriteString(Render(m.config.Model, version.Version))
 		b.WriteString("\n")
 	}
 	for _, msg := range m.messages {

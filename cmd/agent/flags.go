@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"strings"
+
+	"crobot/internal/version"
 )
 
 // startupArgs holds parsed CLI flag values.
@@ -11,6 +13,7 @@ type startupArgs struct {
 	noSession      bool
 	sessionPath    string
 	help           bool
+	showVersion    bool
 	skillPaths     []string
 }
 
@@ -29,6 +32,7 @@ type cliFlag struct {
 // startupFlags is the canonical list of all supported CLI flags.
 var startupFlags = []cliFlag{
 	{Name: "--help", Short: "-h", Description: "Show help and exit"},
+	{Name: "--version", Short: "-v", Description: "Show version and exit"},
 	{Name: "--continue", Short: "-c", Description: "Continue the most recent session"},
 	{Name: "--session", Arg: "<path>", Description: "Open a specific session file"},
 	{Name: "--no-session", Description: "Run without saving a session"},
@@ -69,6 +73,14 @@ var flagHandlers = map[string]flagHandler{
 		}
 		p.sessionPath = args[i+1]
 		return 2, nil
+	},
+	"--version": func(_ []string, _ int, p *startupArgs) (int, error) {
+		p.showVersion = true
+		return 1, nil
+	},
+	"-v": func(_ []string, _ int, p *startupArgs) (int, error) {
+		p.showVersion = true
+		return 1, nil
 	},
 	"--no-session": func(_ []string, _ int, p *startupArgs) (int, error) {
 		p.noSession = true
@@ -114,7 +126,12 @@ func cliHelpText() string {
 	b.WriteString("  crobot [flags]\n")
 	b.WriteString("  crobot help\n\n")
 	b.WriteString("Flags:\n")
+	// Show --version first (special, has short flag -v).
+	b.WriteString(fmt.Sprintf("  -v, --version          Show version and exit (version %s)\n", version.Version))
 	for _, f := range startupFlags {
+		if f.Name == "--version" {
+			continue // shown above with version info
+		}
 		line := "  "
 		if f.Short != "" {
 			line += fmt.Sprintf("%s, %s", f.Short, f.Name)
@@ -131,4 +148,9 @@ func cliHelpText() string {
 	b.WriteString("\nInside the TUI:\n")
 	b.WriteString("  Type /help to show slash commands.\n")
 	return b.String()
+}
+
+// cliVersionText returns the version output for --version.
+func cliVersionText() string {
+	return fmt.Sprintf("crobot %s (commit %s, built %s)\n", version.Version, version.Commit, version.BuildDate)
 }
