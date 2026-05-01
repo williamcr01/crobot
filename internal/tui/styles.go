@@ -139,8 +139,16 @@ func RenderToolCall(tc toolRenderItem, width int, expanded bool, s Styles) strin
 	}
 
 	bgColor := s.ToolBg
+	blockStyles := s
+	blockStyles.ToolTitle = blockStyles.ToolTitle.Background(bgColor)
+	blockStyles.ToolOutput = blockStyles.ToolOutput.Background(bgColor)
+	blockStyles.ToolMeta = blockStyles.ToolMeta.Background(bgColor)
+	blockStyles.BashHeader = blockStyles.BashHeader.Background(bgColor)
+	blockStyles.Green = blockStyles.Green.Background(bgColor)
+	blockStyles.Red = blockStyles.Red.Background(bgColor)
+
 	statusIcon := "…"
-	statusColor := s.ToolMeta
+	statusColor := blockStyles.ToolMeta
 
 	switch tc.state {
 	case toolRunning:
@@ -148,10 +156,10 @@ func RenderToolCall(tc toolRenderItem, width int, expanded bool, s Styles) strin
 	case toolDone:
 		if tc.success {
 			statusIcon = "✓"
-			statusColor = s.Green
+			statusColor = blockStyles.Green
 		} else {
 			statusIcon = "✗"
-			statusColor = s.Red
+			statusColor = blockStyles.Red
 		}
 	}
 
@@ -164,7 +172,7 @@ func RenderToolCall(tc toolRenderItem, width int, expanded bool, s Styles) strin
 	var content strings.Builder
 
 	// --- Call line ---
-	callLine := formatSingleToolCallLine(tc, s)
+	callLine := formatSingleToolCallLine(tc, blockStyles)
 	callLine = truncateToWidth(callLine, inner-2)
 	content.WriteString(callLine)
 
@@ -176,7 +184,7 @@ func RenderToolCall(tc toolRenderItem, width int, expanded bool, s Styles) strin
 		if collapsed {
 			maxLines = collapsedPreviewLines
 		}
-		preview := formatOutputPreview(tc.output, inner-2, maxLines, collapsed, s)
+		preview := formatOutputPreview(tc.output, inner-2, maxLines, collapsed, blockStyles)
 		content.WriteString(preview)
 	}
 
@@ -184,12 +192,12 @@ func RenderToolCall(tc toolRenderItem, width int, expanded bool, s Styles) strin
 	var statusLine string
 	switch tc.state {
 	case toolRunning:
-		statusLine = s.ToolMeta.Render("running…")
+		statusLine = blockStyles.ToolMeta.Render("running…")
 	case toolDone:
 		dur := formatDuration(tc.duration)
 		statusLine = fmt.Sprintf("%s %s %s",
 			statusColor.Render(statusIcon),
-			s.ToolMeta.Render(dur),
+			blockStyles.ToolMeta.Render(dur),
 			statusColor.Render(statusLabel(tc.success)),
 		)
 	default:
@@ -200,7 +208,7 @@ func RenderToolCall(tc toolRenderItem, width int, expanded bool, s Styles) strin
 		content.WriteString(statusLine)
 	} else if tc.state == toolDone && tc.output != "" {
 		content.WriteString("\n")
-		content.WriteString(statusColor.Render(statusIcon) + " " + s.ToolMeta.Render(formatDuration(tc.duration)))
+		content.WriteString(statusColor.Render(statusIcon) + " " + blockStyles.ToolMeta.Render(formatDuration(tc.duration)))
 	}
 
 	// Render the entire content as a single block for uniform background.
