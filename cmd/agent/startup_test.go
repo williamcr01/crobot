@@ -29,8 +29,8 @@ func TestCreateStartupProvider_NoAuthDoesNotRewriteConfig(t *testing.T) {
 	if warning == "" {
 		t.Fatal("expected missing-provider warning")
 	}
-	if cfg.Provider != "" || cfg.Model != "" {
-		t.Fatalf("expected in-memory provider/model disabled, got provider=%q model=%q", cfg.Provider, cfg.Model)
+	if cfg.Provider != "anthropic" || cfg.Model != "claude-sonnet-4-5" {
+		t.Fatalf("expected in-memory provider/model preserved, got provider=%q model=%q", cfg.Provider, cfg.Model)
 	}
 
 	content := readAgentConfig(t, home)
@@ -62,8 +62,8 @@ func TestCreateStartupProvider_ConfiguredProviderWithoutCredentialsDoesNotRewrit
 	if warning != "" {
 		t.Fatalf("expected no warning, got %q", warning)
 	}
-	if cfg.Provider != "" || cfg.Model != "" {
-		t.Fatalf("expected in-memory provider/model disabled, got provider=%q model=%q", cfg.Provider, cfg.Model)
+	if cfg.Provider != "anthropic" || cfg.Model != "claude-sonnet-4-5" {
+		t.Fatalf("expected in-memory provider/model preserved, got provider=%q model=%q", cfg.Provider, cfg.Model)
 	}
 
 	content := readAgentConfig(t, home)

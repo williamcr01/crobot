@@ -8,11 +8,9 @@ import (
 func createStartupProvider(cfg *config.AgentConfig, auth config.AuthConfig) (provider.Provider, string, error) {
 	cfg.HasAuthorizedProvider = auth.HasAuthorizedProvider()
 	if !cfg.HasAuthorizedProvider {
-		// Do not mutate the on-disk model/provider selection during startup.
-		// Credentials can be absent or temporarily unavailable, but the user's
-		// saved model settings should survive until they explicitly change them.
-		cfg.Provider = ""
-		cfg.Model = ""
+		// Credentials can be absent or temporarily unavailable. Keep the user's
+		// selected provider/model visible and persisted until they explicitly
+		// change or clear them.
 		return nil, "warning: No provider added. Add credentials to ~/.crobot/auth.json or use /login.", nil
 	}
 
@@ -22,9 +20,8 @@ func createStartupProvider(cfg *config.AgentConfig, auth config.AuthConfig) (pro
 
 	apiKey := auth.APIKey(cfg.Provider)
 	if apiKey == "" {
-		// Keep the persisted selection intact; only disable it for this run.
-		cfg.Provider = ""
-		cfg.Model = ""
+		// Another provider may be authorized, but the selected one is not. Keep the
+		// selection visible so it does not appear to reset after startup.
 		return nil, "", nil
 	}
 
