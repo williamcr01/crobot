@@ -273,6 +273,28 @@ Use this EXACT format:
 
 Keep each section concise. Preserve exact file paths, function names, and error messages.`
 
+// canModelHandleSummary checks whether a model's context window is large enough
+// to handle the summarization input. It estimates input tokens from serialized
+// messages plus prompt overhead and compares against the model's context window,
+// leaving 20% headroom for output tokens.
+func canModelHandleSummary(provName, modelID string, messages []MessageItem) error {
+	if modelID == "" {
+		return fmt.Errorf("no model specified")
+	}
+
+	conversationText := serializeMessages(messages)
+	// Estimate: serialized chars/4 + system prompt + user prompt + overhead (~500 tokens)
+	estimatedInputTokens := len(conversationText)/4 + 500
+	contextWindow := provider.ContextWindowForModel(provName, modelID)
+
+	// Leave 20% headroom for output tokens and tokenizer variance.
+	if estimatedInputTokens > contextWindow*80/100 {
+		return fmt.Errorf("estimated summarization input ~%d tokens exceeds %d token context window (model %q has %d tokens)",
+			estimatedInputTokens, contextWindow*80/100, modelID, contextWindow)
+	}
+	return nil
+}
+
 // generateSummary calls the LLM to produce a compaction summary from messages.
 // If previousSummary is non-empty, it uses the update prompt to merge new
 // messages into the existing summary (iterative summarization).
@@ -373,6 +395,21 @@ func Compact(
 	summarizationModel := model
 	if settings.Model != "" {
 		summarizationModel = settings.Model
+	}
+
+	// Pre-flight: check if the summarization model can handle this context.
+	if err := canModelHandleSummary(prov.Name(), summarizationModel, messagesToSummarize); err != nil {
+		// If the user explicitly set a separate compaction model and it's too small,
+		// fall back to the user's main model.
+		if settings.Model != "" && settings.Model != model {
+			if err2 := canModelHandleSummary(prov.Name(), model, messagesToSummarize); err2 != nil {
+				return nil, fmt.Errorf("compaction model %q too small (%v); main model %q also too small (%v)",
+					summarizationModel, err, model, err2)
+			}
+			summarizationModel = model
+		} else {
+			return nil, fmt.Errorf("model %q cannot handle summarization: %w", summarizationModel, err)
+		}
 	}
 
 	summary, err := generateSummary(ctx, prov, summarizationModel, messagesToSummarize, customInstructions, previousSummary)

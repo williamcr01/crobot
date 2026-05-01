@@ -1,10 +1,12 @@
 package compaction
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	"crobot/internal/config"
+	"crobot/internal/provider"
 )
 
 func makeMessages(count int) []MessageItem {
@@ -213,6 +215,152 @@ func TestCompact_TooSmall(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "too small") {
 		t.Errorf("expected 'too small' error, got %v", err)
+	}
+}
+
+// makeLargeMessages creates messages that serialize to at least charCount characters.
+func makeLargeMessages(charCount int) []MessageItem {
+	return []MessageItem{
+		{Role: roleUser, Content: strings.Repeat("x ", charCount/2)},
+	}
+}
+
+func TestCanModelHandleSummary_EmptyModel(t *testing.T) {
+	msgs := makeMessages(10)
+	err := canModelHandleSummary("openai", "", msgs)
+	if err == nil {
+		t.Error("expected error for empty model ID")
+	}
+	if !strings.Contains(err.Error(), "no model specified") {
+		t.Errorf("expected 'no model specified' error, got %v", err)
+	}
+}
+
+func TestCanModelHandleSummary_EnoughRoom(t *testing.T) {
+	msgs := makeMessages(10)
+	err := canModelHandleSummary("openai", "gpt-5", msgs)
+	if err != nil {
+		t.Errorf("expected no error for small messages with large model, got %v", err)
+	}
+}
+
+func TestCanModelHandleSummary_TooSmall(t *testing.T) {
+	// Create enough content to exceed a 128K model's 80% threshold (~102K tokens).
+	// Need serialized chars > (102400 - 500) * 4 ≈ 407600
+	msgs := makeLargeMessages(450000)
+	err := canModelHandleSummary("openai", "gpt-4o-mini", msgs)
+	if err == nil {
+		t.Error("expected error for too much content on a 128K model")
+	}
+	if !strings.Contains(err.Error(), "exceeds") {
+		t.Errorf("expected 'exceeds' in error, got %v", err)
+	}
+}
+
+// fakeProvider is a minimal provider stub for testing fallback in Compact.
+type fakeProvider struct {
+	name string
+	resp string
+	err  error
+}
+
+func (f *fakeProvider) Name() string                                            { return f.name }
+func (f *fakeProvider) Send(_ context.Context, _ provider.Request) (*provider.Response, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &provider.Response{Text: f.resp}, nil
+}
+func (f *fakeProvider) Stream(_ context.Context, _ provider.Request) (<-chan provider.StreamEvent, error) { return nil, nil }
+func (f *fakeProvider) ListModels(_ context.Context) ([]string, error)          { return nil, nil }
+
+func TestCompact_MainModelTooSmall(t *testing.T) {
+	// No separate compaction model, main model too small → error.
+	// 3 messages: large (summarized) + assistant (summarized) + small recent (kept).
+	prov := &fakeProvider{name: "openai", resp: "test summary"}
+	msgs := []MessageItem{
+		{Role: roleUser, Content: strings.Repeat("x ", 225000)}, // ~450K chars → ~112K tokens
+		{Role: roleAssistant, Content: "intermediate response"},
+		{Role: roleUser, Content: "recent question"},
+	}
+	settings := config.CompactionConfig{
+		Enabled:          true,
+		KeepRecentTokens: 1, // just keep the last user message
+	}
+	_, err := Compact(context.Background(), prov, "gpt-4o-mini", settings, msgs, "", "")
+	if err == nil {
+		t.Fatal("expected error when main model is too small")
+	}
+	if !strings.Contains(err.Error(), "cannot handle summarization") {
+		t.Errorf("expected 'cannot handle summarization' error, got %v", err)
+	}
+}
+
+func TestCompact_FallbackOnCompactionModel(t *testing.T) {
+	// Compaction model too small (128K), main model big enough (400K) → falls back.
+	prov := &fakeProvider{name: "openai", resp: "fallback summary"}
+	msgs := []MessageItem{
+		{Role: roleUser, Content: strings.Repeat("x ", 225000)}, // ~450K chars → ~112K tokens
+		{Role: roleAssistant, Content: "intermediate response"},
+		{Role: roleUser, Content: "recent question"},
+	}
+	settings := config.CompactionConfig{
+		Enabled:          true,
+		KeepRecentTokens: 1,
+		Model:            "gpt-4o-mini", // 128K context — too small
+	}
+	result, err := Compact(context.Background(), prov, "gpt-5", settings, msgs, "", "")
+	if err != nil {
+		t.Fatalf("expected fallback to succeed, got %v", err)
+	}
+	if !strings.Contains(result.Summary, "fallback summary") {
+		t.Errorf("expected fallback summary, got %q", result.Summary)
+	}
+}
+
+func TestCompact_BothModelsTooSmall_SameID(t *testing.T) {
+	// Both compaction model and main model are the same ID and too small → error.
+	prov := &fakeProvider{name: "openai", resp: "test"}
+	msgs := []MessageItem{
+		{Role: roleUser, Content: strings.Repeat("x ", 225000)}, // ~450K chars → ~112K tokens
+		{Role: roleAssistant, Content: "intermediate response"},
+		{Role: roleUser, Content: "recent question"},
+	}
+	settings := config.CompactionConfig{
+		Enabled:          true,
+		KeepRecentTokens: 1,
+		Model:            "gpt-4o-mini",
+	}
+	_, err := Compact(context.Background(), prov, "gpt-4o-mini", settings, msgs, "", "")
+	if err == nil {
+		t.Fatal("expected error when models too small")
+	}
+	// settings.Model == model (same ID), so the simpler error path is taken.
+	if !strings.Contains(err.Error(), "cannot handle summarization") {
+		t.Errorf("expected 'cannot handle summarization' error, got %v", err)
+	}
+}
+
+func TestCompact_BothModelsTooSmall_DifferentIDs(t *testing.T) {
+	// Compaction model and main model are different IDs, both too small → dual-model error.
+	prov := &fakeProvider{name: "openai", resp: "test"}
+	// Use an unknown model that defaults to 128K context.
+	msgs := []MessageItem{
+		{Role: roleUser, Content: strings.Repeat("x ", 225000)}, // ~450K chars → ~112K tokens
+		{Role: roleAssistant, Content: "intermediate response"},
+		{Role: roleUser, Content: "recent question"},
+	}
+	settings := config.CompactionConfig{
+		Enabled:          true,
+		KeepRecentTokens: 1,
+		Model:            "some-vendor/tiny-model", // unknown → 128K — too small
+	}
+	_, err := Compact(context.Background(), prov, "other-vendor/other-model", settings, msgs, "", "")
+	if err == nil {
+		t.Fatal("expected error when both models too small")
+	}
+	if !strings.Contains(err.Error(), "compaction model") || !strings.Contains(err.Error(), "main model") {
+		t.Errorf("expected error mentioning both models, got %v", err)
 	}
 }
 
