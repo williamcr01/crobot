@@ -13,7 +13,7 @@ COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 go build \
 	-ldflags "-X crobot/internal/version.Version=$VERSION -X crobot/internal/version.Commit=$COMMIT -X crobot/internal/version.BuildDate=$BUILD_DATE" \
-	-o "$BUILD_DIR/agent" \
+	-o "$BUILD_DIR/crobot" \
 	./cmd/agent
 
-echo "==> Done: $BUILD_DIR/agent"
+echo "==> Done: $BUILD_DIR/crobot"

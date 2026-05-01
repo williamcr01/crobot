@@ -27,13 +27,13 @@ Build the binary:
 The binary is written to:
 
 ```text
-./build/agent
+./build/crobot
 ```
 
 Run it:
 
 ```sh
-./build/agent
+./build/crobot
 ```
 
 ## Authentication
