@@ -1336,8 +1336,8 @@ func TestFormatToolCallLine_Bash(t *testing.T) {
 
 func TestFormatToolCallLine_BashNoCommand(t *testing.T) {
 	got := formatToolCallLine("bash", nil)
-	if got != "bash" {
-		t.Fatalf("expected 'bash', got %q", got)
+	if got != "" {
+		t.Fatalf("expected empty, got %q", got)
 	}
 }
 
@@ -1364,7 +1364,7 @@ func TestFormatToolCallLine_FileWrite(t *testing.T) {
 
 func TestFormatToolCallLine_Grep(t *testing.T) {
 	got := formatToolCallLine("grep", map[string]any{"pattern": "func", "path": "."})
-	expected := "grep /func/"
+	expected := "/func/"
 	if got != expected {
 		t.Fatalf("expected %q, got %q", expected, got)
 	}
@@ -1374,6 +1374,9 @@ func TestFormatToolCallLine_GrepWithPath(t *testing.T) {
 	got := formatToolCallLine("grep", map[string]any{"pattern": "func", "path": "/home/user/src/main.go"})
 	if !strings.Contains(got, "/func/") || !strings.Contains(got, "src/main.go") {
 		t.Fatalf("expected grep with path, got %q", got)
+	}
+	if strings.Contains(got, "grep") {
+		t.Fatalf("should not contain tool name, got %q", got)
 	}
 }
 
@@ -1391,16 +1394,16 @@ func TestFormatToolCallLine_Ls(t *testing.T) {
 	}
 
 	got2 := formatToolCallLine("ls", map[string]any{})
-	if got2 != "ls" {
-		t.Fatalf("expected just 'ls': %q", got2)
+	if got2 != "" {
+		t.Fatalf("expected empty: %q", got2)
 	}
 }
 
 func TestFormatToolCallLine_Default(t *testing.T) {
 	got := formatToolCallLine("web_search", map[string]any{"query": "go testing"})
-	// Unknown tool with no summarizeKey match returns just the name
-	if got != "web_search" {
-		t.Fatalf("expected 'web_search', got %q", got)
+	// Unknown tool with no summarizeKey match returns empty
+	if got != "" {
+		t.Fatalf("expected empty, got %q", got)
 	}
 
 	// Test with a tool that has a tldr; key matching the default branch
@@ -1412,20 +1415,20 @@ func TestFormatToolCallLine_Default(t *testing.T) {
 
 func TestFormatToolCallLine_DefaultNoKey(t *testing.T) {
 	got := formatToolCallLine("unknown_tool", map[string]any{"something": "value"})
-	if got != "unknown_tool" {
-		t.Fatalf("expected just tool name: %q", got)
+	if got != "" {
+		t.Fatalf("expected empty: %q", got)
 	}
 }
 
 func TestFormatFilePathCall(t *testing.T) {
-	got := formatFilePathCall("read", map[string]any{"path": "/tmp/test.go"}, "path", "", "")
+	got := formatFilePathCall(map[string]any{"path": "/tmp/test.go"}, "path", "", "")
 	if !strings.Contains(got, "/tmp/test.go") {
 		t.Fatalf("expected path: %q", got)
 	}
 
-	got2 := formatFilePathCall("read", map[string]any{}, "path", "", "")
-	if got2 != "read" {
-		t.Fatalf("expected just 'read': %q", got2)
+	got2 := formatFilePathCall(map[string]any{}, "path", "", "")
+	if got2 != "" {
+		t.Fatalf("expected empty: %q", got2)
 	}
 }
 
@@ -2441,12 +2444,12 @@ func TestLoggedInOAuthProviders_NoAuthFile(t *testing.T) {
 // --- FormatFilePathCall with alternate key names ---
 
 func TestFormatFilePathCall_AlternateKeys(t *testing.T) {
-	got := formatFilePathCall("read", map[string]any{"path": "/tmp/file.go"}, "path", "start_line", "end_line")
+	got := formatFilePathCall(map[string]any{"path": "/tmp/file.go"}, "path", "start_line", "end_line")
 	if !strings.Contains(got, "file.go") {
 		t.Fatalf("expected path in output: %q", got)
 	}
 
-	got2 := formatFilePathCall("read", map[string]any{"path": "/tmp/file.go"}, "path", "start_line", "")
+	got2 := formatFilePathCall(map[string]any{"path": "/tmp/file.go"}, "path", "start_line", "")
 	if !strings.Contains(got2, "file.go") {
 		t.Fatalf("expected path in output: %q", got2)
 	}
@@ -2454,16 +2457,19 @@ func TestFormatFilePathCall_AlternateKeys(t *testing.T) {
 
 func TestFormatToolCallLine_FindNoGlob(t *testing.T) {
 	got := formatToolCallLine("find", map[string]any{"path": "src"})
-	if !strings.Contains(got, "find") {
-		t.Fatalf("expected tool name: %q", got)
+	if !strings.Contains(got, "src") {
+		t.Fatalf("expected path: %q", got)
+	}
+	if strings.Contains(got, "find") {
+		t.Fatalf("should not contain tool name: %q", got)
 	}
 }
 
 func TestFormatToolCallLine_DefaultWithArgs(t *testing.T) {
 	got := formatToolCallLine("web_search", map[string]any{"query": "go testing"})
-	// Unknown tool with no known summarizeKey returns just name
-	if got != "web_search" {
-		t.Fatalf("expected 'web_search', got %q", got)
+	// Unknown tool with no known summarizeKey returns empty
+	if got != "" {
+		t.Fatalf("expected empty, got %q", got)
 	}
 }
 

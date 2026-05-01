@@ -2744,31 +2744,29 @@ func truncateDisplay(s string, maxLen int) string {
 }
 
 // formatToolCallLine produces a concise natural-language description of a tool
-// call, following the pi-mono pattern: bold tool name followed by context-specific
-// formatting of the most salient argument.
+// call arguments, without the tool name (formatSingleToolCallLine prepends it).
 func formatToolCallLine(name string, args map[string]any) string {
 	if args == nil {
-		return name
+		return ""
 	}
 	switch name {
 	case "bash":
 		if cmd, ok := args["command"].(string); ok && cmd != "" {
 			return "$ " + cmd
 		}
-		return name
+		return ""
 	case "file_read", "read":
-		return formatFilePathCall(name, args, "path", "offset", "limit")
+		return formatFilePathCall(args, "path", "offset", "limit")
 	case "file_write", "write":
-		return formatFilePathCall(name, args, "path", "", "")
+		return formatFilePathCall(args, "path", "", "")
 	case "file_edit", "edit":
-		return formatFilePathCall(name, args, "path", "", "")
+		return formatFilePathCall(args, "path", "", "")
 	case "grep":
 		path, _ := args["path"].(string)
 		pattern, _ := args["pattern"].(string)
 		var b strings.Builder
-		b.WriteString(name)
 		if pattern != "" {
-			b.WriteString(" /")
+			b.WriteString("/")
 			b.WriteString(pattern)
 			b.WriteString("/")
 		}
@@ -2781,9 +2779,7 @@ func formatToolCallLine(name string, args map[string]any) string {
 		path, _ := args["path"].(string)
 		glob, _ := args["glob"].(string)
 		var b strings.Builder
-		b.WriteString(name)
 		if glob != "" {
-			b.WriteString(" ")
 			b.WriteString(glob)
 		}
 		if path != "" && path != "." {
@@ -2794,9 +2790,9 @@ func formatToolCallLine(name string, args map[string]any) string {
 	case "ls":
 		path, _ := args["path"].(string)
 		if path != "" && path != "." {
-			return name + " " + shortenDisplayPath(path)
+			return shortenDisplayPath(path)
 		}
-		return name
+		return ""
 	default:
 		key := summarizeKey(name)
 		if v, ok := args[key]; ok {
@@ -2804,24 +2800,23 @@ func formatToolCallLine(name string, args map[string]any) string {
 			if len(val) > 60 {
 				val = val[:60] + "..."
 			}
-			return name + " " + val
+			return val
 		}
-		return name
+		return ""
 	}
 }
 
-// formatFilePathCall formats a file read/write/edit call line:
+// formatFilePathCall formats a file path with optional line range:
 //
-//	read path	o\file.go:1-20
-//	write path	o\file.go
-func formatFilePathCall(name string, args map[string]any, pathKey, offsetKey, limitKey string) string {
+//	/to/file.go:1-20
+//	/to/file.go
+func formatFilePathCall(args map[string]any, pathKey, offsetKey, limitKey string) string {
 	path, _ := args[pathKey].(string)
 	if path == "" {
-		return name
+		return ""
 	}
 	short := shortenDisplayPath(path)
 
-	// Check for alternate key names.
 	offset := getIntArg(args, offsetKey, "offset", "start_line")
 	limit := getIntArg(args, limitKey, "limit", "end_line")
 
@@ -2831,11 +2826,11 @@ func formatFilePathCall(name string, args map[string]any, pathKey, offsetKey, li
 			start = 1
 		}
 		if limit > 0 {
-			return fmt.Sprintf("%s %s:%d-%d", name, short, start, start+limit-1)
+			return fmt.Sprintf("%s:%d-%d", short, start, start+limit-1)
 		}
-		return fmt.Sprintf("%s %s:%d", name, short, start)
+		return fmt.Sprintf("%s:%d", short, start)
 	}
-	return name + " " + short
+	return short
 }
 
 // getIntArg tries multiple key names for an integer argument.
