@@ -251,6 +251,14 @@ func registerCommands(cmdReg *commands.Registry, cfg *config.AgentConfig) {
 	})
 
 	cmdReg.Register(commands.Command{
+		Name:        "resume",
+		Description: "Resume a previous session",
+		Handler: func(args []string) (string, error) {
+			return "", nil
+		},
+	})
+
+	cmdReg.Register(commands.Command{
 		Name:        "session",
 		Description: "Show session info",
 		Handler: func(args []string) (string, error) {

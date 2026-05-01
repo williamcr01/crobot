@@ -54,6 +54,22 @@ func (p metadataProvider) ListModelInfo(context.Context) ([]provider.ModelInfo, 
 	return p.models, nil
 }
 
+func TestSessionDisplayTitle(t *testing.T) {
+	info := session.SessionInfo{Title: "Saved title", FirstPrompt: "first", FirstMessage: "message"}
+	if got := sessionDisplayTitle(info); got != "Saved title" {
+		t.Fatalf("expected title, got %q", got)
+	}
+	info.Title = ""
+	if got := sessionDisplayTitle(info); got != "first" {
+		t.Fatalf("expected first prompt, got %q", got)
+	}
+	info.FirstPrompt = ""
+	info.FirstMessage = "(no messages)"
+	if got := sessionDisplayTitle(info); got != "(empty session)" {
+		t.Fatalf("expected empty session, got %q", got)
+	}
+}
+
 func TestHandleAgentEvent_TurnEndKeepsPending(t *testing.T) {
 	m := testModel()
 
@@ -3136,6 +3152,14 @@ func TestRenderToolCall_NilArgsForFormatSingleToolCallLine(t *testing.T) {
 }
 
 // --- Tests for /new (ResetSession) ---
+
+func TestResetSession_EmptySessionDirDisablesPersistence(t *testing.T) {
+	m := NewModel(&config.AgentConfig{HasAuthorizedProvider: true}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
+	m.ResetSession()
+	if m.session != nil {
+		t.Fatalf("expected no session when SessionDir is empty, got %s", m.session.Path())
+	}
+}
 
 func TestResetSession_ClearsMessages(t *testing.T) {
 	m := NewModel(&config.AgentConfig{HasAuthorizedProvider: true}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())

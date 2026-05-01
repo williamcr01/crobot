@@ -8,6 +8,12 @@ import (
 	"time"
 )
 
+func TestSession_CreateRejectsEmptyDir(t *testing.T) {
+	if _, err := Create("", "/tmp/project"); err == nil {
+		t.Fatal("expected empty session dir error")
+	}
+}
+
 func TestSession_AppendAndLoad(t *testing.T) {
 	dir := t.TempDir()
 	mgr, err := NewManager(dir, "test-session")
@@ -221,6 +227,44 @@ func TestSession_PruneByMaxSessionsKeepsCurrent(t *testing.T) {
 	}
 	if _, err := os.Stat(newer.Path()); err != nil {
 		t.Fatalf("expected newest kept: %v", err)
+	}
+}
+
+func TestSession_SetTitleFromPrompt(t *testing.T) {
+	dir := t.TempDir()
+	mgr, err := Create(dir, "/tmp/project")
+	if err != nil {
+		t.Fatal(err)
+	}
+	prompt := "  ## fix the auth refresh race in provider startup  \n"
+	if err := mgr.SetTitleFromPrompt(prompt); err != nil {
+		t.Fatal(err)
+	}
+	if err := mgr.Append(Record{Role: "user", Content: prompt, Timestamp: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	info, err := mgr.Info()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Title != "fix the auth refresh race in provider startup" {
+		t.Fatalf("unexpected title: %q", info.Title)
+	}
+	if info.FirstPrompt != strings.TrimSpace(prompt) {
+		t.Fatalf("unexpected first prompt: %q", info.FirstPrompt)
+	}
+}
+
+func TestDeriveTitle(t *testing.T) {
+	if got := DeriveTitle("\n``` fix   auth ```\n"); got != "fix auth" {
+		t.Fatalf("unexpected title: %q", got)
+	}
+	if got := DeriveTitle("   "); got != "(untitled)" {
+		t.Fatalf("expected untitled, got %q", got)
+	}
+	long := strings.Repeat("word ", 30)
+	if got := DeriveTitle(long); len([]rune(got)) > 81 || !strings.HasSuffix(got, "…") {
+		t.Fatalf("expected truncated title, got %q", got)
 	}
 }
 

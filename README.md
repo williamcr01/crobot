@@ -175,6 +175,7 @@ Inside the TUI:
 /logout                Remove OAuth credentials
 /thinking <level>      Set reasoning effort
 /new                   Start a fresh conversation
+/resume                Resume a previous session
 /session               Show session info
 /compact [instruction] Compact conversation context
 /export [path]         Export conversation as Markdown

@@ -88,6 +88,7 @@ type sessionWriter interface {
 	Path() string
 	ID() string
 	Info() (session.SessionInfo, error)
+	SetTitleFromPrompt(prompt string) error
 	ExportMarkdown(path string) error
 }
 
@@ -142,6 +143,11 @@ type Model struct {
 	logoutPickerActive bool
 	logoutPickerFilter string
 	logoutPickerIndex  int
+
+	// Resume picker modal state
+	resumePickerActive bool
+	resumePickerFilter string
+	resumePickerIndex  int
 
 	// Loaded skills (metadata only).
 	skills []skills.Skill
@@ -336,6 +342,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Fall through to textarea update for character/backspace input.
 			m = model.(Model)
 		}
+		if m.resumePickerActive {
+			model, cmd, handled := m.handleResumePickerKey(msg)
+			if handled {
+				return model, cmd
+			}
+			// Fall through to textarea update for character/backspace input.
+			m = model.(Model)
+		}
 
 		switch msg.Type {
 		case tea.KeyCtrlC:
@@ -486,6 +500,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 
+			// /resume: open the session picker.
+			if input == "/resume" {
+				m.resumePickerActive = true
+				m.resumePickerFilter = ""
+				m.resumePickerIndex = 0
+				m.textarea.Reset()
+				m.textarea.Focus()
+				return m, nil
+			}
+
 			// /new: start a fresh session
 			if input == "/new" {
 				if m.pending && m.agentCancel != nil {
@@ -572,6 +596,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.refreshViewport()
 
 			if m.session != nil {
+				_ = m.session.SetTitleFromPrompt(input)
 				_ = m.session.Append(session.Record{Role: "user", Content: input, Timestamp: time.Now()})
 			}
 
@@ -659,6 +684,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.logoutPickerIndex = 0
 		}
 	}
+	if m.resumePickerActive {
+		prev := m.resumePickerFilter
+		m.resumePickerFilter = m.textarea.Value()
+		if m.resumePickerFilter != prev {
+			m.resumePickerIndex = 0
+		}
+	}
 	// Clear selection when user starts typing.
 	if m.textarea.Value() != prevValue && (m.selection.hasSelection() || m.selection.finished) {
 		m.selection.clear()
@@ -669,7 +701,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) shouldInsertInputNewline(msg tea.Msg) bool {
-	if m.pending || m.modelPickerActive || m.themePickerActive || m.loginPickerActive || m.logoutPickerActive {
+	if m.pending || m.modelPickerActive || m.themePickerActive || m.loginPickerActive || m.logoutPickerActive || m.resumePickerActive {
 		return false
 	}
 
@@ -884,6 +916,16 @@ func (m Model) View() string {
 		b.WriteString(filter)
 	} else if m.logoutPickerActive {
 		picker := m.renderLogoutPicker()
+		filter := m.styles.Dim.Render("filter: ") + m.textarea.Value() + m.styles.InputCursor.Render("█")
+		if m.config.Alignment == "centered" {
+			picker = centerContent(picker, m.width)
+			filter = centerContent(filter, m.width)
+		}
+		b.WriteString(picker)
+		b.WriteString("\n")
+		b.WriteString(filter)
+	} else if m.resumePickerActive {
+		picker := m.renderResumePicker()
 		filter := m.styles.Dim.Render("filter: ") + m.textarea.Value() + m.styles.InputCursor.Render("█")
 		if m.config.Alignment == "centered" {
 			picker = centerContent(picker, m.width)
@@ -1162,6 +1204,156 @@ func (m *Model) completeCommandSuggestion(suggestions []commands.Command) {
 	// Normal command completion
 	m.textarea.SetValue("/" + selected.Name + " ")
 	m.commandSuggestionIndex = 0
+}
+
+func (m Model) filteredSessions() []session.SessionInfo {
+	infos, err := session.List(m.config.SessionDir)
+	if err != nil {
+		return nil
+	}
+	filter := strings.ToLower(strings.TrimSpace(m.resumePickerFilter))
+	out := make([]session.SessionInfo, 0, len(infos))
+	for _, info := range infos {
+		if info.MessageCount == 0 && filter == "" {
+			continue
+		}
+		if filter == "" || sessionMatchesFilter(info, filter) {
+			out = append(out, info)
+		}
+	}
+	if len(out) == 0 && filter == "" {
+		return infos
+	}
+	return out
+}
+
+func sessionMatchesFilter(info session.SessionInfo, filter string) bool {
+	fields := []string{info.Title, info.FirstPrompt, info.FirstMessage, info.ID, info.Path, info.CWD}
+	for _, field := range fields {
+		if strings.Contains(strings.ToLower(field), filter) {
+			return true
+		}
+	}
+	return false
+}
+
+func (m Model) handleResumePickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
+	sessions := m.filteredSessions()
+
+	switch msg.Type {
+	case tea.KeyCtrlC, tea.KeyEsc:
+		m.resumePickerActive = false
+		m.textarea.Reset()
+		m.textarea.Focus()
+		return m, nil, true
+	case tea.KeyEnter, tea.KeyTab:
+		if len(sessions) > 0 {
+			m.clampResumePickerIndex(sessions)
+			m.resumeSession(sessions[m.resumePickerIndex])
+		}
+		m.resumePickerActive = false
+		m.textarea.Reset()
+		m.textarea.Focus()
+		return m, nil, true
+	case tea.KeyUp:
+		if len(sessions) > 0 {
+			m.resumePickerIndex--
+			m.clampResumePickerIndex(sessions)
+		}
+		return m, nil, true
+	case tea.KeyDown:
+		if len(sessions) > 0 {
+			m.resumePickerIndex++
+			m.clampResumePickerIndex(sessions)
+		}
+		return m, nil, true
+	}
+	return m, nil, false
+}
+
+func (m *Model) clampResumePickerIndex(infos []session.SessionInfo) {
+	if len(infos) == 0 {
+		m.resumePickerIndex = 0
+		return
+	}
+	if m.resumePickerIndex < 0 {
+		m.resumePickerIndex = 0
+	}
+	if m.resumePickerIndex >= len(infos) {
+		m.resumePickerIndex = len(infos) - 1
+	}
+}
+
+func (m Model) renderResumePicker() string {
+	sessions := m.filteredSessions()
+	var b strings.Builder
+	if len(sessions) == 0 {
+		b.WriteString(m.styles.Dim.Render("  No sessions match your filter"))
+		b.WriteString("\n")
+	} else {
+		b.WriteString(m.styles.Dim.Render(fmt.Sprintf("  sessions (%d)", len(sessions))))
+		b.WriteString("\n")
+		m.clampResumePickerIndex(sessions)
+		start, end, _ := m.visibleSessionPickerRange(sessions)
+		if start > 0 {
+			b.WriteString(m.styles.Dim.Render(fmt.Sprintf("  +%d more above", start)))
+			b.WriteString("\n")
+		}
+		for i := start; i < end; i++ {
+			info := sessions[i]
+			prefix := "  "
+			style := m.styles.Dim
+			if i == m.resumePickerIndex {
+				prefix = "> "
+				style = m.styles.UserPrompt
+			}
+			title := sessionDisplayTitle(info)
+			if len(title) > 58 {
+				title = title[:57] + "…"
+			}
+			line := fmt.Sprintf("%s%-60s %7s  %d msgs", prefix, title, relativeTime(info.Modified), info.MessageCount)
+			b.WriteString(style.Render(line))
+			b.WriteString("\n")
+		}
+		if end < len(sessions) {
+			b.WriteString(m.styles.Dim.Render(fmt.Sprintf("  +%d more below", len(sessions)-end)))
+			b.WriteString("\n")
+		}
+	}
+	b.WriteString(m.styles.Dim.Render("  esc: cancel  enter: resume  arrows: navigate  type: filter"))
+	return b.String()
+}
+
+func sessionDisplayTitle(info session.SessionInfo) string {
+	for _, value := range []string{info.Title, info.FirstPrompt, info.FirstMessage} {
+		if strings.TrimSpace(value) != "" && value != "(no messages)" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return "(empty session)"
+}
+
+func relativeTime(t time.Time) string {
+	if t.IsZero() {
+		return "unknown"
+	}
+	d := time.Since(t)
+	if d < 0 {
+		d = 0
+	}
+	if d < time.Minute {
+		return "now"
+	}
+	if d < time.Hour {
+		return fmt.Sprintf("%dm ago", int(d.Minutes()))
+	}
+	if d < 24*time.Hour {
+		return fmt.Sprintf("%dh ago", int(d.Hours()))
+	}
+	if d < 30*24*time.Hour {
+		return fmt.Sprintf("%dd ago", int(d.Hours()/24))
+	}
+	return fmt.Sprintf("%dmo ago", int(d.Hours()/(24*30)))
 }
 
 // handleModelPickerKey processes key events when model picker is active.
@@ -1729,6 +1921,32 @@ func (m Model) visibleModelPickerRange(models []commands.Command) (start, end, s
 	return start, end, selected
 }
 
+func (m Model) visibleSessionPickerRange(infos []session.SessionInfo) (start, end, selected int) {
+	const maxVisible = 12
+
+	selected = m.resumePickerIndex
+	if selected >= len(infos) {
+		selected = len(infos) - 1
+	}
+	if selected < 0 {
+		selected = 0
+	}
+
+	end = len(infos)
+	if len(infos) > maxVisible {
+		start = selected - maxVisible/2
+		if start < 0 {
+			start = 0
+		}
+		end = start + maxVisible
+		if end > len(infos) {
+			end = len(infos)
+			start = end - maxVisible
+		}
+	}
+	return start, end, selected
+}
+
 func (m Model) visibleThemePickerRange(infos []themes.Info) (start, end, selected int) {
 	const maxVisible = 12
 
@@ -1753,6 +1971,38 @@ func (m Model) visibleThemePickerRange(infos []themes.Info) (start, end, selecte
 		}
 	}
 	return start, end, selected
+}
+
+func (m *Model) resumeSession(info session.SessionInfo) {
+	if m.pending && m.agentCancel != nil {
+		m.agentCancel()
+		m.agentCancel = nil
+	}
+	m.pending = false
+	sess, err := session.Open(info.Path)
+	if err != nil {
+		m.messages = append(m.messages, messageItem{role: "error", content: "Resume failed: " + err.Error()})
+		m.refreshViewport()
+		return
+	}
+	m.session = sess
+	records, err := sess.Load()
+	if err != nil {
+		m.messages = append(m.messages, messageItem{role: "error", content: "Resume failed: " + err.Error()})
+		m.refreshViewport()
+		return
+	}
+	m.messages = nil
+	for _, rec := range records {
+		if rec.Role == "user" || rec.Role == "assistant" {
+			m.messages = append(m.messages, messageItem{role: rec.Role, content: rec.Content})
+		}
+	}
+	m.previousCompactionSummary = ""
+	m.selection.clear()
+	m.commandSuggestionIndex = 0
+	m.messages = append(m.messages, messageItem{role: "system", content: "Resumed: " + sessionDisplayTitle(info), ephemeral: true})
+	m.refreshViewport()
 }
 
 func (m *Model) sessionInfoText() string {
@@ -1786,11 +2036,14 @@ func (m *Model) ResetSession() {
 	}
 	m.pending = false
 
-	// Create a new session file with a fresh ID.
-	cwd, _ := os.Getwd()
-	sess, err := session.Create(m.config.SessionDir, cwd)
-	if err == nil {
-		m.session = sess
+	// Create a new session file with a fresh ID when persistence is configured.
+	m.session = nil
+	if strings.TrimSpace(m.config.SessionDir) != "" {
+		cwd, _ := os.Getwd()
+		sess, err := session.Create(m.config.SessionDir, cwd)
+		if err == nil {
+			m.session = sess
+		}
 	}
 
 	// Clear messages, compaction state, input, and selection.

@@ -26,13 +26,15 @@ type Header struct {
 
 // Record is a single entry in the session log.
 type Record struct {
-	Type      string         `json:"type,omitempty"`
-	ID        string         `json:"id,omitempty"`
-	ParentID  string         `json:"parentId,omitempty"`
-	Role      string         `json:"role"`
-	Content   string         `json:"content"`
-	Timestamp time.Time      `json:"timestamp"`
-	Metadata  map[string]any `json:"metadata,omitempty"`
+	Type        string         `json:"type,omitempty"`
+	ID          string         `json:"id,omitempty"`
+	ParentID    string         `json:"parentId,omitempty"`
+	Role        string         `json:"role,omitempty"`
+	Content     string         `json:"content,omitempty"`
+	Title       string         `json:"title,omitempty"`
+	FirstPrompt string         `json:"firstPrompt,omitempty"`
+	Timestamp   time.Time      `json:"timestamp"`
+	Metadata    map[string]any `json:"metadata,omitempty"`
 }
 
 // SessionInfo describes a session file for listing, pruning, and display.
@@ -41,6 +43,7 @@ type SessionInfo struct {
 	ID           string
 	CWD          string
 	Title        string
+	FirstPrompt  string
 	Created      time.Time
 	Modified     time.Time
 	MessageCount int
@@ -84,6 +87,9 @@ func Create(dir, cwd string) (*Manager, error) {
 }
 
 func createWithID(dir, sessionID, cwd string) (*Manager, error) {
+	if strings.TrimSpace(dir) == "" {
+		return nil, fmt.Errorf("session dir is empty")
+	}
 	absDir, err := filepath.Abs(dir)
 	if err != nil {
 		return nil, err
@@ -187,6 +193,38 @@ func (m *Manager) Load() ([]Record, error) {
 
 func (m *Manager) Info() (SessionInfo, error) {
 	return buildInfo(m.path)
+}
+
+// SetTitleFromPrompt stores display metadata derived from the first user prompt.
+// It is append-only so existing session history is not rewritten.
+func (m *Manager) SetTitleFromPrompt(prompt string) error {
+	info, err := m.Info()
+	if err != nil {
+		return err
+	}
+	if info.Title != "" || info.MessageCount > 0 {
+		return nil
+	}
+	title := DeriveTitle(prompt)
+	return m.Append(Record{Type: "session_info", Title: title, FirstPrompt: strings.TrimSpace(prompt), Timestamp: time.Now()})
+}
+
+// DeriveTitle creates a compact display title from a first user prompt.
+func DeriveTitle(prompt string) string {
+	title := strings.Join(strings.Fields(prompt), " ")
+	title = strings.Trim(title, "`#*_~> -\t\n\r")
+	if title == "" {
+		return "(untitled)"
+	}
+	const max = 80
+	if len(title) <= max {
+		return title
+	}
+	cut := title[:max]
+	if idx := strings.LastIndex(cut, " "); idx >= 40 {
+		cut = cut[:idx]
+	}
+	return strings.TrimSpace(cut) + "…"
 }
 
 func (m *Manager) ExportMarkdown(path string) error {
@@ -294,11 +332,23 @@ func buildInfo(path string) (SessionInfo, error) {
 		info.Created = st.ModTime()
 	}
 	for _, r := range records {
+		if r.Type == "session_info" {
+			if strings.TrimSpace(r.Title) != "" {
+				info.Title = strings.TrimSpace(r.Title)
+			}
+			if strings.TrimSpace(r.FirstPrompt) != "" {
+				info.FirstPrompt = strings.TrimSpace(r.FirstPrompt)
+			}
+			continue
+		}
 		if r.Role == "user" || r.Role == "assistant" {
 			info.MessageCount++
 		}
 		if info.FirstMessage == "(no messages)" && r.Role == "user" && strings.TrimSpace(r.Content) != "" {
 			info.FirstMessage = strings.TrimSpace(r.Content)
+			if info.FirstPrompt == "" {
+				info.FirstPrompt = info.FirstMessage
+			}
 		}
 		if !r.Timestamp.IsZero() && r.Timestamp.After(info.Modified) {
 			info.Modified = r.Timestamp
