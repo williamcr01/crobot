@@ -160,9 +160,25 @@ func RenderToolCall(tc toolRenderItem, width int, expanded bool, s Styles) strin
 		Width(inner).
 		Padding(0, 1)
 
+	// Build the full tool block content: call line + optional output + status.
+	var content strings.Builder
+
 	// --- Call line ---
 	callLine := formatSingleToolCallLine(tc, s)
 	callLine = truncateToWidth(callLine, inner-2)
+	content.WriteString(callLine)
+
+	// --- Output preview (hidden for read-only tools) ---
+	if tc.output != "" && !ReadOnlyTools[tc.name] {
+		content.WriteString("\n")
+		collapsed := !expanded
+		maxLines := 1<<31 - 1 // effectively unlimited when expanded
+		if collapsed {
+			maxLines = collapsedPreviewLines
+		}
+		preview := formatOutputPreview(tc.output, inner-2, maxLines, collapsed, s)
+		content.WriteString(preview)
+	}
 
 	// --- Status line ---
 	var statusLine string
@@ -179,40 +195,16 @@ func RenderToolCall(tc toolRenderItem, width int, expanded bool, s Styles) strin
 	default:
 		// pending — no status line yet.
 	}
-
-	var b strings.Builder
-	b.WriteString(block.Render(callLine))
-
-	// Output preview (hidden for read-only tools like file_read, grep, find, ls).
-	if tc.output != "" && !ReadOnlyTools[tc.name] {
-		b.WriteString("\n")
-		collapsed := !expanded
-		maxLines := 1<<31 - 1 // effectively unlimited when expanded
-		if collapsed {
-			maxLines = collapsedPreviewLines
-		}
-		preview := formatOutputPreview(tc.output, inner-2, maxLines, collapsed, s)
-		outputBlock := lipgloss.NewStyle().
-			Background(bgColor).
-			Width(inner).
-			Padding(0, 1)
-		b.WriteString(outputBlock.Render(preview))
+	if statusLine != "" {
+		content.WriteString("\n")
+		content.WriteString(statusLine)
+	} else if tc.state == toolDone && tc.output != "" {
+		content.WriteString("\n")
+		content.WriteString(statusColor.Render(statusIcon) + " " + s.ToolMeta.Render(formatDuration(tc.duration)))
 	}
 
-	// Status footer.
-	if statusLine != "" || tc.state == toolDone {
-		b.WriteString("\n")
-		statusBlock := lipgloss.NewStyle().
-			Background(bgColor).
-			Width(inner).
-			Padding(0, 1)
-		if statusLine == "" && tc.output != "" {
-			statusLine = statusColor.Render(statusIcon) + " " + s.ToolMeta.Render(formatDuration(tc.duration))
-		}
-		b.WriteString(statusBlock.Render(statusLine))
-	}
-
-	return b.String()
+	// Render the entire content as a single block for uniform background.
+	return block.Render(content.String())
 }
 
 // formatSingleToolCallLine formats the call line for a single tool call.
