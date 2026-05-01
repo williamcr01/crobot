@@ -214,7 +214,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.viewport = viewport.New(msg.Width, vpHeight)
 		m.viewport.YPosition = 0
-		m.viewport.SetContent(m.renderMessages())
+		m.viewport.SetContent(m.renderViewportContent())
 
 		m.textarea.SetWidth(msg.Width - 4)
 		return m, nil
@@ -1846,10 +1846,18 @@ func (m Model) renderViewportContent() string {
 }
 
 // centerContent center-aligns each line within the given width.
+// Uses manual padding via lipgloss.Width instead of Style.Align(Center)
+// because Align strips leading/trailing whitespace, which misbehaves when
+// ANSI escape codes appear before whitespace on a line.
 func centerContent(s string, width int) string {
 	lines := strings.Split(s, "\n")
 	for i, line := range lines {
-		lines[i] = lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Render(line)
+		visualWidth := lipgloss.Width(line)
+		padding := (width - visualWidth) / 2
+		if padding < 0 {
+			padding = 0
+		}
+		lines[i] = strings.Repeat(" ", padding) + line + strings.Repeat(" ", width-padding-visualWidth)
 	}
 	return strings.Join(lines, "\n")
 }
