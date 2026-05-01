@@ -13,6 +13,7 @@ import (
 	"crobot/internal/provider"
 	"crobot/internal/session"
 	"crobot/internal/skills"
+	"crobot/internal/themes"
 	"crobot/internal/tools"
 	"crobot/internal/tui"
 
@@ -109,8 +110,19 @@ func main() {
 
 	_ = context.Background() // reserved for future plugin manager
 
+	// Load theme and create styles.
+	if err := themes.EnsureThemeDir(); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: creating theme directory: %v\n", err)
+	}
+	theme, err := themes.LoadTheme(cfg.Theme)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: loading theme %q: %v, using default\n", cfg.Theme, err)
+		theme = themes.DefaultTheme()
+	}
+	styles := tui.NewStyles(theme)
+
 	// Create and run the TUI.
-	m := tui.NewModel(cfg, prov, toolReg, ev, cmdReg, modelReg, sess, auth.APIKey, skillResult.Skills)
+	m := tui.NewModel(cfg, prov, toolReg, ev, cmdReg, modelReg, sess, auth.APIKey, skillResult.Skills, styles)
 
 	p := tea.NewProgram(
 		m,
@@ -199,7 +211,7 @@ func registerCommands(cmdReg *commands.Registry, cfg *config.AgentConfig) {
 		Name:        "new",
 		Description: "Start a fresh conversation",
 		Handler: func(args []string) (string, error) {
-			return "New session started.", nil
+			return "", nil
 		},
 	})
 

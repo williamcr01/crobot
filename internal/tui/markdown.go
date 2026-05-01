@@ -15,9 +15,9 @@ import (
 	"github.com/yuin/goldmark/util"
 )
 
-// RenderMarkdown parses markdown text and renders it with Lipgloss styles
+// RenderMarkdown parses markdown text and renders it with the given styles
 // for terminal display, wrapping to the given width.
-func RenderMarkdown(text string, width int) string {
+func RenderMarkdown(text string, width int, s Styles) string {
 	if width < 20 {
 		width = 20
 	}
@@ -32,7 +32,7 @@ func RenderMarkdown(text string, width int) string {
 	md.SetRenderer(
 		renderer.NewRenderer(
 			renderer.WithNodeRenderers(
-				util.Prioritized(newNodeRenderer(innerWidth), 1000),
+				util.Prioritized(newNodeRenderer(innerWidth, s), 1000),
 			),
 		),
 	)
@@ -47,11 +47,12 @@ func RenderMarkdown(text string, width int) string {
 // --- Node renderer ---
 
 type mdRenderer struct {
-	width int
+	width  int
+	styles Styles
 }
 
-func newNodeRenderer(width int) renderer.NodeRenderer {
-	return &mdRenderer{width: width}
+func newNodeRenderer(width int, s Styles) renderer.NodeRenderer {
+	return &mdRenderer{width: width, styles: s}
 }
 
 func (r *mdRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegisterer) {
@@ -93,20 +94,22 @@ func (r *mdRenderer) renderHeading(w util.BufWriter, source []byte, node ast.Nod
 	}
 
 	n := node.(*ast.Heading)
-	text := collectText(source, n)
+	text := collectText(source, n, r.styles)
 
-	style := H4Style
+	_ = text
+
+	style := r.styles.H4Style
 	switch n.Level {
 	case 1:
-		style = H1Style
+		style = r.styles.H1Style
 	case 2:
-		style = H2Style
+		style = r.styles.H2Style
 	case 3:
-		style = H3Style
+		style = r.styles.H3Style
 	}
 
 	// Render inline formatting within heading.
-	styled := collectInline(source, n, lipgloss.Style{})
+	styled := collectInline(source, n, lipgloss.Style{}, r.styles)
 	wrapped := wrapLine(styled, r.width)
 
 	w.WriteString("\n")
@@ -114,7 +117,6 @@ func (r *mdRenderer) renderHeading(w util.BufWriter, source []byte, node ast.Nod
 	if n.Level == 1 {
 		w.WriteString("\n")
 	}
-	_ = text
 	return ast.WalkSkipChildren, nil
 }
 
@@ -125,14 +127,14 @@ func (r *mdRenderer) renderParagraph(w util.BufWriter, source []byte, node ast.N
 		return ast.WalkContinue, nil
 	}
 
-	styled := collectInline(source, node, lipgloss.Style{})
+	styled := collectInline(source, node, lipgloss.Style{}, r.styles)
 	wrapped := wrapLine(styled, r.width)
 	if strings.TrimSpace(wrapped) == "" {
 		return ast.WalkSkipChildren, nil
 	}
 
 	w.WriteString("\n")
-	w.WriteString(BodyTextStyle.Render(wrapped))
+	w.WriteString(r.styles.BodyTextStyle.Render(wrapped))
 	w.WriteString("\n")
 	return ast.WalkSkipChildren, nil
 }
@@ -177,7 +179,7 @@ func (r *mdRenderer) renderFencedCodeBlock(w util.BufWriter, source []byte, node
 
 	w.WriteString("\n")
 	if lang != "" {
-		w.WriteString(Dim.Render("  " + lang))
+		w.WriteString(r.styles.Dim.Render("  " + lang))
 		w.WriteString("\n")
 	}
 
@@ -190,11 +192,11 @@ func (r *mdRenderer) renderFencedCodeBlock(w util.BufWriter, source []byte, node
 	}
 
 	blockStyle := lipgloss.NewStyle().
-		Background(lipgloss.Color("#222222")).
+		Background(r.styles.ToolBg).
 		Width(r.width).
 		Padding(0, 1)
 
-	w.WriteString(blockStyle.Render(CodeBlockStyle.Render(bodyBuf.String())))
+	w.WriteString(blockStyle.Render(r.styles.CodeBlockStyle.Render(bodyBuf.String())))
 	w.WriteString("\n")
 	return ast.WalkSkipChildren, nil
 }
@@ -216,11 +218,11 @@ func (r *mdRenderer) renderBlockquote(w util.BufWriter, source []byte, node ast.
 	// Collect all paragraph content within the blockquote.
 	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
 		if child.Kind() == ast.KindParagraph {
-			text := collectInline(source, child, lipgloss.Style{})
+			text := collectInline(source, child, lipgloss.Style{}, r.styles)
 			wrapped := wrapLine(text, quoteWidth)
 			for _, wl := range strings.Split(wrapped, "\n") {
-				w.WriteString(QuoteBar.Render("│ "))
-				w.WriteString(QuoteStyle.Render(wl))
+				w.WriteString(r.styles.QuoteBar.Render("│ "))
+				w.WriteString(r.styles.QuoteStyle.Render(wl))
 				w.WriteString("\n")
 			}
 		}
@@ -257,22 +259,6 @@ func (r *mdRenderer) renderListItem(w util.BufWriter, source []byte, node ast.No
 		bullet = fmt.Sprintf("%d. ", num)
 	}
 
-	// Check for task checkbox.
-	isTask := false
-	taskDone := false
-	firstChild := n.FirstChild()
-	if firstChild != nil && firstChild.Kind() == ast.KindText {
-		text := string(firstChild.Text(source))
-		if strings.HasPrefix(text, "[ ] ") {
-			isTask = true
-			taskDone = false
-			// Replace the text node content by trimming the prefix (handled below).
-		} else if strings.HasPrefix(text, "[x] ") || strings.HasPrefix(text, "[X] ") {
-			isTask = true
-			taskDone = true
-		}
-	}
-
 	// Indent based on nesting level.
 	indent := ""
 	ancestor := node.Parent()
@@ -292,10 +278,23 @@ func (r *mdRenderer) renderListItem(w util.BufWriter, source []byte, node ast.No
 		listWidth = 10
 	}
 
+	// Check for task checkbox.
+	isTask := false
+	taskDone := false
+	firstChild := n.FirstChild()
+	if firstChild != nil && firstChild.Kind() == ast.KindText {
+		text := string(firstChild.Text(source))
+		if strings.HasPrefix(text, "[ ] ") {
+			isTask = true
+		} else if strings.HasPrefix(text, "[x] ") || strings.HasPrefix(text, "[X] ") {
+			isTask = true
+			taskDone = true
+		}
+	}
+
 	// Collect text from paragraph/textblock children, and render nested lists.
 	for child := n.FirstChild(); child != nil; child = child.NextSibling() {
 		if child.Kind() == ast.KindList {
-			// Nested list: recurse with extra indent.
 			r.renderNestedList(w, source, child, indent+"  ")
 			continue
 		}
@@ -303,7 +302,7 @@ func (r *mdRenderer) renderListItem(w util.BufWriter, source []byte, node ast.No
 			continue
 		}
 
-		text := collectInline(source, child, lipgloss.Style{})
+		text := collectInline(source, child, lipgloss.Style{}, r.styles)
 
 		// Trim task checkbox prefix from the raw text.
 		if isTask {
@@ -311,11 +310,11 @@ func (r *mdRenderer) renderListItem(w util.BufWriter, source []byte, node ast.No
 				text = strings.TrimPrefix(text, "[x] ")
 				text = strings.TrimPrefix(text, "[X] ")
 				text = strings.TrimSpace(text)
-				text = TaskDoneStyle.Render("☒ ") + BodyTextStyle.Render(text)
+				text = r.styles.TaskDoneStyle.Render("☒ ") + r.styles.BodyTextStyle.Render(text)
 			} else {
 				text = strings.TrimPrefix(text, "[ ] ")
 				text = strings.TrimSpace(text)
-				text = TaskOpenStyle.Render("☐ ") + BodyTextStyle.Render(text)
+				text = r.styles.TaskOpenStyle.Render("☐ ") + r.styles.BodyTextStyle.Render(text)
 			}
 			wrapped := wrapLine(text, listWidth)
 			for _, wl := range strings.Split(wrapped, "\n") {
@@ -328,11 +327,11 @@ func (r *mdRenderer) renderListItem(w util.BufWriter, source []byte, node ast.No
 			for i, wl := range strings.Split(wrapped, "\n") {
 				w.WriteString(indent)
 				if i == 0 {
-					w.WriteString(BodyTextStyle.Render(bullet))
+					w.WriteString(r.styles.BodyTextStyle.Render(bullet))
 				} else {
 					w.WriteString(strings.Repeat(" ", len(bullet)))
 				}
-				w.WriteString(BodyTextStyle.Render(wl))
+				w.WriteString(r.styles.BodyTextStyle.Render(wl))
 				w.WriteString("\n")
 			}
 		}
@@ -351,7 +350,6 @@ func (r *mdRenderer) renderNestedList(w util.BufWriter, source []byte, node ast.
 		isOrdered := parent.Kind() == ast.KindList && parent.(*ast.List).IsOrdered()
 		bullet := "• "
 		if isOrdered {
-			// Count previous siblings to determine item number.
 			num := parent.(*ast.List).Start
 			for sib := child.PreviousSibling(); sib != nil; sib = sib.PreviousSibling() {
 				num++
@@ -367,16 +365,16 @@ func (r *mdRenderer) renderNestedList(w util.BufWriter, source []byte, node ast.
 			if gc.Kind() != ast.KindParagraph && gc.Kind() != ast.KindTextBlock {
 				continue
 			}
-			text := collectInline(source, gc, lipgloss.Style{})
+			text := collectInline(source, gc, lipgloss.Style{}, r.styles)
 			wrapped := wrapLine(text, r.width-len(indent)-2)
 			for i, wl := range strings.Split(wrapped, "\n") {
 				w.WriteString(indent)
 				if i == 0 {
-					w.WriteString(BodyTextStyle.Render(bullet))
+					w.WriteString(r.styles.BodyTextStyle.Render(bullet))
 				} else {
 					w.WriteString(strings.Repeat(" ", len(bullet)))
 				}
-				w.WriteString(BodyTextStyle.Render(wl))
+				w.WriteString(r.styles.BodyTextStyle.Render(wl))
 				w.WriteString("\n")
 			}
 		}
@@ -388,7 +386,7 @@ func (r *mdRenderer) renderNestedList(w util.BufWriter, source []byte, node ast.
 func (r *mdRenderer) renderThematicBreak(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
 	if entering {
 		w.WriteString("\n")
-		w.WriteString(HRStyle.Render(strings.Repeat("─", r.width)))
+		w.WriteString(r.styles.HRStyle.Render(strings.Repeat("─", r.width)))
 		w.WriteString("\n")
 	}
 	return ast.WalkContinue, nil
@@ -405,7 +403,7 @@ func (r *mdRenderer) renderHTMLBlock(w util.BufWriter, source []byte, node ast.N
 		if text != "" {
 			wrapped := wrapLine(text, r.width)
 			w.WriteString("\n")
-			w.WriteString(BodyTextStyle.Render(wrapped))
+			w.WriteString(r.styles.BodyTextStyle.Render(wrapped))
 			w.WriteString("\n")
 		}
 	}
@@ -427,7 +425,6 @@ func (r *mdRenderer) renderTable(w util.BufWriter, source []byte, node ast.Node,
 		return ast.WalkContinue, nil
 	}
 
-	// Collect all cells as raw (unwrapped) text.
 	type rowData struct {
 		cells []string
 	}
@@ -441,9 +438,8 @@ func (r *mdRenderer) renderTable(w util.BufWriter, source []byte, node ast.Node,
 			rd := rowData{}
 			for cell := child.FirstChild(); cell != nil; cell = cell.NextSibling() {
 				if cell.Kind() == gast.KindTableCell {
-					tc := cell.(*gast.TableCell)
-					rd.cells = append(rd.cells, collectInline(source, cell, lipgloss.Style{}))
-					alignments = append(alignments, tableAlign(tc.Alignment))
+					rd.cells = append(rd.cells, collectInline(source, cell, lipgloss.Style{}, r.styles))
+					alignments = append(alignments, tableAlign(cell.(*gast.TableCell).Alignment))
 				}
 			}
 			headerRows = append(headerRows, rd)
@@ -451,7 +447,7 @@ func (r *mdRenderer) renderTable(w util.BufWriter, source []byte, node ast.Node,
 			rd := rowData{}
 			for cell := child.FirstChild(); cell != nil; cell = cell.NextSibling() {
 				if cell.Kind() == gast.KindTableCell {
-					rd.cells = append(rd.cells, collectInline(source, cell, lipgloss.Style{}))
+					rd.cells = append(rd.cells, collectInline(source, cell, lipgloss.Style{}, r.styles))
 				}
 			}
 			bodyRows = append(bodyRows, rd)
@@ -476,7 +472,6 @@ func (r *mdRenderer) renderTable(w util.BufWriter, source []byte, node ast.Node,
 		alignments = append(alignments, alignLeft)
 	}
 
-	// Compute column widths: for each cell, wrap at available width, find longest line.
 	colWidths := make([]int, maxCols)
 	for _, row := range headerRows {
 		for i, cell := range row.cells {
@@ -496,7 +491,6 @@ func (r *mdRenderer) renderTable(w util.BufWriter, source []byte, node ast.Node,
 		}
 	}
 
-	// Shrink to fit.
 	totalSep := (maxCols - 1) * 3
 	totalPad := 2
 	available := r.width - totalSep - totalPad
@@ -505,7 +499,6 @@ func (r *mdRenderer) renderTable(w util.BufWriter, source []byte, node ast.Node,
 	}
 	colWidths = shrinkColumns(colWidths, available)
 
-	// Wrap each cell at its column width.
 	wrapCells := func(row rowData) [][]string {
 		wrapped := make([][]string, maxCols)
 		for i, cell := range row.cells {
@@ -516,22 +509,22 @@ func (r *mdRenderer) renderTable(w util.BufWriter, source []byte, node ast.Node,
 
 	// Render.
 	w.WriteString("\n")
-	w.WriteString(renderTableTopBorder(colWidths))
+	w.WriteString(renderTableTopBorder(colWidths, r.styles))
 	w.WriteString("\n")
 
 	for _, row := range headerRows {
-		writeTableRowLines(w, wrapCells(row), colWidths, alignments, TableHeader)
+		writeTableRowLines(w, wrapCells(row), colWidths, alignments, r.styles.TableHeader, r.styles)
 	}
 	if len(headerRows) > 0 {
-		w.WriteString(renderTableSepBorder(colWidths))
+		w.WriteString(renderTableSepBorder(colWidths, r.styles))
 		w.WriteString("\n")
 	}
 
 	for _, row := range bodyRows {
-		writeTableRowLines(w, wrapCells(row), colWidths, alignments, TableCell)
+		writeTableRowLines(w, wrapCells(row), colWidths, alignments, r.styles.TableCell, r.styles)
 	}
 
-	w.WriteString(renderTableBotBorder(colWidths))
+	w.WriteString(renderTableBotBorder(colWidths, r.styles))
 	return ast.WalkSkipChildren, nil
 }
 
@@ -547,21 +540,20 @@ func tableAlign(a gast.Alignment) alignment {
 }
 
 func (r *mdRenderer) renderTableHeader(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
-	return ast.WalkContinue, nil // handled by renderTable
+	return ast.WalkContinue, nil
 }
 
 func (r *mdRenderer) renderTableRow(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
-	return ast.WalkContinue, nil // handled by renderTable
+	return ast.WalkContinue, nil
 }
 
 func (r *mdRenderer) renderTableCell(w util.BufWriter, source []byte, node ast.Node, entering bool) (ast.WalkStatus, error) {
-	return ast.WalkContinue, nil // handled by renderTable
+	return ast.WalkContinue, nil
 }
 
 // --- Inline collector ---
 
-// collectInline recursively collects styled text from an AST node and its children.
-func collectInline(source []byte, node ast.Node, parentStyle lipgloss.Style) string {
+func collectInline(source []byte, node ast.Node, parentStyle lipgloss.Style, s Styles) string {
 	var b strings.Builder
 	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
 		switch child.Kind() {
@@ -571,57 +563,54 @@ func collectInline(source []byte, node ast.Node, parentStyle lipgloss.Style) str
 		case ast.KindEmphasis:
 			n := child.(*ast.Emphasis)
 			if n.Level == 2 {
-				style := parentStyle.Inherit(BoldStyle)
-				b.WriteString(collectInline(source, child, style))
+				style := parentStyle.Inherit(s.BoldStyle)
+				b.WriteString(collectInline(source, child, style, s))
 			} else {
-				style := parentStyle.Inherit(ItalicStyle)
-				b.WriteString(collectInline(source, child, style))
+				style := parentStyle.Inherit(s.ItalicStyle)
+				b.WriteString(collectInline(source, child, style, s))
 			}
 
 		case ast.KindCodeSpan:
-			style := parentStyle.Inherit(CodeStyle)
-			inner := collectInline(source, child, style)
+			style := parentStyle.Inherit(s.CodeStyle)
+			inner := collectInline(source, child, style, s)
 			b.WriteString(inner)
 
 		case ast.KindLink:
-			style := parentStyle.Inherit(LinkStyle)
-			inner := collectInline(source, child, style)
+			style := parentStyle.Inherit(s.LinkStyle)
+			inner := collectInline(source, child, style, s)
 			b.WriteString(inner)
 
 		case ast.KindImage:
-			alt := collectText(source, child)
-			b.WriteString(ImageStyle.Render("[img: " + alt + "]"))
+			alt := collectText(source, child, s)
+			b.WriteString(s.ImageStyle.Render("[img: " + alt + "]"))
 
 		case gast.KindStrikethrough:
-			style := parentStyle.Inherit(StrikeStyle)
-			b.WriteString(collectInline(source, child, style))
+			style := parentStyle.Inherit(s.StrikeStyle)
+			b.WriteString(collectInline(source, child, style, s))
 
 		case ast.KindRawHTML:
 			raw := string(child.Text(source))
-			// Replace <br> variants with newlines before stripping tags.
 			raw = strings.ReplaceAll(raw, "<br/>", "\n")
 			raw = strings.ReplaceAll(raw, "<br />", "\n")
 			raw = strings.ReplaceAll(raw, "<br>", "\n")
 			b.WriteString(stripHTMLTags(raw))
 
 		default:
-			// Recursively collect from unknown nodes.
-			inner := collectInline(source, child, parentStyle)
+			inner := collectInline(source, child, parentStyle, s)
 			b.WriteString(inner)
 		}
 	}
 	return b.String()
 }
 
-// collectText collects plain text from a node and all children.
-func collectText(source []byte, node ast.Node) string {
+func collectText(source []byte, node ast.Node, s Styles) string {
 	var b strings.Builder
 	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
 		switch child.Kind() {
 		case ast.KindText, ast.KindString:
 			b.Write(child.Text(source))
 		default:
-			b.WriteString(collectText(source, child))
+			b.WriteString(collectText(source, child, s))
 		}
 	}
 	return b.String()
@@ -637,34 +626,32 @@ const (
 	alignRight
 )
 
-func renderTableTopBorder(widths []int) string {
-	return renderTableFrame(widths, "┌", "┬", "┐", "─")
+func renderTableTopBorder(widths []int, s Styles) string {
+	return renderTableFrame(widths, "┌", "┬", "┐", "─", s)
 }
 
-func renderTableSepBorder(widths []int) string {
-	return renderTableFrame(widths, "├", "┼", "┤", "─")
+func renderTableSepBorder(widths []int, s Styles) string {
+	return renderTableFrame(widths, "├", "┼", "┤", "─", s)
 }
 
-func renderTableBotBorder(widths []int) string {
-	return renderTableFrame(widths, "└", "┴", "┘", "─")
+func renderTableBotBorder(widths []int, s Styles) string {
+	return renderTableFrame(widths, "└", "┴", "┘", "─", s)
 }
 
-func renderTableFrame(widths []int, left, mid, right, horiz string) string {
+func renderTableFrame(widths []int, left, mid, right, horiz string, s Styles) string {
 	var b strings.Builder
-	b.WriteString(TableBorder.Render(left))
+	b.WriteString(s.TableBorder.Render(left))
 	for i, w := range widths {
 		if i > 0 {
-			b.WriteString(TableBorder.Render(mid))
+			b.WriteString(s.TableBorder.Render(mid))
 		}
-		b.WriteString(TableBorder.Render(strings.Repeat(horiz, w+2)))
+		b.WriteString(s.TableBorder.Render(strings.Repeat(horiz, w+2)))
 	}
-	b.WriteString(TableBorder.Render(right))
+	b.WriteString(s.TableBorder.Render(right))
 	return b.String()
 }
 
-// writeTableRowLines renders a table row that may span multiple lines per cell.
-func writeTableRowLines(w util.BufWriter, cells [][]string, widths []int, aligns []alignment, style lipgloss.Style) {
-	// Determine max line count for this row.
+func writeTableRowLines(w util.BufWriter, cells [][]string, widths []int, aligns []alignment, style lipgloss.Style, s Styles) {
 	maxLines := 0
 	for _, cellLines := range cells {
 		if len(cellLines) > maxLines {
@@ -677,10 +664,10 @@ func writeTableRowLines(w util.BufWriter, cells [][]string, widths []int, aligns
 
 	for lineIdx := 0; lineIdx < maxLines; lineIdx++ {
 		var b strings.Builder
-		b.WriteString(TableBorder.Render("│ "))
+		b.WriteString(s.TableBorder.Render("│ "))
 		for colIdx, cellLines := range cells {
 			if colIdx > 0 {
-				b.WriteString(TableBorder.Render(" │ "))
+				b.WriteString(s.TableBorder.Render(" │ "))
 			}
 			text := ""
 			if lineIdx < len(cellLines) {
@@ -689,7 +676,7 @@ func writeTableRowLines(w util.BufWriter, cells [][]string, widths []int, aligns
 			padded := padCell(text, widths[colIdx], alignFor(aligns, colIdx))
 			b.WriteString(style.Render(padded))
 		}
-		b.WriteString(TableBorder.Render(" │"))
+		b.WriteString(s.TableBorder.Render(" │"))
 		b.WriteByte('\n')
 		w.WriteString(b.String())
 	}
@@ -700,13 +687,6 @@ func alignFor(aligns []alignment, i int) alignment {
 		return aligns[i]
 	}
 	return alignLeft
-}
-
-func padRow(row []string, count int) []string {
-	for len(row) < count {
-		row = append(row, "")
-	}
-	return row
 }
 
 func padCell(text string, width int, align alignment) string {
@@ -727,7 +707,6 @@ func padCell(text string, width int, align alignment) string {
 	}
 }
 
-// longestLine returns the display width of the longest line in a (possibly multi-line) string.
 func longestLine(text string) int {
 	longest := 0
 	for _, line := range strings.Split(text, "\n") {
@@ -739,7 +718,6 @@ func longestLine(text string) int {
 	return longest
 }
 
-// wrapToLines wraps a string at the given width, returning one line per wrap.
 func wrapToLines(text string, width int) []string {
 	if text == "" {
 		return []string{""}
@@ -804,15 +782,12 @@ func stripStyles(s string) string {
 			b.WriteByte(s[i])
 			continue
 		}
-		// ESC found — parse the escape sequence.
 		i++
 		if i >= len(s) {
 			break
 		}
 		switch s[i] {
 		case '[':
-			// CSI: skip parameter/intermediate bytes (0x30-0x3f, 0x20-0x2f)
-			// until final byte (0x40-0x7e).
 			for i++; i < len(s); i++ {
 				b := s[i]
 				if b >= 0x40 && b <= 0x7e {
@@ -820,7 +795,6 @@ func stripStyles(s string) string {
 				}
 			}
 		case ']':
-			// OSC: skip until ST (ESC \) or BEL (0x07).
 			for i++; i < len(s); i++ {
 				if s[i] == 0x07 {
 					break
@@ -831,10 +805,16 @@ func stripStyles(s string) string {
 				}
 			}
 		default:
-			// Other escape: skip one character (simple ESC+X sequences).
 		}
 	}
 	return b.String()
+}
+
+func padRow(row []string, count int) []string {
+	for len(row) < count {
+		row = append(row, "")
+	}
+	return row
 }
 
 func stripHTMLTags(text string) string {

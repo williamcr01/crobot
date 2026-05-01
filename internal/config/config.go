@@ -36,6 +36,7 @@ type AgentConfig struct {
 	SlashCommands bool             `json:"slashCommands"`
 	Reasoning     bool             `json:"reasoning"`
 	Alignment     string           `json:"alignment"`
+	Theme         string           `json:"theme"`
 	Compaction    CompactionConfig `json:"compaction"`
 	Plugins       PluginConfig     `json:"plugins"`
 
@@ -127,6 +128,9 @@ func LoadConfig() (*AgentConfig, error) {
 		}
 		if file.Alignment != "" {
 			cfg.Alignment = file.Alignment
+		}
+		if file.Theme != "" {
+			cfg.Theme = file.Theme
 		}
 		if hasKey(raw, "reasoning") {
 			cfg.Reasoning = file.Reasoning
@@ -248,6 +252,9 @@ func SaveConfig(cfg *AgentConfig) error {
 	if cfg.Alignment != "" {
 		raw["alignment"] = cfg.Alignment
 	}
+	if cfg.Theme != "" {
+		raw["theme"] = cfg.Theme
+	}
 
 	return writeRawConfig(configPath, raw)
 }
@@ -329,6 +336,9 @@ func EnsureBaseConfig() error {
 	}
 	if err := os.MkdirAll(filepath.Join(dir, "skills"), 0o755); err != nil {
 		return fmt.Errorf("create skills directory: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "themes"), 0o755); err != nil {
+		return fmt.Errorf("create themes directory: %w", err)
 	}
 	path := filepath.Join(dir, "agent.config.json")
 	if _, err := os.Stat(path); err == nil {

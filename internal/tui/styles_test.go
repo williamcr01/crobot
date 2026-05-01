@@ -6,6 +6,8 @@ import (
 	"time"
 )
 
+// testStyles is declared in markdown_test.go
+
 func TestRenderToolCall_Pending(t *testing.T) {
 	tc := toolRenderItem{
 		name:   "bash",
@@ -13,7 +15,7 @@ func TestRenderToolCall_Pending(t *testing.T) {
 		args:   "echo hello",
 		state:  toolPending,
 	}
-	got := RenderToolCall(tc, 80, false)
+	got := RenderToolCall(tc, 80, false, testStyles)
 	stripped := stripANSI(got)
 	if !strings.Contains(stripped, "echo hello") {
 		t.Fatalf("expected bash command in output: %q", stripped)
@@ -27,7 +29,7 @@ func TestRenderToolCall_Running(t *testing.T) {
 		args:   "file.go",
 		state:  toolRunning,
 	}
-	got := RenderToolCall(tc, 80, false)
+	got := RenderToolCall(tc, 80, false, testStyles)
 	stripped := stripANSI(got)
 	if !strings.Contains(stripped, "running") {
 		t.Fatalf("expected running status: %q", stripped)
@@ -44,7 +46,7 @@ func TestRenderToolCall_DoneSuccess(t *testing.T) {
 		duration: 1500 * time.Millisecond,
 		state:    toolDone,
 	}
-	got := RenderToolCall(tc, 80, false)
+	got := RenderToolCall(tc, 80, false, testStyles)
 	stripped := stripANSI(got)
 	if !strings.Contains(stripped, "hello") {
 		t.Fatalf("expected output in tool call: %q", stripped)
@@ -64,7 +66,7 @@ func TestRenderToolCall_DoneError(t *testing.T) {
 		duration: 500 * time.Millisecond,
 		state:    toolDone,
 	}
-	got := RenderToolCall(tc, 80, false)
+	got := RenderToolCall(tc, 80, false, testStyles)
 	stripped := stripANSI(got)
 	if !strings.Contains(stripped, "err") {
 		t.Fatalf("expected err status: %q", stripped)
@@ -87,14 +89,14 @@ func TestRenderToolCall_ExpandedOutput(t *testing.T) {
 	}
 
 	// Collapsed: should show preview with "... N more lines"
-	collapsed := RenderToolCall(tc, 80, false)
+	collapsed := RenderToolCall(tc, 80, false, testStyles)
 	strippedCollapsed := stripANSI(collapsed)
 	if !strings.Contains(strippedCollapsed, "more lines") {
 		t.Fatalf("expected collapsed preview hint: %q", strippedCollapsed)
 	}
 
 	// Expanded: should show all lines without hint
-	expanded := RenderToolCall(tc, 80, true)
+	expanded := RenderToolCall(tc, 80, true, testStyles)
 	strippedExpanded := stripANSI(expanded)
 	if strings.Contains(strippedExpanded, "more lines") {
 		t.Fatalf("expected expanded output without hint: %q", strippedExpanded)
@@ -110,7 +112,7 @@ func TestRenderToolCall_NoOutput(t *testing.T) {
 		success: true,
 		state:   toolDone,
 	}
-	got := RenderToolCall(tc, 80, false)
+	got := RenderToolCall(tc, 80, false, testStyles)
 	stripped := stripANSI(got)
 	if strings.Contains(stripped, "more lines") {
 		t.Fatalf("expected no preview hint for empty output: %q", stripped)
@@ -124,7 +126,7 @@ func TestRenderToolCall_NarrowWidth(t *testing.T) {
 		args:   "very long command that should be truncated",
 		state:  toolPending,
 	}
-	got := RenderToolCall(tc, 30, false)
+	got := RenderToolCall(tc, 30, false, testStyles)
 	stripped := stripANSI(got)
 	// Should not panic on narrow width.
 	if !strings.Contains(stripped, "very") {
@@ -137,7 +139,7 @@ func TestFormatSingleToolCallLine_Bash(t *testing.T) {
 		name: "bash",
 		args: "ls -la",
 	}
-	got := formatSingleToolCallLine(tc)
+	got := formatSingleToolCallLine(tc, testStyles)
 	if !strings.Contains(stripANSI(got), "ls -la") {
 		t.Fatalf("expected bash command in line: %q", got)
 	}
@@ -148,7 +150,7 @@ func TestFormatSingleToolCallLine_NonBash(t *testing.T) {
 		name: "read",
 		args: "file.go",
 	}
-	got := formatSingleToolCallLine(tc)
+	got := formatSingleToolCallLine(tc, testStyles)
 	stripped := stripANSI(got)
 	if !strings.Contains(stripped, "read") {
 		t.Fatalf("expected tool name: %q", stripped)
@@ -163,7 +165,7 @@ func TestFormatSingleToolCallLine_NoArgs(t *testing.T) {
 		name: "read",
 		args: "",
 	}
-	got := formatSingleToolCallLine(tc)
+	got := formatSingleToolCallLine(tc, testStyles)
 	stripped := stripANSI(got)
 	if stripped != "read" {
 		t.Fatalf("expected just tool name, got: %q", stripped)
@@ -176,7 +178,7 @@ func TestFormatOutputPreview_Capped(t *testing.T) {
 		lines = append(lines, "some output line")
 	}
 	output := strings.Join(lines, "\n")
-	got := formatOutputPreview(output, 80, 5, true)
+	got := formatOutputPreview(output, 80, 5, true, testStyles)
 	stripped := stripANSI(got)
 	if !strings.Contains(stripped, "10 more lines") {
 		t.Fatalf("expected preview cap hint: %q", stripped)
@@ -189,7 +191,7 @@ func TestFormatOutputPreview_Uncapped(t *testing.T) {
 		lines = append(lines, "some output line")
 	}
 	output := strings.Join(lines, "\n")
-	got := formatOutputPreview(output, 80, 20, false)
+	got := formatOutputPreview(output, 80, 20, false, testStyles)
 	stripped := stripANSI(got)
 	if strings.Contains(stripped, "more lines") {
 		t.Fatalf("expected no cap hint when maxLines > len(lines): %q", stripped)
@@ -197,7 +199,7 @@ func TestFormatOutputPreview_Uncapped(t *testing.T) {
 }
 
 func TestFormatOutputPreview_EmptyOutput(t *testing.T) {
-	got := formatOutputPreview("", 80, 5, true)
+	got := formatOutputPreview("", 80, 5, true, testStyles)
 	if got != "" {
 		t.Fatalf("expected empty for empty output, got: %q", got)
 	}
@@ -290,7 +292,7 @@ func TestRenderToolCall_WidthBelowMinimum(t *testing.T) {
 		args:   "echo test",
 		state:  toolPending,
 	}
-	got := RenderToolCall(tc, 10, false)
+	got := RenderToolCall(tc, 10, false, testStyles)
 	stripped := stripANSI(got)
 	if !strings.Contains(stripped, "echo test") {
 		t.Fatalf("expected command in narrow render: %q", stripped)
@@ -307,7 +309,7 @@ func TestRenderToolCall_OutputWithTrailingEmptyLines(t *testing.T) {
 		duration: 100 * time.Millisecond,
 		state:    toolDone,
 	}
-	got := RenderToolCall(tc, 80, true)
+	got := RenderToolCall(tc, 80, true, testStyles)
 	stripped := stripANSI(got)
 	if strings.Contains(stripped, "\n\n\n") {
 		t.Fatalf("expected trailing empty lines to be stripped: %q", stripped)
@@ -328,7 +330,7 @@ func TestRenderToolCall_HiddenCountOverflow(t *testing.T) {
 		duration: 1 * time.Second,
 		state:    toolDone,
 	}
-	got := RenderToolCall(tc, 80, false)
+	got := RenderToolCall(tc, 80, false, testStyles)
 	stripped := stripANSI(got)
 	if !strings.Contains(stripped, "5 more lines") {
 		t.Fatalf("expected '5 more lines' in collapsed output: %q", stripped)
@@ -341,7 +343,7 @@ func TestFormatOutputPreview_NotCollapsedHiddenCount(t *testing.T) {
 		lines = append(lines, "data")
 	}
 	output := strings.Join(lines, "\n")
-	got := formatOutputPreview(output, 80, 5, false)
+	got := formatOutputPreview(output, 80, 5, false, testStyles)
 	stripped := stripANSI(got)
 	if !strings.Contains(stripped, "15 more lines") {
 		t.Fatalf("expected hidden count in expanded form: %q", stripped)
@@ -358,7 +360,7 @@ func TestRenderToolCall_StatusLineWithEmptyOutput(t *testing.T) {
 		duration: 50 * time.Millisecond,
 		state:    toolDone,
 	}
-	got := RenderToolCall(tc, 80, false)
+	got := RenderToolCall(tc, 80, false, testStyles)
 	stripped := stripANSI(got)
 	if !strings.Contains(stripped, "50ms") {
 		t.Fatalf("expected duration in status line: %q", stripped)
@@ -377,7 +379,7 @@ func TestRenderToolCall_BashHeaderStyle(t *testing.T) {
 		name: "bash",
 		args: "curl https://example.com",
 	}
-	line := formatSingleToolCallLine(tc)
+	line := formatSingleToolCallLine(tc, testStyles)
 	// Just verify the command text appears
 	if !strings.Contains(stripANSI(line), "curl https://example.com") {
 		t.Fatalf("expected bash command in styled line: %q", line)

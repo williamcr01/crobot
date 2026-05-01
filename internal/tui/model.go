@@ -97,6 +97,7 @@ type Model struct {
 	events   *events.Logger
 	cmdReg   *commands.Registry
 	modelReg *provider.ModelRegistry
+	styles   Styles
 
 	// apiKeyFor returns the API key for a provider name, or "" if not authorized.
 	apiKeyFor func(string) string
@@ -154,6 +155,7 @@ func NewModel(
 	sess sessionWriter,
 	apiKeyFor func(string) string,
 	skls []skills.Skill,
+	s Styles,
 ) *Model {
 	ta := textarea.New()
 	ta.Prompt = ""
@@ -167,7 +169,8 @@ func NewModel(
 	ta.KeyMap.InsertNewline.SetKeys("ctrl+j")
 	ta.KeyMap.InsertNewline.SetEnabled(true)
 
-	s := NewLoaderSpinner()
+	sp := NewLoaderSpinner()
+	SetLoaderSpinnerStyle(&sp, s)
 	messages := []messageItem{}
 	if prov == nil && !cfg.HasAuthorizedProvider {
 		messages = append(messages, messageItem{role: "error", content: noProviderWarning})
@@ -184,7 +187,8 @@ func NewModel(
 		apiKeyFor:   apiKeyFor,
 		skills:      skls,
 		textarea:    ta,
-		spinner:     s,
+		spinner:     sp,
+		styles:      s,
 		messages:    messages,
 		agentEvents: make(chan agent.Event, 64),
 	}
@@ -440,6 +444,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.logoutPickerActive = true
 				m.logoutPickerFilter = ""
 				m.logoutPickerIndex = 0
+				m.textarea.Reset()
+				m.textarea.Focus()
+				return m, nil
+			}
+
+			// /new: start a fresh session
+			if input == "/new" {
+				if m.pending && m.agentCancel != nil {
+					m.agentCancel()
+				}
+				m.ResetSession()
+				m.messages = append(m.messages, messageItem{role: "system", content: "New session started.", ephemeral: true})
+				m.refreshViewport()
 				m.textarea.Reset()
 				m.textarea.Focus()
 				return m, nil
@@ -764,7 +781,7 @@ func (m Model) View() string {
 
 	if m.modelPickerActive {
 		picker := m.renderModelPicker()
-		filter := Dim.Render("filter: ") + m.textarea.Value() + InputCursor.Render("█")
+		filter := m.styles.Dim.Render("filter: ") + m.textarea.Value() + m.styles.InputCursor.Render("█")
 		if m.config.Alignment == "centered" {
 			picker = centerContent(picker, m.width)
 			filter = centerContent(filter, m.width)
@@ -774,7 +791,7 @@ func (m Model) View() string {
 		b.WriteString(filter)
 	} else if m.loginPickerActive {
 		picker := m.renderLoginPicker()
-		filter := Dim.Render("filter: ") + m.textarea.Value() + InputCursor.Render("█")
+		filter := m.styles.Dim.Render("filter: ") + m.textarea.Value() + m.styles.InputCursor.Render("█")
 		if m.config.Alignment == "centered" {
 			picker = centerContent(picker, m.width)
 			filter = centerContent(filter, m.width)
@@ -784,7 +801,7 @@ func (m Model) View() string {
 		b.WriteString(filter)
 	} else if m.logoutPickerActive {
 		picker := m.renderLogoutPicker()
-		filter := Dim.Render("filter: ") + m.textarea.Value() + InputCursor.Render("█")
+		filter := m.styles.Dim.Render("filter: ") + m.textarea.Value() + m.styles.InputCursor.Render("█")
 		if m.config.Alignment == "centered" {
 			picker = centerContent(picker, m.width)
 			filter = centerContent(filter, m.width)
@@ -794,7 +811,7 @@ func (m Model) View() string {
 		b.WriteString(filter)
 	} else {
 		if m.pending {
-			spinnerLine := m.spinner.View() + " " + Dim.Render("Working")
+			spinnerLine := m.spinner.View() + " " + m.styles.Dim.Render("Working")
 			if m.config.Alignment == "centered" {
 				spinnerLine = centerContent(spinnerLine, m.width)
 			}
@@ -824,7 +841,7 @@ func (m Model) View() string {
 		b.WriteString(input)
 	}
 	b.WriteString("\n")
-	cwd := Dim.Render(compactCwd())
+	cwd := m.styles.Dim.Render(compactCwd())
 	if m.config.Alignment == "centered" {
 		cwd = centerContent(cwd, m.width)
 	}
@@ -838,7 +855,7 @@ func (m Model) renderInputView() string {
 	if m.pending {
 		return value
 	}
-	return value + InputCursor.Render("█")
+	return value + m.styles.InputCursor.Render("█")
 }
 
 func (m Model) renderStatusLine() string {
@@ -849,7 +866,7 @@ func (m Model) renderStatusLine() string {
 	if m.width > 0 {
 		line = truncatePlainLine(line, m.width)
 	}
-	return Dim.Render(line)
+	return m.styles.Dim.Render(line)
 }
 
 func truncatePlainLine(line string, maxWidth int) string {
@@ -1144,44 +1161,44 @@ func (m Model) renderModelPicker() string {
 	var b strings.Builder
 
 	if len(models) == 0 {
-		b.WriteString(Dim.Render("  No models match your filter"))
+		b.WriteString(m.styles.Dim.Render("  No models match your filter"))
 		if m.modelPickerFilter == "" {
-			b.WriteString(Dim.Render(" (no models available)"))
+			b.WriteString(m.styles.Dim.Render(" (no models available)"))
 		}
 		b.WriteString("\n")
 	} else {
-		b.WriteString(Dim.Render(fmt.Sprintf("  models (%d)", len(models))))
+		b.WriteString(m.styles.Dim.Render(fmt.Sprintf("  models (%d)", len(models))))
 		b.WriteString("\n")
 
 		m.clampModelPickerIndex(models)
 		start, end, _ := m.visibleModelPickerRange(models)
 
 		if start > 0 {
-			b.WriteString(Dim.Render(fmt.Sprintf("  +%d more above", start)))
+			b.WriteString(m.styles.Dim.Render(fmt.Sprintf("  +%d more above", start)))
 			b.WriteString("\n")
 		}
 		for i := start; i < end; i++ {
 			mdl := models[i]
 			prefix := "  "
-			style := Dim
+			style := m.styles.Dim
 			if i == m.modelPickerIndex {
 				prefix = "> "
-				style = UserPrompt
+				style = m.styles.UserPrompt
 			}
 			line := fmt.Sprintf("%s%s", prefix, mdl.ModelID)
 			if mdl.Args != "" {
-				line += Dim.Render(fmt.Sprintf("  (%s)", mdl.Args))
+				line += m.styles.Dim.Render(fmt.Sprintf("  (%s)", mdl.Args))
 			}
 			b.WriteString(style.Render(line))
 			b.WriteString("\n")
 		}
 		if end < len(models) {
-			b.WriteString(Dim.Render(fmt.Sprintf("  +%d more below", len(models)-end)))
+			b.WriteString(m.styles.Dim.Render(fmt.Sprintf("  +%d more below", len(models)-end)))
 			b.WriteString("\n")
 		}
 	}
 
-	b.WriteString(Dim.Render("  esc: cancel  enter: select  arrows: navigate  type: filter"))
+	b.WriteString(m.styles.Dim.Render("  esc: cancel  enter: select  arrows: navigate  type: filter"))
 
 	return b.String()
 }
@@ -1374,28 +1391,28 @@ func (m Model) renderLogoutPicker() string {
 	providers := m.loggedInOAuthProviders()
 	var b strings.Builder
 	if len(providers) == 0 {
-		b.WriteString(Dim.Render("  No logged-in OAuth providers"))
+		b.WriteString(m.styles.Dim.Render("  No logged-in OAuth providers"))
 		b.WriteString("\n")
 	} else {
-		b.WriteString(Dim.Render(fmt.Sprintf("  logged-in OAuth providers (%d)", len(providers))))
+		b.WriteString(m.styles.Dim.Render(fmt.Sprintf("  logged-in OAuth providers (%d)", len(providers))))
 		b.WriteString("\n")
 		m.clampLogoutPickerIndex(providers)
 		for i, p := range providers {
 			prefix := "  "
-			style := Dim
+			style := m.styles.Dim
 			if i == m.logoutPickerIndex {
 				prefix = "> "
-				style = UserPrompt
+				style = m.styles.UserPrompt
 			}
 			line := fmt.Sprintf("%s%s", prefix, p.Name)
 			if p.Description != "" {
-				line += Dim.Render(fmt.Sprintf("  (%s)", p.Description))
+				line += m.styles.Dim.Render(fmt.Sprintf("  (%s)", p.Description))
 			}
 			b.WriteString(style.Render(line))
 			b.WriteString("\n")
 		}
 	}
-	b.WriteString(Dim.Render("  esc: cancel  enter: logout  arrows: navigate  type: filter"))
+	b.WriteString(m.styles.Dim.Render("  esc: cancel  enter: logout  arrows: navigate  type: filter"))
 	return b.String()
 }
 
@@ -1436,28 +1453,28 @@ func (m Model) renderLoginPicker() string {
 	providers := m.filteredLoginProviders()
 	var b strings.Builder
 	if len(providers) == 0 {
-		b.WriteString(Dim.Render("  No OAuth providers match your filter"))
+		b.WriteString(m.styles.Dim.Render("  No OAuth providers match your filter"))
 		b.WriteString("\n")
 	} else {
-		b.WriteString(Dim.Render(fmt.Sprintf("  OAuth providers (%d)", len(providers))))
+		b.WriteString(m.styles.Dim.Render(fmt.Sprintf("  OAuth providers (%d)", len(providers))))
 		b.WriteString("\n")
 		m.clampLoginPickerIndex(providers)
 		for i, p := range providers {
 			prefix := "  "
-			style := Dim
+			style := m.styles.Dim
 			if i == m.loginPickerIndex {
 				prefix = "> "
-				style = UserPrompt
+				style = m.styles.UserPrompt
 			}
 			line := fmt.Sprintf("%s%s", prefix, p.Name)
 			if p.Description != "" {
-				line += Dim.Render(fmt.Sprintf("  (%s)", p.Description))
+				line += m.styles.Dim.Render(fmt.Sprintf("  (%s)", p.Description))
 			}
 			b.WriteString(style.Render(line))
 			b.WriteString("\n")
 		}
 	}
-	b.WriteString(Dim.Render("  esc: cancel  enter: login  arrows: navigate  type: filter"))
+	b.WriteString(m.styles.Dim.Render("  esc: cancel  enter: login  arrows: navigate  type: filter"))
 	return b.String()
 }
 
@@ -1485,6 +1502,34 @@ func (m Model) visibleModelPickerRange(models []commands.Command) (start, end, s
 		}
 	}
 	return start, end, selected
+}
+
+// ResetSession clears all conversation state and creates a new session file.
+// This is effectively like restarting the app without exiting.
+func (m *Model) ResetSession() {
+	// Cancel any pending agent. The agent goroutine's old event channel
+	// will close naturally when the agent exits. Any stale agentDoneMsg
+	// that arrives later is harmless (m.pending is already false, messages
+	// are empty, so auto-compaction is a no-op).
+	if m.agentCancel != nil {
+		m.agentCancel()
+		m.agentCancel = nil
+	}
+	m.pending = false
+
+	// Create a new session file with a fresh ID.
+	sessionID := fmt.Sprintf("%x", time.Now().UnixNano())
+	sess, err := session.NewManager(m.config.SessionDir, sessionID)
+	if err == nil {
+		m.session = sess
+	}
+
+	// Clear messages, compaction state, input, and selection.
+	m.messages = nil
+	m.previousCompactionSummary = ""
+	m.textarea.Reset()
+	m.selection.clear()
+	m.commandSuggestionIndex = 0
 }
 
 // selectModel sets the provider/model and clears the input.
@@ -1552,29 +1597,29 @@ func (m Model) renderCommandSuggestions(suggestions []commands.Command) string {
 	// Check if these are model suggestions
 	isModel := len(suggestions) > 0 && suggestions[0].ModelID != ""
 	if isModel {
-		b.WriteString(Dim.Render(fmt.Sprintf("models (%d)", len(suggestions))))
+		b.WriteString(m.styles.Dim.Render(fmt.Sprintf("models (%d)", len(suggestions))))
 	} else {
-		b.WriteString(Dim.Render("commands"))
+		b.WriteString(m.styles.Dim.Render("commands"))
 	}
 
 	if start > 0 {
 		b.WriteString("\n")
-		b.WriteString(Dim.Render(fmt.Sprintf("  +%d more above", start)))
+		b.WriteString(m.styles.Dim.Render(fmt.Sprintf("  +%d more above", start)))
 	}
 	for i := start; i < end; i++ {
 		cmd := suggestions[i]
 		prefix := "  "
-		style := Dim
+		style := m.styles.Dim
 		if i == selected {
 			prefix = "> "
-			style = UserPrompt
+			style = m.styles.UserPrompt
 		}
 
 		var line string
 		if isModel {
 			line = fmt.Sprintf("%s%s", prefix, cmd.ModelID)
 			if cmd.Args != "" {
-				line += Dim.Render(fmt.Sprintf("  (%s)", cmd.Args))
+				line += m.styles.Dim.Render(fmt.Sprintf("  (%s)", cmd.Args))
 			}
 		} else {
 			line = fmt.Sprintf("%s/%s", prefix, cmd.Name)
@@ -1591,7 +1636,7 @@ func (m Model) renderCommandSuggestions(suggestions []commands.Command) string {
 	}
 	if end < len(suggestions) {
 		b.WriteString("\n")
-		b.WriteString(Dim.Render(fmt.Sprintf("  +%d more below", len(suggestions)-end)))
+		b.WriteString(m.styles.Dim.Render(fmt.Sprintf("  +%d more below", len(suggestions)-end)))
 	}
 	return b.String()
 }
@@ -1689,19 +1734,19 @@ func (m Model) renderMessages() string {
 		switch msg.role {
 		case "user":
 			b.WriteString("  ")
-			b.WriteString(UserCaret.Render(">"))
+			b.WriteString(m.styles.UserCaret.Render(">"))
 			b.WriteString(" ")
-			b.WriteString(UserPrompt.Render(msg.content))
+			b.WriteString(m.styles.UserPrompt.Render(msg.content))
 			b.WriteString("\n\n")
 		case "assistant":
 			if msg.reasoning != "" && m.config.Reasoning {
-				b.WriteString(ThinkingStyle.Render("thinking"))
+				b.WriteString(m.styles.ThinkingStyle.Render("thinking"))
 				b.WriteString("\n")
-				b.WriteString(ThinkingStyle.Render(wrapText(msg.reasoning, wrapWidth)))
+				b.WriteString(m.styles.ThinkingStyle.Render(wrapText(msg.reasoning, wrapWidth)))
 				b.WriteString("\n")
 			}
 			if msg.content != "" {
-				b.WriteString(RenderMarkdown(msg.content, wrapWidth))
+				b.WriteString(RenderMarkdown(msg.content, wrapWidth, m.styles))
 			}
 			for _, tc := range msg.toolCalls {
 				tcWidth := m.width - 4
@@ -1711,26 +1756,26 @@ func (m Model) renderMessages() string {
 						tcWidth = 40
 					}
 				}
-				b.WriteString(RenderToolCall(tc, tcWidth, m.toolOutputExpanded))
+				b.WriteString(RenderToolCall(tc, tcWidth, m.toolOutputExpanded, m.styles))
 				b.WriteString("\n")
 			}
 			if msg.usage != "" {
-				b.WriteString(Gray.Render(msg.usage))
+				b.WriteString(m.styles.Gray.Render(msg.usage))
 				b.WriteString("\n")
 			}
 		case "system":
-			b.WriteString(Dim.Render(wrapText(msg.content, wrapWidth)))
+			b.WriteString(m.styles.Dim.Render(wrapText(msg.content, wrapWidth)))
 			b.WriteString("\n\n")
 		case "compaction":
-			b.WriteString(Dim.Render("[compaction] "))
-			b.WriteString(Dim.Render(wrapText(msg.content, wrapWidth)))
+			b.WriteString(m.styles.Dim.Render("[compaction] "))
+			b.WriteString(m.styles.Dim.Render(wrapText(msg.content, wrapWidth)))
 			b.WriteString("\n\n")
 		case "error":
 			errWidth := wrapWidth - 7
 			if errWidth < 20 {
 				errWidth = 20
 			}
-			b.WriteString(Red.Render("Error: " + wrapText(msg.content, errWidth)))
+			b.WriteString(m.styles.Red.Render("Error: " + wrapText(msg.content, errWidth)))
 			b.WriteString("\n\n")
 		}
 	}

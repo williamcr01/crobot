@@ -1,0 +1,56 @@
+package themes
+
+// DefaultTheme returns the built-in "crobot-dark" theme, which matches the
+// original hardcoded colors.
+func DefaultTheme() *Theme {
+	return &Theme{
+		Name:        "crobot-dark",
+		Description: "Default dark theme",
+		Colors: map[StyleName]string{
+			StyleDim:          "#6b7280",
+			StyleCyan:         "#22d3ee",
+			StyleGreen:        "#22c55e",
+			StyleYellow:       "#f59e0b",
+			StyleRed:          "#ef4444",
+			StyleGray:         "#9ca3af",
+			StyleToolBg:       "#222222",
+			StyleToolTitle:    "#ffffff",
+			StyleToolOutput:   "#9ca3af",
+			StyleToolMeta:     "#9ca3af",
+			StyleBashHeader:   "#22c55e",
+			StyleUserPrompt:   "#93c5fd",
+			StyleUserCaret:    "#22c55e",
+			StyleInputCursor:  "#ffffff",
+			StyleErrorMessage: "#ef4444",
+			StyleH1:           "#22d3ee",
+			StyleH2:           "#e5e7eb",
+			StyleH3:           "#d1d5db",
+			StyleH4:           "#9ca3af",
+			StyleBodyText:     "#d6d3d1",
+			StyleThinking:     "#78716c",
+			StyleCode:         "#f59e0b",
+			StyleCodeBlock:    "#9ca3af",
+			StyleStrike:       "#6b7280",
+			StyleLink:         "#93c5fd",
+			StyleImage:        "#6b7280",
+			StyleQuote:        "#9ca3af",
+			StyleQuoteBar:     "#4b5563",
+			StyleHR:           "#374151",
+			StyleTaskDone:     "#22c55e",
+			StyleTaskOpen:     "#6b7280",
+			StyleTableBorder:  "#4b5563",
+			StyleTableHeader:  "#e5e7eb",
+			StyleTableCell:    "#d1d5db",
+		},
+		Bold: map[StyleName]bool{
+			StyleBold:        true,
+			StyleToolTitle:   true,
+			StyleBashHeader:  true,
+			StyleH1:          true,
+			StyleH2:          true,
+			StyleH3:          true,
+			StyleH4:          true,
+			StyleTableHeader: true,
+		},
+	}
+}

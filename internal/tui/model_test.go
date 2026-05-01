@@ -12,6 +12,8 @@ import (
 	"crobot/internal/compaction"
 	"crobot/internal/config"
 	"crobot/internal/provider"
+	"crobot/internal/session"
+	"crobot/internal/themes"
 	"crobot/internal/tools"
 
 	"github.com/charmbracelet/bubbles/viewport"
@@ -19,8 +21,12 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+func tuiStylesForTest() Styles {
+	return NewStyles(themes.DefaultTheme())
+}
+
 func testModel() Model {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.pending = true
 	m.agentEvents = make(chan agent.Event, 1)
 	return *m
@@ -116,7 +122,7 @@ func TestAgentDoneMsg_ClearsPending(t *testing.T) {
 }
 
 func TestNewModelShowsProviderWarningWhenAuthMissing(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 
 	if len(m.messages) != 1 || m.messages[0].role != "error" || !strings.Contains(m.messages[0].content, "No provider added") {
 		t.Fatalf("expected no provider warning, got %#v", m.messages)
@@ -124,7 +130,7 @@ func TestNewModelShowsProviderWarningWhenAuthMissing(t *testing.T) {
 }
 
 func TestNewModelDoesNotWarnWhenAuthExistsButProviderUnselected(t *testing.T) {
-	m := NewModel(&config.AgentConfig{HasAuthorizedProvider: true}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{HasAuthorizedProvider: true}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 
 	if len(m.messages) != 0 {
 		t.Fatalf("expected no startup warning, got %#v", m.messages)
@@ -132,7 +138,7 @@ func TestNewModelDoesNotWarnWhenAuthExistsButProviderUnselected(t *testing.T) {
 }
 
 func TestNewModelConfiguresTextareaInput(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 
 	if m.textarea.Prompt != "" {
 		t.Fatalf("expected empty textarea prompt, got %q", m.textarea.Prompt)
@@ -149,7 +155,7 @@ func TestNewModelConfiguresTextareaInput(t *testing.T) {
 }
 
 func TestGhosttyShiftEnterInsertsNewline(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.textarea.SetValue("hello")
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlJ})
@@ -161,7 +167,7 @@ func TestGhosttyShiftEnterInsertsNewline(t *testing.T) {
 }
 
 func TestAltEnterInsertsNewline(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.textarea.SetValue("hello")
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter, Alt: true})
@@ -189,7 +195,7 @@ func TestShiftEnterRawSequences(t *testing.T) {
 }
 
 func TestViewUsesInputViewForInput(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.ready = true
 	m.width = 80
 	m.height = 24
@@ -204,7 +210,7 @@ func TestViewUsesInputViewForInput(t *testing.T) {
 }
 
 func TestViewShowsProviderModelThinkingAndContextAboveInput(t *testing.T) {
-	m := NewModel(&config.AgentConfig{Provider: "openrouter", Model: "test/model", Thinking: "medium"}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{Provider: "openrouter", Model: "test/model", Thinking: "medium"}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.ready = true
 	m.width = 80
 	m.height = 24
@@ -226,7 +232,7 @@ func TestViewShowsProviderModelThinkingAndContextAboveInput(t *testing.T) {
 }
 
 func TestStatusLineDoesNotExceedTerminalWidth(t *testing.T) {
-	m := NewModel(&config.AgentConfig{Provider: "openrouter", Model: "anthropic/claude-super-long-model-name-that-would-wrap-the-footer-and-break-the-tui", Thinking: "medium"}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{Provider: "openrouter", Model: "anthropic/claude-super-long-model-name-that-would-wrap-the-footer-and-break-the-tui", Thinking: "medium"}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.width = 40
 
 	status := stripANSI(m.renderStatusLine())
@@ -238,7 +244,7 @@ func TestStatusLineDoesNotExceedTerminalWidth(t *testing.T) {
 func TestShiftTabCyclesThinkingLevels(t *testing.T) {
 	withTempWorkingDir(t)
 	t.Setenv("HOME", t.TempDir())
-	m := NewModel(&config.AgentConfig{Provider: "openrouter", Thinking: "none"}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{Provider: "openrouter", Thinking: "none"}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
 	updatedModel := updated.(Model)
@@ -260,7 +266,7 @@ func TestShiftTabCyclesThinkingLevels(t *testing.T) {
 }
 
 func TestShiftTabDoesNotCycleThinkingWhenPending(t *testing.T) {
-	m := NewModel(&config.AgentConfig{Thinking: "none"}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{Thinking: "none"}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.pending = true
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
@@ -278,7 +284,7 @@ func TestSelectModelRecreatesProviderWhenProviderChanges(t *testing.T) {
 	}
 	m := NewModel(&config.AgentConfig{Provider: "deepseek", Model: "deepseek-v4-pro"}, deepseek, nil, nil, nil, nil, nil, func(name string) string {
 		return map[string]string{"openrouter": "sk-or-test", "deepseek": "sk-test"}[name]
-	}, nil)
+	}, nil, tuiStylesForTest())
 
 	m.selectModel("openrouter", "openai/gpt-4o")
 
@@ -300,7 +306,7 @@ func TestStatusLineUsesSelectedModelContextLength(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	m := NewModel(&config.AgentConfig{Provider: "metadata", Model: "small-model", Thinking: "none"}, nil, nil, nil, nil, reg, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{Provider: "metadata", Model: "small-model", Thinking: "none"}, nil, nil, nil, nil, reg, nil, nil, nil, tuiStylesForTest())
 	m.width = 120
 	if got := stripANSI(m.renderStatusLine()); !strings.Contains(got, "/32k") {
 		t.Fatalf("expected small model context in status, got %q", got)
@@ -322,7 +328,7 @@ func TestTurnUsageUpdatesCostWithoutClearingPending(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	m := NewModel(&config.AgentConfig{Provider: "metadata", Model: "priced-model", Thinking: "none"}, nil, nil, nil, nil, reg, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{Provider: "metadata", Model: "priced-model", Thinking: "none"}, nil, nil, nil, nil, reg, nil, nil, nil, tuiStylesForTest())
 	m.pending = true
 	m.agentEvents = make(chan agent.Event)
 	m.messages = []messageItem{{role: "assistant"}}
@@ -348,7 +354,7 @@ func TestStatusLineShowsCumulativeCost(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	m := NewModel(&config.AgentConfig{Provider: "metadata", Model: "priced-model", Thinking: "none"}, nil, nil, nil, nil, reg, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{Provider: "metadata", Model: "priced-model", Thinking: "none"}, nil, nil, nil, nil, reg, nil, nil, nil, tuiStylesForTest())
 	m.width = 120
 	usage := &provider.Usage{InputTokens: 1_000_000, OutputTokens: 100_000}
 	m.calculateUsageCost(usage)
@@ -360,7 +366,7 @@ func TestStatusLineShowsCumulativeCost(t *testing.T) {
 }
 
 func TestStatusLineShowsSubscriptionInsteadOfCost(t *testing.T) {
-	m := NewModel(&config.AgentConfig{Provider: "openai-codex", Model: "gpt-5.1", Thinking: "none"}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{Provider: "openai-codex", Model: "gpt-5.1", Thinking: "none"}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.width = 120
 	m.messages = []messageItem{{role: "assistant", usageData: &provider.Usage{InputTokens: 1_000_000, OutputTokens: 100_000}}}
 
@@ -370,7 +376,7 @@ func TestStatusLineShowsSubscriptionInsteadOfCost(t *testing.T) {
 }
 
 func TestStatusLineUsesStaticContextFallbackWhenRegistryMissingMetadata(t *testing.T) {
-	m := NewModel(&config.AgentConfig{Provider: "openrouter", Model: "anthropic/claude-sonnet-4-5", Thinking: "none"}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{Provider: "openrouter", Model: "anthropic/claude-sonnet-4-5", Thinking: "none"}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.width = 120
 	if got := stripANSI(m.renderStatusLine()); !strings.Contains(got, "/200k") {
 		t.Fatalf("expected claude context fallback in status, got %q", got)
@@ -392,7 +398,7 @@ func TestSelectModelClearsStaleProviderWhenNewProviderUnauthorized(t *testing.T)
 			return "sk-test"
 		}
 		return ""
-	}, nil)
+	}, nil, tuiStylesForTest())
 
 	m.selectModel("openrouter", "openai/gpt-4o")
 
@@ -402,7 +408,7 @@ func TestSelectModelClearsStaleProviderWhenNewProviderUnauthorized(t *testing.T)
 }
 
 func TestRenderMessagesShowsReasoningWhenEnabled(t *testing.T) {
-	m := NewModel(&config.AgentConfig{Reasoning: true}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{Reasoning: true}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.messages = append(m.messages, messageItem{role: "assistant", reasoning: "hidden chain", content: "final answer"})
 
 	got := m.renderMessages()
@@ -415,7 +421,7 @@ func TestRenderMessagesShowsReasoningWhenEnabled(t *testing.T) {
 }
 
 func TestRenderMessagesHidesReasoningWhenDisabled(t *testing.T) {
-	m := NewModel(&config.AgentConfig{Reasoning: false}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{Reasoning: false}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.messages = append(m.messages, messageItem{role: "assistant", reasoning: "hidden chain", content: "final answer"})
 
 	got := m.renderMessages()
@@ -428,7 +434,7 @@ func TestRenderMessagesHidesReasoningWhenDisabled(t *testing.T) {
 }
 
 func TestUpdateRoutesReasoningDeltaToReasoningField(t *testing.T) {
-	m := NewModel(&config.AgentConfig{Reasoning: true}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{Reasoning: true}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.messages = []messageItem{{role: "assistant"}}
 
 	updated, _ := m.Update(agentEventMsg(agent.Event{Type: "reasoning_delta", ReasoningDelta: "thinking..."}))
@@ -443,7 +449,7 @@ func TestUpdateRoutesReasoningDeltaToReasoningField(t *testing.T) {
 }
 
 func TestUpdateRoutesPageKeysToViewport(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.ready = true
 	m.width = 80
 	m.height = 10
@@ -460,7 +466,7 @@ func TestUpdateRoutesPageKeysToViewport(t *testing.T) {
 }
 
 func TestRefreshViewportPreservesManualScrollPosition(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.viewport = viewport.New(80, 5)
 	for i := 0; i < 30; i++ {
 		m.messages = append(m.messages, messageItem{role: "system", content: fmt.Sprintf("line %02d", i)})
@@ -514,7 +520,7 @@ func TestOAuthProviderOptionUsesOpenAIOAuthID(t *testing.T) {
 }
 
 func TestEscCancelsPendingAgent(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	ctx, cancel := context.WithCancel(context.Background())
 	m.pending = true
 	m.agentCancel = cancel
@@ -580,7 +586,7 @@ func TestWrapText_PreservesNewlines(t *testing.T) {
 }
 
 func TestWrapText_WrapsAllMessages(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.width = 40
 	m.messages = append(m.messages, messageItem{role: "assistant", content: "this is a long response that should wrap to multiple lines"})
 	m.messages = append(m.messages, messageItem{role: "system", content: "this is a system message that is also very long and must wrap"})
@@ -595,7 +601,7 @@ func TestWrapText_WrapsAllMessages(t *testing.T) {
 	}
 }
 func TestEscDoesNothingWhenNotPending(t *testing.T) {
-	m := NewModel(&config.AgentConfig{HasAuthorizedProvider: true}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{HasAuthorizedProvider: true}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.ready = true
 	m.width = 80
 	m.height = 24
@@ -641,7 +647,7 @@ func TestHandleModelPickerKey_EscCancels(t *testing.T) {
 		{ID: "openai/gpt-4o", Provider: "openrouter"},
 	}})
 
-	m := NewModel(&config.AgentConfig{HasAuthorizedProvider: true}, nil, nil, nil, cmdReg, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{HasAuthorizedProvider: true}, nil, nil, nil, cmdReg, nil, nil, nil, nil, tuiStylesForTest())
 	m.modelPickerActive = true
 	m.textarea.SetValue("openai")
 
@@ -665,7 +671,7 @@ func TestHandleModelPickerKey_CtrlCCancels(t *testing.T) {
 		{ID: "openai/gpt-4o", Provider: "openrouter"},
 	}})
 
-	m := NewModel(&config.AgentConfig{HasAuthorizedProvider: true}, nil, nil, nil, cmdReg, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{HasAuthorizedProvider: true}, nil, nil, nil, cmdReg, nil, nil, nil, nil, tuiStylesForTest())
 	m.modelPickerActive = true
 
 	updated, cmd, handled := m.handleModelPickerKey(tea.KeyMsg{Type: tea.KeyCtrlC})
@@ -684,7 +690,7 @@ func TestHandleModelPickerKey_EnterNoModels(t *testing.T) {
 	cmdReg := commands.NewRegistry()
 	cmdReg.SetModelRegistry(&mockModelRegistry{models: []commands.ModelInfo{}})
 
-	m := NewModel(&config.AgentConfig{HasAuthorizedProvider: true}, nil, nil, nil, cmdReg, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{HasAuthorizedProvider: true}, nil, nil, nil, cmdReg, nil, nil, nil, nil, tuiStylesForTest())
 	m.modelPickerActive = true
 
 	updated, cmd, handled := m.handleModelPickerKey(tea.KeyMsg{Type: tea.KeyEnter})
@@ -709,7 +715,7 @@ func TestHandleModelPickerKey_ArrowNavigation(t *testing.T) {
 		{ID: "model-b", Provider: "openrouter"},
 	}})
 
-	m := NewModel(&config.AgentConfig{HasAuthorizedProvider: true}, nil, nil, nil, cmdReg, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{HasAuthorizedProvider: true}, nil, nil, nil, cmdReg, nil, nil, nil, nil, tuiStylesForTest())
 	m.modelPickerActive = true
 
 	// Down arrow
@@ -736,7 +742,7 @@ func TestHandleModelPickerKey_ArrowNavigation(t *testing.T) {
 }
 
 func TestClampModelPickerIndex(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	models := []commands.Command{
 		{Name: "model1", ModelID: "m1"},
 		{Name: "model2", ModelID: "m2"},
@@ -768,7 +774,7 @@ func TestRenderModelPicker_Empty(t *testing.T) {
 	cmdReg := commands.NewRegistry()
 	cmdReg.SetModelRegistry(&mockModelRegistry{models: []commands.ModelInfo{}})
 
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, cmdReg, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, cmdReg, nil, nil, nil, nil, tuiStylesForTest())
 	m.modelPickerActive = true
 
 	got := m.renderModelPicker()
@@ -784,7 +790,7 @@ func TestRenderModelPicker_WithModels(t *testing.T) {
 		{ID: "openai/gpt-4o", Provider: "openrouter"},
 	}})
 
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, cmdReg, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, cmdReg, nil, nil, nil, nil, tuiStylesForTest())
 	m.modelPickerActive = true
 
 	got := m.renderModelPicker()
@@ -801,7 +807,7 @@ func TestModelPickerHeight(t *testing.T) {
 		{ID: "m2", Provider: "p1"},
 	}})
 
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, cmdReg, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, cmdReg, nil, nil, nil, nil, tuiStylesForTest())
 	m.modelPickerActive = true
 
 	h := m.modelPickerHeight()
@@ -811,7 +817,7 @@ func TestModelPickerHeight(t *testing.T) {
 }
 
 func TestVisibleModelPickerRange(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 
 	models := make([]commands.Command, 5)
 	for i := range models {
@@ -846,7 +852,7 @@ func TestRenderModelPicker_FilteredWithArgs(t *testing.T) {
 		{ID: "openai/gpt-4o", Provider: "openrouter", ContextLength: 128000},
 	}})
 
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, cmdReg, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, cmdReg, nil, nil, nil, nil, tuiStylesForTest())
 	m.modelPickerActive = true
 	m.modelPickerFilter = "gpt"
 
@@ -860,7 +866,7 @@ func TestRenderModelPicker_FilteredWithArgs(t *testing.T) {
 // --- Picker helper tests ---
 
 func TestFilteredLoginProviders(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 
 	// No filter
 	m.loginPickerFilter = ""
@@ -888,7 +894,7 @@ func TestFilteredLoginProviders(t *testing.T) {
 }
 
 func TestClampLoginPickerIndex(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	providers := []loginProviderOption{
 		{ID: "openai-codex"},
 		{ID: "another"},
@@ -917,7 +923,7 @@ func TestClampLoginPickerIndex(t *testing.T) {
 }
 
 func TestClampLogoutPickerIndex(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	providers := []loginProviderOption{{ID: "openai-codex"}}
 
 	m.logoutPickerIndex = -1
@@ -940,7 +946,7 @@ func TestClampLogoutPickerIndex(t *testing.T) {
 }
 
 func TestRenderLoginPicker(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.loginPickerActive = true
 
 	got := m.renderLoginPicker()
@@ -953,7 +959,7 @@ func TestRenderLoginPicker(t *testing.T) {
 func TestRenderLogoutPicker_NoProviders(t *testing.T) {
 	// Set HOME to a temp dir so no auth file exists
 	t.Setenv("HOME", t.TempDir())
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.logoutPickerActive = true
 
 	got := m.renderLogoutPicker()
@@ -964,7 +970,7 @@ func TestRenderLogoutPicker_NoProviders(t *testing.T) {
 }
 
 func TestHandleLoginPickerKey_Esc(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.loginPickerActive = true
 
 	updated, _, handled := m.handleLoginPickerKey(tea.KeyMsg{Type: tea.KeyEsc})
@@ -979,7 +985,7 @@ func TestHandleLoginPickerKey_Esc(t *testing.T) {
 }
 
 func TestHandleLoginPickerKey_ArrowNavigation(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.loginPickerActive = true
 
 	// Down arrow should cycle to 0 (only one provider)
@@ -994,7 +1000,7 @@ func TestHandleLoginPickerKey_ArrowNavigation(t *testing.T) {
 }
 
 func TestHandleLoginPickerKey_EnterNoProviders(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.loginPickerActive = true
 	m.loginPickerFilter = "nonexistent"
 
@@ -1011,7 +1017,7 @@ func TestHandleLoginPickerKey_EnterNoProviders(t *testing.T) {
 
 func TestHandleLogoutPickerKey_Esc(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.logoutPickerActive = true
 
 	updated, _, handled := m.handleLogoutPickerKey(tea.KeyMsg{Type: tea.KeyEsc})
@@ -1026,7 +1032,7 @@ func TestHandleLogoutPickerKey_Esc(t *testing.T) {
 }
 
 func TestLoginProviderCmd_StandardProvider(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	cmd := m.loginProviderCmd("unknown")
 	msg := cmd()
 	result, ok := msg.(loginResultMsg)
@@ -1040,7 +1046,7 @@ func TestLoginProviderCmd_StandardProvider(t *testing.T) {
 
 func TestLogoutProviderCmd(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	cmd := m.logoutProviderCmd("openai-codex")
 	msg := cmd()
 	result, ok := msg.(logoutResultMsg)
@@ -1055,7 +1061,7 @@ func TestLogoutProviderCmd(t *testing.T) {
 // --- Command suggestion tests ---
 
 func TestCommandSuggestions_NoRegistry(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 
 	// No cmdReg means no suggestions
 	if m.commandSuggestions() != nil {
@@ -1067,7 +1073,7 @@ func TestCommandSuggestions_Pending(t *testing.T) {
 	cmdReg := commands.NewRegistry()
 	cmdReg.Register(commands.Command{Name: "help", Description: "show help"})
 
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, cmdReg, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, cmdReg, nil, nil, nil, nil, tuiStylesForTest())
 	m.pending = true
 
 	if m.commandSuggestions() != nil {
@@ -1076,7 +1082,7 @@ func TestCommandSuggestions_Pending(t *testing.T) {
 }
 
 func TestClampCommandSuggestionIndex(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 
 	// No suggestions should reset to 0
 	m.commandSuggestionIndex = 5
@@ -1090,7 +1096,7 @@ func TestCommandInputExactlyMatchesSuggestion(t *testing.T) {
 	cmdReg := commands.NewRegistry()
 	cmdReg.Register(commands.Command{Name: "help"})
 
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, cmdReg, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, cmdReg, nil, nil, nil, nil, tuiStylesForTest())
 
 	// Input without slash prefix
 	m.textarea.SetValue("help")
@@ -1112,7 +1118,7 @@ func TestCommandInputExactlyMatchesSuggestion(t *testing.T) {
 }
 
 func TestIsQuitCommand(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 
 	if !m.isQuitCommand("/quit") {
 		t.Fatal("expected /quit to be recognized")
@@ -1126,7 +1132,7 @@ func TestIsQuitCommand(t *testing.T) {
 }
 
 func TestVisibleCommandSuggestionRange(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 
 	suggestions := make([]commands.Command, 3)
 	for i := range suggestions {
@@ -1159,7 +1165,7 @@ func TestCommandSuggestionHeight(t *testing.T) {
 	cmdReg := commands.NewRegistry()
 	cmdReg.Register(commands.Command{Name: "help"})
 
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, cmdReg, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, cmdReg, nil, nil, nil, nil, tuiStylesForTest())
 	m.textarea.SetValue("/")
 
 	h := m.commandSuggestionHeight()
@@ -1169,7 +1175,7 @@ func TestCommandSuggestionHeight(t *testing.T) {
 }
 
 func TestCommandSuggestionHeight_NoSuggestions(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.textarea.SetValue("/")
 
 	if h := m.commandSuggestionHeight(); h != 0 {
@@ -1180,7 +1186,7 @@ func TestCommandSuggestionHeight_NoSuggestions(t *testing.T) {
 // --- Viewport helper tests ---
 
 func TestShouldHandleViewportKey(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 
 	// Page keys should be handled
 	if !m.shouldHandleViewportKey(tea.KeyMsg{Type: tea.KeyPgUp}) {
@@ -1488,7 +1494,7 @@ func TestExpandFileRefs_NoRegistry(t *testing.T) {
 // --- View edge case tests ---
 
 func TestViewShowsLoadingBeforeReady(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 
 	view := m.View()
 	if !strings.Contains(view, "Loading...") {
@@ -1497,7 +1503,7 @@ func TestViewShowsLoadingBeforeReady(t *testing.T) {
 }
 
 func TestViewShowsCwd(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.ready = true
 	m.width = 80
 	m.height = 24
@@ -1510,7 +1516,7 @@ func TestViewShowsCwd(t *testing.T) {
 }
 
 func TestEstimatedContextUsed(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 
 	// Empty model should have some context from system prompt
 	if m.estimatedContextUsed() <= 0 {
@@ -1532,7 +1538,7 @@ func TestEstimatedContextUsed(t *testing.T) {
 }
 
 func TestRenderCostStatus_Subscription(t *testing.T) {
-	m := NewModel(&config.AgentConfig{Provider: "openai-codex"}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{Provider: "openai-codex"}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 
 	status := m.renderCostStatus()
 	if status != "sub" {
@@ -1541,7 +1547,7 @@ func TestRenderCostStatus_Subscription(t *testing.T) {
 }
 
 func TestRenderCostStatus_Normal(t *testing.T) {
-	m := NewModel(&config.AgentConfig{Provider: "openrouter"}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{Provider: "openrouter"}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 
 	status := m.renderCostStatus()
 	if !strings.HasPrefix(status, "$") {
@@ -1550,7 +1556,7 @@ func TestRenderCostStatus_Normal(t *testing.T) {
 }
 
 func TestPricingForCurrentModel_EmptyRegistry(t *testing.T) {
-	m := NewModel(&config.AgentConfig{Provider: "openrouter", Model: "openai/gpt-4o"}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{Provider: "openrouter", Model: "openai/gpt-4o"}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 
 	pricing := m.pricingForCurrentModel()
 	// Should use static fallback
@@ -1560,7 +1566,7 @@ func TestPricingForCurrentModel_EmptyRegistry(t *testing.T) {
 }
 
 func TestAttachUsageToLastAssistant_NilUsage(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.messages = []messageItem{{role: "assistant"}}
 
 	// Should not panic with nil usage
@@ -1571,14 +1577,14 @@ func TestAttachUsageToLastAssistant_NilUsage(t *testing.T) {
 }
 
 func TestAttachUsageToLastAssistant_NoMessages(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 
 	// Should not panic with empty messages
 	m.attachUsageToLastAssistant(&provider.Usage{InputTokens: 10, OutputTokens: 20})
 }
 
 func TestAttachUsageToLastAssistant_LastNotAssistant(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.messages = []messageItem{{role: "user", content: "hi"}}
 
 	m.attachUsageToLastAssistant(&provider.Usage{InputTokens: 10, OutputTokens: 20})
@@ -1606,7 +1612,7 @@ func TestFormatTokenCount(t *testing.T) {
 }
 
 func TestTotalUsageCost(t *testing.T) {
-	m := NewModel(&config.AgentConfig{Provider: "openrouter"}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{Provider: "openrouter"}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 
 	cost, sub := m.totalUsageCost()
 	if sub {
@@ -1640,7 +1646,7 @@ func TestHasPricing(t *testing.T) {
 // --- View message rendering tests ---
 
 func TestRenderMessages_Compaction(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.messages = append(m.messages, messageItem{role: "compaction", content: "summarized previous context"})
 
 	got := m.renderMessages()
@@ -1651,7 +1657,7 @@ func TestRenderMessages_Compaction(t *testing.T) {
 }
 
 func TestRenderMessages_Error(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.messages = append(m.messages, messageItem{role: "error", content: "something failed"})
 
 	got := m.renderMessages()
@@ -1662,7 +1668,7 @@ func TestRenderMessages_Error(t *testing.T) {
 }
 
 func TestRenderMessages_System(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.messages = append(m.messages, messageItem{role: "system", content: "system message"})
 
 	got := m.renderMessages()
@@ -1673,7 +1679,7 @@ func TestRenderMessages_System(t *testing.T) {
 }
 
 func TestRenderMessages_AssistantWithUsage(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.messages = append(m.messages, messageItem{
 		role:    "assistant",
 		content: "response",
@@ -1688,7 +1694,7 @@ func TestRenderMessages_AssistantWithUsage(t *testing.T) {
 }
 
 func TestRenderMessages_BannerShown(t *testing.T) {
-	m := NewModel(&config.AgentConfig{ShowBanner: true}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{ShowBanner: true}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.messages = append(m.messages, messageItem{role: "user", content: "hi"})
 
 	got := m.renderMessages()
@@ -1762,7 +1768,7 @@ func TestExpandFileRefs_RegistryError(t *testing.T) {
 // --- Handle agent event edge cases ---
 
 func TestHandleAgentEvent_MessageStart(t *testing.T) {
-	m := NewModel(&config.AgentConfig{HasAuthorizedProvider: true}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{HasAuthorizedProvider: true}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 
 	updated, cmd := m.handleAgentEvent(agent.Event{Type: "message_start", MessageStart: &agent.MessageStartEvent{Role: "assistant"}})
 	m2 := updated.(Model)
@@ -1774,7 +1780,7 @@ func TestHandleAgentEvent_MessageStart(t *testing.T) {
 }
 
 func TestHandleAgentEvent_TextDelta(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.messages = []messageItem{{role: "assistant"}}
 
 	updated, _ := m.handleAgentEvent(agent.Event{Type: "text_delta", TextDelta: "hello"})
@@ -1787,14 +1793,14 @@ func TestHandleAgentEvent_TextDelta(t *testing.T) {
 
 func TestHandleAgentEvent_TextDeltaNoAssistantMessage(t *testing.T) {
 	// Should not panic when last message isn't assistant
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 
 	updated, _ := m.handleAgentEvent(agent.Event{Type: "text_delta", TextDelta: "hello"})
 	_ = updated
 }
 
 func TestHandleAgentEvent_ToolCallEnd(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.messages = []messageItem{{role: "assistant"}}
 
 	updated, _ := m.handleAgentEvent(agent.Event{Type: "tool_call_end", ToolCallEnd: &agent.ToolCallEvent{
@@ -1813,7 +1819,7 @@ func TestHandleAgentEvent_ToolCallEnd(t *testing.T) {
 }
 
 func TestHandleAgentEvent_ToolExecStart(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.messages = []messageItem{{
 		role: "assistant",
 		toolCalls: []toolRenderItem{
@@ -1830,7 +1836,7 @@ func TestHandleAgentEvent_ToolExecStart(t *testing.T) {
 }
 
 func TestHandleAgentEvent_ToolExecResult(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.messages = []messageItem{{
 		role: "assistant",
 		toolCalls: []toolRenderItem{
@@ -1856,7 +1862,7 @@ func TestHandleAgentEvent_ToolExecResult(t *testing.T) {
 }
 
 func TestHandleAgentEvent_Error(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.pending = true
 	m.agentEvents = make(chan agent.Event, 1)
 
@@ -1872,7 +1878,7 @@ func TestHandleAgentEvent_Error(t *testing.T) {
 }
 
 func TestHandleAgentEvent_MessageStartNoRole(t *testing.T) {
-	m := NewModel(&config.AgentConfig{HasAuthorizedProvider: true}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{HasAuthorizedProvider: true}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 
 	updated, _ := m.handleAgentEvent(agent.Event{Type: "message_start", MessageStart: &agent.MessageStartEvent{Role: "user"}})
 	m2 := updated.(Model)
@@ -1885,7 +1891,7 @@ func TestHandleAgentEvent_MessageStartNoRole(t *testing.T) {
 }
 
 func TestHandleAgentEvent_ToolCallEndNoAssistant(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 
 	updated, _ := m.handleAgentEvent(agent.Event{
 		Type:        "tool_call_end",
@@ -1895,9 +1901,9 @@ func TestHandleAgentEvent_ToolCallEndNoAssistant(t *testing.T) {
 }
 
 func TestHandleAgentEvent_ToolExecStartNoMatch(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.messages = []messageItem{{
-		role:     "assistant",
+		role: "assistant",
 		toolCalls: []toolRenderItem{
 			{name: "bash", callID: "call_1"},
 		},
@@ -1911,7 +1917,7 @@ func TestHandleAgentEvent_ToolExecStartNoMatch(t *testing.T) {
 }
 
 func TestHandleAgentEvent_ToolExecResultNoMatch(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.messages = []messageItem{{
 		role: "assistant",
 	}}
@@ -1924,13 +1930,13 @@ func TestHandleAgentEvent_ToolExecResultNoMatch(t *testing.T) {
 }
 
 func TestHandleAgentEvent_MessageEndUsage(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.messages = []messageItem{{role: "assistant"}}
 
 	updated, _ := m.handleAgentEvent(agent.Event{
 		Type: "message_end",
 		MessageEnd: &agent.MessageEndEvent{
-			Text: "final",
+			Text:  "final",
 			Usage: &provider.Usage{InputTokens: 10, OutputTokens: 20},
 		},
 	})
@@ -1945,7 +1951,7 @@ func TestHandleAgentEvent_MessageEndUsage(t *testing.T) {
 }
 
 func TestHandleAgentEvent_MessageEndNoContent(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.pending = true
 	m.agentEvents = make(chan agent.Event, 1)
 	m.messages = []messageItem{{role: "assistant"}}
@@ -1964,7 +1970,7 @@ func TestHandleAgentEvent_MessageEndNoContent(t *testing.T) {
 }
 
 func TestHandleAgentEvent_TurnUsage(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.pending = true
 	m.messages = []messageItem{{role: "assistant"}}
 
@@ -1982,7 +1988,7 @@ func TestHandleAgentEvent_TurnUsage(t *testing.T) {
 // --- DynamicViewportHeight tests ---
 
 func TestDynamicViewportHeight_Pending(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.height = 24
 	m.pending = true
 
@@ -1998,7 +2004,7 @@ func TestDynamicViewportHeight_ModelPicker(t *testing.T) {
 		{ID: "m1", Provider: "p1"},
 	}})
 
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, cmdReg, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, cmdReg, nil, nil, nil, nil, tuiStylesForTest())
 	m.height = 24
 	m.modelPickerActive = true
 
@@ -2009,7 +2015,7 @@ func TestDynamicViewportHeight_ModelPicker(t *testing.T) {
 }
 
 func TestDynamicViewportHeight_Minimum(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.height = 5 // very small terminal
 
 	h := m.dynamicViewportHeight()
@@ -2109,7 +2115,7 @@ func TestIsShiftEnterSequence(t *testing.T) {
 // --- SelectModel tests ---
 
 func TestSelectModel_SameProvider(t *testing.T) {
-	m := NewModel(&config.AgentConfig{Provider: "openrouter", Model: "old-model"}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{Provider: "openrouter", Model: "old-model"}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 
 	m.selectModel("openrouter", "new-model")
 
@@ -2125,7 +2131,7 @@ func TestSelectModel_SameProvider(t *testing.T) {
 func TestSelectModel_NoAPIKey(t *testing.T) {
 	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, func(name string) string {
 		return ""
-	}, nil)
+	}, nil, tuiStylesForTest())
 
 	m.selectModel("openrouter", "openai/gpt-4o")
 
@@ -2137,7 +2143,7 @@ func TestSelectModel_NoAPIKey(t *testing.T) {
 // --- Handle compaction result tests ---
 
 func TestHandleCompactionResult_Error(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 
 	updated, _ := m.handleCompactionResult(compactionResultMsg{err: fmt.Errorf("compaction failed")})
 	m2 := updated.(*Model)
@@ -2148,7 +2154,7 @@ func TestHandleCompactionResult_Error(t *testing.T) {
 }
 
 func TestHandleCompactionResult_Success(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 
 	result := &compaction.Result{
 		Summary: "summary text",
@@ -2179,7 +2185,7 @@ func TestHandleCompactionResult_Success(t *testing.T) {
 // --- Enter key handling with various inputs ---
 
 func TestUpdate_EnterWithEmptyInput(t *testing.T) {
-	m := NewModel(&config.AgentConfig{HasAuthorizedProvider: true}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{HasAuthorizedProvider: true}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.textarea.SetValue("  ")
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -2191,7 +2197,7 @@ func TestUpdate_EnterWithEmptyInput(t *testing.T) {
 }
 
 func TestUpdate_EnterNoProvider(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.textarea.SetValue("hello")
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -2203,7 +2209,7 @@ func TestUpdate_EnterNoProvider(t *testing.T) {
 }
 
 func TestUpdate_EnterNoProviderWithAuth(t *testing.T) {
-	m := NewModel(&config.AgentConfig{HasAuthorizedProvider: true}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{HasAuthorizedProvider: true}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.textarea.SetValue("hello")
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -2224,7 +2230,7 @@ func TestUpdate_EnterSlashCommand(t *testing.T) {
 		},
 	})
 
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, cmdReg, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, cmdReg, nil, nil, nil, nil, tuiStylesForTest())
 	m.textarea.SetValue("/testcmd")
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -2252,7 +2258,7 @@ func TestUpdate_EnterSlashCommandError(t *testing.T) {
 		},
 	})
 
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, cmdReg, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, cmdReg, nil, nil, nil, nil, tuiStylesForTest())
 	m.textarea.SetValue("/failcmd")
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -2264,7 +2270,7 @@ func TestUpdate_EnterSlashCommandError(t *testing.T) {
 }
 
 func TestUpdate_EnterCompactCommand(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.textarea.SetValue("/compact")
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -2279,7 +2285,7 @@ func TestUpdate_EnterCompactCommand(t *testing.T) {
 // --- Render status line edge cases ---
 
 func TestRenderStatusLine_EmptyProvider(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.width = 80
 
 	status := m.renderStatusLine()
@@ -2289,7 +2295,7 @@ func TestRenderStatusLine_EmptyProvider(t *testing.T) {
 }
 
 func TestRenderInputView_Pending(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.pending = true
 	m.textarea.SetValue("typing...")
 
@@ -2301,7 +2307,7 @@ func TestRenderInputView_Pending(t *testing.T) {
 }
 
 func TestRenderViewportContent_WithSelection(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.messages = []messageItem{
 		{role: "user", content: "hello world"},
 	}
@@ -2323,7 +2329,7 @@ func TestRenderViewportContent_WithSelection(t *testing.T) {
 }
 
 func TestWindowSizeMsg(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 
 	updated, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
 	m2 := updated.(Model)
@@ -2337,7 +2343,7 @@ func TestWindowSizeMsg(t *testing.T) {
 }
 
 func TestCtrlOCyclesToolExpanded(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 
 	if m.toolOutputExpanded {
 		t.Fatal("expected toolOutputExpanded to start false")
@@ -2359,7 +2365,7 @@ func TestCtrlOCyclesToolExpanded(t *testing.T) {
 }
 
 func TestUpdateScrollsToBottomWhenNewContentAppears(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.ready = true
 	m.width = 80
 	m.height = 24
@@ -2408,7 +2414,7 @@ func TestOAuthProviderOptions(t *testing.T) {
 
 func TestLoggedInOAuthProviders_NoAuthFile(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 
 	providers := m.loggedInOAuthProviders()
 	if providers != nil {
@@ -2579,7 +2585,7 @@ func TestModelPickerHeight_EmptyModels(t *testing.T) {
 	cmdReg := commands.NewRegistry()
 	cmdReg.SetModelRegistry(&mockModelRegistry{models: []commands.ModelInfo{}})
 
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, cmdReg, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, cmdReg, nil, nil, nil, nil, tuiStylesForTest())
 	m.modelPickerActive = true
 
 	h := m.modelPickerHeight()
@@ -2591,7 +2597,7 @@ func TestModelPickerHeight_EmptyModels(t *testing.T) {
 // --- renderCommandSuggestions tests ---
 
 func TestRenderCommandSuggestions_Empty(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 
 	got := m.renderCommandSuggestions(nil)
 	if got != "" {
@@ -2605,7 +2611,7 @@ func TestRenderCommandSuggestions_Empty(t *testing.T) {
 }
 
 func TestRenderCommandSuggestions_Normal(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 
 	suggestions := []commands.Command{
 		{Name: "help", Description: "Show help", Args: "[command]"},
@@ -2632,7 +2638,7 @@ func TestRenderCommandSuggestions_Normal(t *testing.T) {
 }
 
 func TestRenderCommandSuggestions_WithAboveMore(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 
 	// Create more than 8 suggestions so some are above visible range
 	suggestions := make([]commands.Command, 12)
@@ -2650,7 +2656,7 @@ func TestRenderCommandSuggestions_WithAboveMore(t *testing.T) {
 }
 
 func TestRenderCommandSuggestions_WithBelowMore(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 
 	suggestions := make([]commands.Command, 12)
 	for i := range suggestions {
@@ -2667,7 +2673,7 @@ func TestRenderCommandSuggestions_WithBelowMore(t *testing.T) {
 }
 
 func TestRenderCommandSuggestions_ModelSuggestions(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 
 	suggestions := []commands.Command{
 		{ModelID: "openai/gpt-4o", Args: "openrouter", Description: "OpenAI GPT-4o"},
@@ -2693,7 +2699,7 @@ func TestRenderCommandSuggestions_ModelsInCommandSuggestions(t *testing.T) {
 		{ID: "openai/gpt-4o", Provider: "openrouter"},
 	}})
 
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, cmdReg, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, cmdReg, nil, nil, nil, nil, tuiStylesForTest())
 	m.textarea.SetValue("/model")
 
 	// Just verify it doesn't panic and returns something
@@ -2708,7 +2714,7 @@ func TestCompleteCommandSuggestion_Normal(t *testing.T) {
 	cmdReg := commands.NewRegistry()
 	cmdReg.Register(commands.Command{Name: "help", Description: "Show help"})
 
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, cmdReg, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, cmdReg, nil, nil, nil, nil, tuiStylesForTest())
 
 	suggestions := []commands.Command{{Name: "help"}}
 	m.completeCommandSuggestion(suggestions)
@@ -2722,7 +2728,7 @@ func TestCompleteCommandSuggestion_Normal(t *testing.T) {
 }
 
 func TestCompleteCommandSuggestion_ModelSuggestion(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 
 	suggestions := []commands.Command{{ModelID: "openai/gpt-4o", ModelProvider: "openrouter"}}
 	m.completeCommandSuggestion(suggestions)
@@ -2733,7 +2739,7 @@ func TestCompleteCommandSuggestion_ModelSuggestion(t *testing.T) {
 }
 
 func TestCompleteCommandSuggestion_Empty(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 
 	// Should not panic
 	m.completeCommandSuggestion(nil)
@@ -2743,7 +2749,7 @@ func TestCompleteCommandSuggestion_Empty(t *testing.T) {
 // --- shouldAutoCompact and runAutoCompactCmd tests ---
 
 func TestShouldAutoCompact_NoMessages(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 
 	// No messages -> should not compact
 	if m.shouldAutoCompact() {
@@ -2752,7 +2758,7 @@ func TestShouldAutoCompact_NoMessages(t *testing.T) {
 }
 
 func TestRunAutoCompactCmd(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 
 	cmd := m.runAutoCompactCmd()
 	if cmd == nil {
@@ -2775,7 +2781,7 @@ func TestViewWithModelPicker(t *testing.T) {
 		{ID: "m1", Provider: "p1"},
 	}})
 
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, cmdReg, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, cmdReg, nil, nil, nil, nil, tuiStylesForTest())
 	m.ready = true
 	m.width = 80
 	m.height = 24
@@ -2790,7 +2796,7 @@ func TestViewWithModelPicker(t *testing.T) {
 }
 
 func TestViewWithLoginPicker(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.ready = true
 	m.width = 80
 	m.height = 24
@@ -2806,7 +2812,7 @@ func TestViewWithLoginPicker(t *testing.T) {
 
 func TestViewWithLogoutPicker(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.ready = true
 	m.width = 80
 	m.height = 24
@@ -2821,7 +2827,7 @@ func TestViewWithLogoutPicker(t *testing.T) {
 }
 
 func TestViewWithCenteredLayout(t *testing.T) {
-	m := NewModel(&config.AgentConfig{Alignment: "centered"}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{Alignment: "centered"}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.ready = true
 	m.width = 80
 	m.height = 24
@@ -2838,7 +2844,7 @@ func TestViewWithPendingAndSuggestions(t *testing.T) {
 	cmdReg := commands.NewRegistry()
 	cmdReg.Register(commands.Command{Name: "help"})
 
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, cmdReg, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, cmdReg, nil, nil, nil, nil, tuiStylesForTest())
 	m.ready = true
 	m.width = 80
 	m.height = 24
@@ -2853,7 +2859,7 @@ func TestViewWithPendingAndSuggestions(t *testing.T) {
 }
 
 func TestViewWithBannerAndSuggestions(t *testing.T) {
-	m := NewModel(&config.AgentConfig{ShowBanner: true, Alignment: "centered"}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{ShowBanner: true, Alignment: "centered"}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.ready = true
 	m.width = 80
 	m.height = 24
@@ -2875,7 +2881,7 @@ func TestHandleModelPickerKey_EnterSelectsModel(t *testing.T) {
 		{ID: "openai/gpt-4o", Provider: "openrouter"},
 	}})
 
-	m := NewModel(&config.AgentConfig{HasAuthorizedProvider: true}, nil, nil, nil, cmdReg, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{HasAuthorizedProvider: true}, nil, nil, nil, cmdReg, nil, nil, nil, nil, tuiStylesForTest())
 	m.modelPickerActive = true
 
 	updated, _, handled := m.handleModelPickerKey(tea.KeyMsg{Type: tea.KeyEnter})
@@ -2898,7 +2904,7 @@ func TestHandleModelPickerKey_TabSelectsModel(t *testing.T) {
 		{ID: "openai/gpt-4o", Provider: "openrouter"},
 	}})
 
-	m := NewModel(&config.AgentConfig{HasAuthorizedProvider: true}, nil, nil, nil, cmdReg, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{HasAuthorizedProvider: true}, nil, nil, nil, cmdReg, nil, nil, nil, nil, tuiStylesForTest())
 	m.modelPickerActive = true
 
 	updated, _, handled := m.handleModelPickerKey(tea.KeyMsg{Type: tea.KeyTab})
@@ -2918,7 +2924,7 @@ func TestHandleModelPickerKey_TabSelectsModel(t *testing.T) {
 // --- Test Ctrl+C when there's a selection clears it ---
 
 func TestCtrlCClearsSelection(t *testing.T) {
-	m := NewModel(&config.AgentConfig{HasAuthorizedProvider: true}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{HasAuthorizedProvider: true}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.ready = true
 	m.width = 80
 	m.height = 24
@@ -2926,8 +2932,8 @@ func TestCtrlCClearsSelection(t *testing.T) {
 
 	// Set up a selection
 	m.selection = selectionState{
-		active:   false,
-		finished: true,
+		active:    false,
+		finished:  true,
 		startLine: 0, startCol: 0,
 		endLine: 0, endCol: 5,
 	}
@@ -2947,7 +2953,7 @@ func TestCtrlCClearsSelection(t *testing.T) {
 // --- Test handleLoginPickerKey with ctrl+c ---
 
 func TestHandleLoginPickerKey_CtrlC(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.loginPickerActive = true
 
 	updated, _, handled := m.handleLoginPickerKey(tea.KeyMsg{Type: tea.KeyCtrlC})
@@ -2962,7 +2968,7 @@ func TestHandleLoginPickerKey_CtrlC(t *testing.T) {
 }
 
 func TestHandleLoginPickerKey_TabWithNoProviders(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.loginPickerActive = true
 	m.loginPickerFilter = "nonexistent"
 
@@ -2981,7 +2987,7 @@ func TestHandleLoginPickerKey_TabWithNoProviders(t *testing.T) {
 
 func TestHandleLogoutPickerKey_CtrlC(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.logoutPickerActive = true
 
 	updated, _, handled := m.handleLogoutPickerKey(tea.KeyMsg{Type: tea.KeyCtrlC})
@@ -2997,7 +3003,7 @@ func TestHandleLogoutPickerKey_CtrlC(t *testing.T) {
 
 func TestHandleLogoutPickerKey_EnterNoProviders(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.logoutPickerActive = true
 
 	updated, _, handled := m.handleLogoutPickerKey(tea.KeyMsg{Type: tea.KeyEnter})
@@ -3014,7 +3020,7 @@ func TestHandleLogoutPickerKey_EnterNoProviders(t *testing.T) {
 
 func TestHandleLogoutPickerKey_TabNoProviders(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.logoutPickerActive = true
 
 	updated, _, handled := m.handleLogoutPickerKey(tea.KeyMsg{Type: tea.KeyTab})
@@ -3031,7 +3037,7 @@ func TestHandleLogoutPickerKey_TabNoProviders(t *testing.T) {
 
 func TestHandleLogoutPickerKey_ArrowNavigation(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.logoutPickerActive = true
 
 	// With no logged-in providers, arrow should still be handled
@@ -3046,7 +3052,7 @@ func TestHandleLogoutPickerKey_ArrowNavigation(t *testing.T) {
 
 func TestHandleLogoutPickerKey_UpWithNoProviders(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.logoutPickerActive = true
 
 	updated, _, handled := m.handleLogoutPickerKey(tea.KeyMsg{Type: tea.KeyUp})
@@ -3061,7 +3067,7 @@ func TestHandleLogoutPickerKey_UpWithNoProviders(t *testing.T) {
 // --- Test WithPending scroll to bottom behavior ---
 
 func TestUpdateWithPendingEnterDoesNothing(t *testing.T) {
-	m := NewModel(&config.AgentConfig{HasAuthorizedProvider: true}, nil, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{HasAuthorizedProvider: true}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.pending = true
 	m.textarea.SetValue("hello")
 	msgCount := len(m.messages)
@@ -3123,10 +3129,83 @@ func TestRenderToolCall_NilArgsForFormatSingleToolCallLine(t *testing.T) {
 		args: "",
 	}
 	// With args="" and no rawArgs, should just show tool name
-	got := formatSingleToolCallLine(tc)
+	got := formatSingleToolCallLine(tc, tuiStylesForTest())
 	if stripANSI(got) != "bash" {
 		t.Fatalf("expected 'bash', got %q", stripANSI(got))
 	}
 }
 
+// --- Tests for /new (ResetSession) ---
 
+func TestResetSession_ClearsMessages(t *testing.T) {
+	m := NewModel(&config.AgentConfig{HasAuthorizedProvider: true}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
+	m.messages = []messageItem{
+		{role: "user", content: "hello"},
+		{role: "assistant", content: "hi"},
+	}
+	m.previousCompactionSummary = "previous summary"
+
+	m.ResetSession()
+
+	if len(m.messages) != 0 {
+		t.Fatalf("expected messages to be cleared, got %d", len(m.messages))
+	}
+	if m.previousCompactionSummary != "" {
+		t.Fatalf("expected compaction summary to be cleared, got %q", m.previousCompactionSummary)
+	}
+	if m.pending {
+		t.Fatal("expected pending to be false after ResetSession")
+	}
+}
+
+func TestResetSession_CreatesNewSessionFile(t *testing.T) {
+	sessionDir := t.TempDir()
+	cfg := &config.AgentConfig{
+		HasAuthorizedProvider: true,
+		SessionDir:            sessionDir,
+	}
+	m := NewModel(cfg, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
+	// Set a known initial session so we can verify it changes.
+	initialSess, err := session.NewManager(sessionDir, "initial")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.session = initialSess
+	initialPath := initialSess.Path()
+
+	m.ResetSession()
+
+	if m.session == nil {
+		t.Fatal("expected session to be non-nil after ResetSession")
+	}
+	if m.session.Path() == initialPath {
+		t.Fatal("expected session file path to change after ResetSession")
+	}
+	// Write a record to create the file, then verify it exists.
+	if err := m.session.Append(session.Record{Role: "system", Content: "new session"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(m.session.Path()); os.IsNotExist(err) {
+		t.Fatalf("expected new session file to exist at %s", m.session.Path())
+	}
+}
+
+func TestResetSession_CancelsPendingAgent(t *testing.T) {
+	m := NewModel(&config.AgentConfig{HasAuthorizedProvider: true}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
+	ctx, cancel := context.WithCancel(context.Background())
+	m.agentCancel = cancel
+	m.pending = true
+
+	m.ResetSession()
+
+	if m.pending {
+		t.Fatal("expected pending to be cleared")
+	}
+	if m.agentCancel != nil {
+		t.Fatal("expected agentCancel to be nil after ResetSession")
+	}
+	// Verify the context was cancelled.
+	if ctx.Err() == nil {
+		t.Fatal("expected agent context to be cancelled")
+	}
+}
