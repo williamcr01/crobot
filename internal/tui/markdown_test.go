@@ -3,6 +3,8 @@ package tui
 import (
 	"strings"
 	"testing"
+
+	gast "github.com/yuin/goldmark/extension/ast"
 )
 
 func TestRenderMarkdown_Bold(t *testing.T) {
@@ -216,3 +218,225 @@ func TestRenderMarkdown_UnderscoreItalic(t *testing.T) {
 		t.Fatalf("expected _italic_: %q", stripped)
 	}
 }
+
+// --- Markdown helper function tests ---
+
+func TestShrinkColumns(t *testing.T) {
+	// Total fits within available
+	result := shrinkColumns([]int{10, 20, 30}, 100)
+	if len(result) != 3 || result[0] != 10 || result[1] != 20 || result[2] != 30 {
+		t.Fatalf("expected original widths, got %v", result)
+	}
+
+	// Total exceeds available
+	result2 := shrinkColumns([]int{50, 50, 50}, 60)
+	total := 0
+	for _, w := range result2 {
+		total += w
+	}
+	if total > 66 { // 60 + possible rounding
+		t.Fatalf("expected shrunk total <= 66, got %d: %v", total, result2)
+	}
+
+	// Single column
+	result3 := shrinkColumns([]int{100}, 30)
+	if result3[0] < 3 || result3[0] > 30 {
+		t.Fatalf("expected shrunk single column between 3-30, got %d", result3[0])
+	}
+}
+
+func TestStripStyles(t *testing.T) {
+	if got := stripStyles(""); got != "" {
+		t.Fatalf("expected empty, got %q", got)
+	}
+
+	if got := stripStyles("hello"); got != "hello" {
+		t.Fatalf("expected unchanged, got %q", got)
+	}
+
+	// CSI sequence
+	if got := stripStyles("\x1b[1mhello\x1b[0m"); got != "hello" {
+		t.Fatalf("expected 'hello', got %q", got)
+	}
+
+	// OSC sequence
+	if got := stripStyles("\x1b]0;title\x07body"); got != "body" {
+		t.Fatalf("expected 'body', got %q", got)
+	}
+
+	// Unknown escape (just ESC + one char)
+	if got := stripStyles("\x1bXabc"); got != "abc" {
+		t.Fatalf("expected 'abc', got %q", got)
+	}
+}
+
+func TestDisplayWidth(t *testing.T) {
+	if got := displayWidth("hello"); got != 5 {
+		t.Fatalf("expected 5, got %d", got)
+	}
+
+	if got := displayWidth("\x1b[1mhello\x1b[0m"); got != 5 {
+		t.Fatalf("expected 5 with styles, got %d", got)
+	}
+
+	if got := displayWidth(""); got != 0 {
+		t.Fatalf("expected 0, got %d", got)
+	}
+
+	// Multi-byte characters
+	if got := displayWidth("hello\u4e16"); got != 7 { // 5 + 2 for CJK char
+		t.Fatalf("expected 7 with CJK, got %d", got)
+	}
+}
+
+func TestLongestLine(t *testing.T) {
+	if got := longestLine(""); got != 0 {
+		t.Fatalf("expected 0 for empty, got %d", got)
+	}
+
+	if got := longestLine("hello\nworld!"); got != 6 {
+		t.Fatalf("expected 6 for 'world!', got %d", got)
+	}
+
+	if got := longestLine("short"); got != 5 {
+		t.Fatalf("expected 5, got %d", got)
+	}
+}
+
+func TestWrapToLines(t *testing.T) {
+	lines := wrapToLines("hello world foo bar", 10)
+	for _, line := range lines {
+		if displayWidth(line) > 10 {
+			t.Fatalf("line exceeds width 10: %q (len=%d)", line, displayWidth(line))
+		}
+	}
+
+	if got := wrapToLines("", 10); len(got) != 1 || got[0] != "" {
+		t.Fatalf("expected one empty line, got %v", got)
+	}
+}
+
+func TestPadCell(t *testing.T) {
+	// Left align (default)
+	got := padCell("hello", 10, alignLeft)
+	if len(got) != 10 || !strings.HasPrefix(got, "hello") {
+		t.Fatalf("expected 'hello' left-padded to 10: %q", got)
+	}
+
+	// Right align
+	got2 := padCell("hello", 10, alignRight)
+	if len(got2) != 10 || !strings.HasSuffix(got2, "hello") {
+		t.Fatalf("expected 'hello' right-padded to 10: %q", got2)
+	}
+
+	// Center align
+	got3 := padCell("hi", 10, alignCenter)
+	if len(got3) != 10 {
+		t.Fatalf("expected length 10, got %d: %q", len(got3), got3)
+	}
+
+	// Text exceeds width (truncation)
+	got4 := padCell("hello world!", 5, alignLeft)
+	if displayWidth(got4) > 5 {
+		t.Fatalf("expected truncated, got len %d: %q", displayWidth(got4), got4)
+	}
+}
+
+func TestPadRow(t *testing.T) {
+	row := []string{"a", "b"}
+	result := padRow(row, 4)
+	if len(result) != 4 {
+		t.Fatalf("expected 4 elements, got %d", len(result))
+	}
+	if result[2] != "" || result[3] != "" {
+		t.Fatalf("expected empty strings for padded elements: %v", result)
+	}
+
+	// No padding needed
+	result2 := padRow(row, 2)
+	if len(result2) != 2 {
+		t.Fatalf("expected 2 elements, got %d", len(result2))
+	}
+}
+
+func TestAlignFor(t *testing.T) {
+	aligns := []alignment{alignLeft, alignCenter, alignRight}
+
+	if got := alignFor(aligns, 0); got != alignLeft {
+		t.Fatalf("expected left, got %d", got)
+	}
+	if got := alignFor(aligns, 1); got != alignCenter {
+		t.Fatalf("expected center, got %d", got)
+	}
+	if got := alignFor(aligns, 2); got != alignRight {
+		t.Fatalf("expected right, got %d", got)
+	}
+
+	// Fallback for index out of range
+	if got := alignFor(aligns, 10); got != alignLeft {
+		t.Fatalf("expected left fallback, got %d", got)
+	}
+
+	// Empty aligns
+	if got := alignFor(nil, 0); got != alignLeft {
+		t.Fatalf("expected left for empty, got %d", got)
+	}
+}
+
+func TestCollectText(t *testing.T) {
+	// collectText works with rendered markdown output
+	output := RenderMarkdown("hello **world**", 80)
+	// Just verify it doesn't panic and the text appears
+	if !strings.Contains(stripANSI(output), "hello") {
+		t.Fatalf("expected 'hello' in output: %q", output)
+	}
+}
+
+func TestStripHTMLTags(t *testing.T) {
+	if got := stripHTMLTags("<div>content</div>"); got != "content" {
+		t.Fatalf("expected 'content', got %q", got)
+	}
+
+	if got := stripHTMLTags("no tags"); got != "no tags" {
+		t.Fatalf("expected unchanged, got %q", got)
+	}
+
+	if got := stripHTMLTags(""); got != "" {
+		t.Fatalf("expected empty, got %q", got)
+	}
+}
+
+func TestTableAlign(t *testing.T) {
+	_ = tableAlign(gast.AlignCenter)
+	_ = tableAlign(gast.AlignRight)
+	_ = tableAlign(gast.AlignLeft)
+}
+
+func TestRenderTableTopBorder(t *testing.T) {
+	got := renderTableTopBorder([]int{10, 20})
+	if !strings.Contains(got, "┌") || !strings.Contains(got, "┬") || !strings.Contains(got, "┐") {
+		t.Fatalf("expected table top border: %q", got)
+	}
+}
+
+func TestRenderTableSepBorder(t *testing.T) {
+	got := renderTableSepBorder([]int{10, 20})
+	if !strings.Contains(got, "├") || !strings.Contains(got, "┼") || !strings.Contains(got, "┤") {
+		t.Fatalf("expected table sep border: %q", got)
+	}
+}
+
+func TestRenderTableBotBorder(t *testing.T) {
+	got := renderTableBotBorder([]int{10, 20})
+	if !strings.Contains(got, "└") || !strings.Contains(got, "┴") || !strings.Contains(got, "┘") {
+		t.Fatalf("expected table bot border: %q", got)
+	}
+}
+
+func TestRenderTableFrame_Empty(t *testing.T) {
+	got := renderTableFrame([]int{}, "┌", "┬", "┐", "─")
+	if got != "┌┐" {
+		t.Fatalf("expected '┌┐', got %q", got)
+	}
+}
+
