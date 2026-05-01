@@ -10,7 +10,15 @@ Crobot ships with these themes:
 - `crobot-light` — light terminal theme
 - `crobot-monochrome` — grayscale theme
 
-Set the active theme in `~/.crobot/agent.config.json`:
+Set the active theme from inside Crobot with:
+
+```text
+/theme
+```
+
+This opens an interactive picker, like `/model`. Type to filter, use arrow keys to move, and press Enter to select. The selected theme is applied immediately and saved to `~/.crobot/agent.config.json`.
+
+You can also edit `~/.crobot/agent.config.json` manually:
 
 ```json
 {
@@ -34,7 +42,7 @@ For example:
 ~/.crobot/themes/amber.json
 ```
 
-Activate it with:
+Activate it from Crobot with `/theme`, or manually with:
 
 ```json
 {
@@ -74,7 +82,8 @@ Rules:
 - `name` and `description` are optional.
 - Every color key is optional.
 - Missing keys fall back to `crobot-dark`.
-- Restart Crobot after changing the active theme.
+- Selecting a theme with `/theme` applies it immediately.
+- If you edit the config or theme file manually, restart Crobot to reload it.
 
 ## Color keys
 

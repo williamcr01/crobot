@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -180,6 +181,42 @@ func LoadThemeJSON(name, jsonData string) (*Theme, error) {
 	return loaded, nil
 }
 
+// BuiltinThemes returns the themes compiled into Crobot.
+func BuiltinThemes() []Info {
+	return []Info{
+		{Name: "crobot-dark", Description: DefaultTheme().Description, Builtin: true},
+		{Name: "crobot-light", Description: "Light terminal theme — dark text on light backgrounds", Builtin: true},
+		{Name: "crobot-monochrome", Description: "Grayscale-only theme for terminals without color support", Builtin: true},
+	}
+}
+
+// AvailableThemes returns built-in themes plus user themes installed in ~/.crobot/themes.
+func AvailableThemes() ([]Info, error) {
+	infos := BuiltinThemes()
+	paths, err := ThemePaths()
+	if err != nil {
+		return infos, err
+	}
+	for _, path := range paths {
+		name := strings.TrimSuffix(filepath.Base(path), ".json")
+		info := Info{Name: name}
+		if data, err := os.ReadFile(path); err == nil {
+			var th Theme
+			if json.Unmarshal(data, &th) == nil {
+				info.Description = th.Description
+			}
+		}
+		infos = append(infos, info)
+	}
+	sort.SliceStable(infos, func(i, j int) bool {
+		if infos[i].Builtin != infos[j].Builtin {
+			return infos[i].Builtin
+		}
+		return infos[i].Name < infos[j].Name
+	})
+	return infos, nil
+}
+
 // ThemePaths returns a list of installed user theme file paths.
 func ThemePaths() ([]string, error) {
 	dir, err := themesDir()
@@ -199,5 +236,6 @@ func ThemePaths() ([]string, error) {
 			paths = append(paths, filepath.Join(dir, e.Name()))
 		}
 	}
+	sort.Strings(paths)
 	return paths, nil
 }

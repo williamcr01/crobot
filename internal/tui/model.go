@@ -19,6 +19,7 @@ import (
 	"crobot/internal/provider"
 	"crobot/internal/session"
 	"crobot/internal/skills"
+	"crobot/internal/themes"
 	"crobot/internal/tools"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -122,6 +123,11 @@ type Model struct {
 	modelPickerActive bool
 	modelPickerFilter string
 	modelPickerIndex  int
+
+	// Theme picker modal state
+	themePickerActive bool
+	themePickerFilter string
+	themePickerIndex  int
 
 	// Login picker modal state
 	loginPickerActive bool
@@ -309,6 +315,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Fall through to textarea update for character/backspace input.
 			m = model.(Model)
 		}
+		if m.themePickerActive {
+			model, cmd, handled := m.handleThemePickerKey(msg)
+			if handled {
+				return model, cmd
+			}
+			// Fall through to textarea update for character/backspace input.
+			m = model.(Model)
+		}
 
 		switch msg.Type {
 		case tea.KeyCtrlC:
@@ -424,6 +438,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.modelPickerActive = true
 				m.modelPickerFilter = ""
 				m.modelPickerIndex = 0
+				m.textarea.Reset()
+				m.textarea.Focus()
+				return m, nil
+			}
+
+			// /theme: open the theme picker
+			if input == "/theme" {
+				m.themePickerActive = true
+				m.themePickerFilter = ""
+				m.themePickerIndex = 0
 				m.textarea.Reset()
 				m.textarea.Focus()
 				return m, nil
@@ -572,6 +596,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.modelPickerIndex = 0
 		}
 	}
+	if m.themePickerActive {
+		prev := m.themePickerFilter
+		m.themePickerFilter = m.textarea.Value()
+		if m.themePickerFilter != prev {
+			m.themePickerIndex = 0
+		}
+	}
 	if m.loginPickerActive {
 		prev := m.loginPickerFilter
 		m.loginPickerFilter = m.textarea.Value()
@@ -596,7 +627,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) shouldInsertInputNewline(msg tea.Msg) bool {
-	if m.pending || m.modelPickerActive || m.loginPickerActive || m.logoutPickerActive {
+	if m.pending || m.modelPickerActive || m.themePickerActive || m.loginPickerActive || m.logoutPickerActive {
 		return false
 	}
 
@@ -781,6 +812,16 @@ func (m Model) View() string {
 
 	if m.modelPickerActive {
 		picker := m.renderModelPicker()
+		filter := m.styles.Dim.Render("filter: ") + m.textarea.Value() + m.styles.InputCursor.Render("█")
+		if m.config.Alignment == "centered" {
+			picker = centerContent(picker, m.width)
+			filter = centerContent(filter, m.width)
+		}
+		b.WriteString(picker)
+		b.WriteString("\n")
+		b.WriteString(filter)
+	} else if m.themePickerActive {
+		picker := m.renderThemePicker()
 		filter := m.styles.Dim.Render("filter: ") + m.textarea.Value() + m.styles.InputCursor.Render("█")
 		if m.config.Alignment == "centered" {
 			picker = centerContent(picker, m.width)
@@ -1154,6 +1195,96 @@ func (m *Model) clampModelPickerIndex(models []commands.Command) {
 	}
 }
 
+// handleThemePickerKey processes key events when theme picker is active.
+// Returns (model, cmd, handled). If handled is false, the event falls through
+// to the textarea for character/backspace input.
+func (m Model) handleThemePickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
+	themes := m.filteredThemes()
+
+	switch msg.Type {
+	case tea.KeyCtrlC:
+		m.themePickerActive = false
+		m.textarea.Reset()
+		m.textarea.Focus()
+		return m, nil, true
+
+	case tea.KeyEsc:
+		m.themePickerActive = false
+		m.textarea.Reset()
+		m.textarea.Focus()
+		return m, nil, true
+
+	case tea.KeyEnter:
+		if len(themes) > 0 {
+			m.clampThemePickerIndex(themes)
+			selected := themes[m.themePickerIndex]
+			m.selectTheme(selected.Name)
+		}
+		m.themePickerActive = false
+		m.textarea.Reset()
+		m.textarea.Focus()
+		return m, nil, true
+
+	case tea.KeyUp:
+		if len(themes) > 0 {
+			m.themePickerIndex--
+			m.clampThemePickerIndex(themes)
+		}
+		return m, nil, true
+
+	case tea.KeyDown:
+		if len(themes) > 0 {
+			m.themePickerIndex++
+			m.clampThemePickerIndex(themes)
+		}
+		return m, nil, true
+
+	case tea.KeyTab:
+		if len(themes) > 0 {
+			m.clampThemePickerIndex(themes)
+			selected := themes[m.themePickerIndex]
+			m.selectTheme(selected.Name)
+		}
+		m.themePickerActive = false
+		m.textarea.Reset()
+		m.textarea.Focus()
+		return m, nil, true
+	}
+
+	return m, nil, false
+}
+
+func (m Model) filteredThemes() []themes.Info {
+	infos, err := themes.AvailableThemes()
+	if err != nil {
+		return themes.BuiltinThemes()
+	}
+	filter := strings.ToLower(strings.TrimSpace(m.themePickerFilter))
+	if filter == "" {
+		return infos
+	}
+	out := make([]themes.Info, 0, len(infos))
+	for _, info := range infos {
+		if strings.Contains(strings.ToLower(info.Name), filter) || strings.Contains(strings.ToLower(info.Description), filter) {
+			out = append(out, info)
+		}
+	}
+	return out
+}
+
+func (m *Model) clampThemePickerIndex(infos []themes.Info) {
+	if len(infos) == 0 {
+		m.themePickerIndex = 0
+		return
+	}
+	if m.themePickerIndex < 0 {
+		m.themePickerIndex = 0
+	}
+	if m.themePickerIndex >= len(infos) {
+		m.themePickerIndex = len(infos) - 1
+	}
+}
+
 // renderModelPicker renders the model picker modal.
 func (m Model) renderModelPicker() string {
 	models := m.cmdReg.FilterModels(m.modelPickerFilter)
@@ -1194,6 +1325,58 @@ func (m Model) renderModelPicker() string {
 		}
 		if end < len(models) {
 			b.WriteString(m.styles.Dim.Render(fmt.Sprintf("  +%d more below", len(models)-end)))
+			b.WriteString("\n")
+		}
+	}
+
+	b.WriteString(m.styles.Dim.Render("  esc: cancel  enter: select  arrows: navigate  type: filter"))
+
+	return b.String()
+}
+
+// renderThemePicker renders the theme picker modal.
+func (m Model) renderThemePicker() string {
+	infos := m.filteredThemes()
+
+	var b strings.Builder
+
+	if len(infos) == 0 {
+		b.WriteString(m.styles.Dim.Render("  No themes match your filter"))
+		if m.themePickerFilter == "" {
+			b.WriteString(m.styles.Dim.Render(" (no themes available)"))
+		}
+		b.WriteString("\n")
+	} else {
+		b.WriteString(m.styles.Dim.Render(fmt.Sprintf("  themes (%d)", len(infos))))
+		b.WriteString("\n")
+
+		m.clampThemePickerIndex(infos)
+		start, end, _ := m.visibleThemePickerRange(infos)
+
+		if start > 0 {
+			b.WriteString(m.styles.Dim.Render(fmt.Sprintf("  +%d more above", start)))
+			b.WriteString("\n")
+		}
+		for i := start; i < end; i++ {
+			info := infos[i]
+			prefix := "  "
+			style := m.styles.Dim
+			if i == m.themePickerIndex {
+				prefix = "> "
+				style = m.styles.UserPrompt
+			}
+			line := fmt.Sprintf("%s%s", prefix, info.Name)
+			if info.Description != "" {
+				line += m.styles.Dim.Render(fmt.Sprintf("  (%s)", info.Description))
+			}
+			if info.Name == m.config.Theme || (m.config.Theme == "" && info.Name == "crobot-dark") {
+				line += m.styles.Dim.Render("  current")
+			}
+			b.WriteString(style.Render(line))
+			b.WriteString("\n")
+		}
+		if end < len(infos) {
+			b.WriteString(m.styles.Dim.Render(fmt.Sprintf("  +%d more below", len(infos)-end)))
 			b.WriteString("\n")
 		}
 	}
@@ -1504,6 +1687,32 @@ func (m Model) visibleModelPickerRange(models []commands.Command) (start, end, s
 	return start, end, selected
 }
 
+func (m Model) visibleThemePickerRange(infos []themes.Info) (start, end, selected int) {
+	const maxVisible = 12
+
+	selected = m.themePickerIndex
+	if selected >= len(infos) {
+		selected = len(infos) - 1
+	}
+	if selected < 0 {
+		selected = 0
+	}
+
+	end = len(infos)
+	if len(infos) > maxVisible {
+		start = selected - maxVisible/2
+		if start < 0 {
+			start = 0
+		}
+		end = start + maxVisible
+		if end > len(infos) {
+			end = len(infos)
+			start = end - maxVisible
+		}
+	}
+	return start, end, selected
+}
+
 // ResetSession clears all conversation state and creates a new session file.
 // This is effectively like restarting the app without exiting.
 func (m *Model) ResetSession() {
@@ -1530,6 +1739,24 @@ func (m *Model) ResetSession() {
 	m.textarea.Reset()
 	m.selection.clear()
 	m.commandSuggestionIndex = 0
+}
+
+func (m *Model) selectTheme(name string) {
+	if name == "" {
+		return
+	}
+	th, err := themes.LoadTheme(name)
+	if err != nil {
+		m.messages = append(m.messages, messageItem{role: "error", content: fmt.Sprintf("Theme %q failed to load: %v", name, err), ephemeral: true})
+		m.refreshViewport()
+		return
+	}
+	m.config.Theme = name
+	_ = config.SaveConfig(m.config)
+	m.styles = NewStyles(th)
+	SetLoaderSpinnerStyle(&m.spinner, m.styles)
+	m.messages = append(m.messages, messageItem{role: "system", content: fmt.Sprintf("Theme set to: %s", name), ephemeral: true})
+	m.refreshViewport()
 }
 
 // selectModel sets the provider/model and clears the input.
@@ -1699,10 +1926,29 @@ func (m Model) modelPickerHeight() int {
 	return height + 1 // help line
 }
 
+func (m Model) themePickerHeight() int {
+	infos := m.filteredThemes()
+	if len(infos) == 0 {
+		return 2 // empty message + help line
+	}
+	start, end, _ := m.visibleThemePickerRange(infos)
+	height := 1 + end - start // header + visible themes
+	if start > 0 {
+		height++
+	}
+	if end < len(infos) {
+		height++
+	}
+	return height + 1 // help line
+}
+
 func (m Model) dynamicViewportHeight() int {
 	footerHeight := 5 + m.commandSuggestionHeight()
 	if m.modelPickerActive {
 		footerHeight = 3 + m.modelPickerHeight()
+	}
+	if m.themePickerActive {
+		footerHeight = 3 + m.themePickerHeight()
 	}
 	if m.pending {
 		footerHeight++

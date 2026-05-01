@@ -72,3 +72,10 @@ type Theme struct {
 	Colors      map[StyleName]string `json:"colors"`
 	Bold        map[StyleName]bool   `json:"bold,omitempty"`
 }
+
+// Info describes an available theme for picker/listing UIs.
+type Info struct {
+	Name        string
+	Description string
+	Builtin     bool
+}

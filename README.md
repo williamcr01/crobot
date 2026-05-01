@@ -114,7 +114,15 @@ Crobot supports JSON themes installed in:
 ~/.crobot/themes/<theme-name>.json
 ```
 
-Set the active theme in `~/.crobot/agent.config.json`:
+Open the interactive theme picker from inside Crobot:
+
+```text
+/theme
+```
+
+The selected theme is applied immediately and saved to `~/.crobot/agent.config.json`.
+
+You can also set the active theme manually:
 
 ```json
 {
@@ -139,6 +147,7 @@ Inside the TUI:
 ```text
 /help                  Show available commands
 /model                 Open the model picker
+/theme                 Open the theme picker
 /login                 Add OAuth credentials
 /logout                Remove OAuth credentials
 /thinking <level>      Set reasoning effort

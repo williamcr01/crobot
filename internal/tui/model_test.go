@@ -3209,3 +3209,34 @@ func TestResetSession_CancelsPendingAgent(t *testing.T) {
 		t.Fatal("expected agent context to be cancelled")
 	}
 }
+
+func TestThemeCommandOpensPicker(t *testing.T) {
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
+	m.ready = true
+	m.height = 40
+	m.width = 100
+	m.textarea.SetValue("/theme")
+
+	model, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	got := model.(Model)
+	if !got.themePickerActive {
+		t.Fatal("expected theme picker to be active")
+	}
+	if got.textarea.Value() != "" {
+		t.Fatalf("expected input reset, got %q", got.textarea.Value())
+	}
+}
+
+func TestSelectThemeUpdatesConfigAndStyles(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
+
+	m.selectTheme("crobot-light")
+
+	if m.config.Theme != "crobot-light" {
+		t.Fatalf("expected theme config update, got %q", m.config.Theme)
+	}
+	if len(m.messages) == 0 || !strings.Contains(m.messages[len(m.messages)-1].content, "crobot-light") {
+		t.Fatalf("expected theme switch message, got %#v", m.messages)
+	}
+}

@@ -187,6 +187,14 @@ func registerCommands(cmdReg *commands.Registry, cfg *config.AgentConfig) {
 	})
 
 	cmdReg.Register(commands.Command{
+		Name:        "theme",
+		Description: "Switch theme (interactive picker)",
+		Handler: func(args []string) (string, error) {
+			return "Use /theme to open the theme picker.", nil
+		},
+	})
+
+	cmdReg.Register(commands.Command{
 		Name:        "thinking",
 		Description: "Switch thinking level",
 		Args:        "<none|minimal|low|medium|high|xhigh>",
