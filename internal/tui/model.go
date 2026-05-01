@@ -199,7 +199,7 @@ func NewModel(
 		if records, err := sess.Load(); err == nil {
 			for _, rec := range records {
 				if rec.Role == "user" || rec.Role == "assistant" {
-					messages = append(messages, messageItem{role: rec.Role, content: rec.Content})
+					messages = append(messages, messageItem{role: rec.Role, content: rec.Content, reasoning: rec.Reasoning})
 				}
 			}
 		}
@@ -852,13 +852,17 @@ func (m Model) handleAgentEvent(ev agent.Event) (tea.Model, tea.Cmd) {
 		if ev.MessageEnd != nil {
 			m.attachUsageToLastAssistant(ev.MessageEnd.Usage)
 
-			if m.session != nil && ev.MessageEnd.Text != "" {
-				_ = m.session.Append(session.Record{
-					Role:      "assistant",
-					Content:   ev.MessageEnd.Text,
-					Timestamp: time.Now(),
-				})
+			if m.session != nil {
+			rec := session.Record{
+				Role:      "assistant",
+				Content:   ev.MessageEnd.Text,
+				Reasoning: ev.MessageEnd.ReasoningContent,
+				Timestamp: time.Now(),
 			}
+			if rec.Content != "" || rec.Reasoning != "" {
+				_ = m.session.Append(rec)
+			}
+		}
 		}
 		m.refreshViewport()
 
@@ -2003,7 +2007,7 @@ func (m *Model) resumeSession(info session.SessionInfo) {
 	m.messages = nil
 	for _, rec := range records {
 		if rec.Role == "user" || rec.Role == "assistant" {
-			m.messages = append(m.messages, messageItem{role: rec.Role, content: rec.Content})
+			m.messages = append(m.messages, messageItem{role: rec.Role, content: rec.Content, reasoning: rec.Reasoning})
 		}
 	}
 	m.previousCompactionSummary = ""
@@ -2284,14 +2288,11 @@ func (m Model) dynamicViewportHeight() int {
 func (m Model) renderMessages() string {
 	var b strings.Builder
 	wrapWidth := m.width
-	if wrapWidth < 40 {
-		wrapWidth = 40
-	}
 	if m.config.Alignment == "centered" {
 		wrapWidth = wrapWidth * 3 / 4
-		if wrapWidth < 40 {
-			wrapWidth = 40
-		}
+	}
+	if wrapWidth < 40 {
+		wrapWidth = 40
 	}
 	if m.config.ShowBanner {
 		b.WriteString(Render(m.config.Model, version.Version))

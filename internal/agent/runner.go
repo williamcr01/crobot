@@ -49,9 +49,10 @@ type MessageStartEvent struct {
 
 // MessageEndEvent is emitted when a message is finalized.
 type MessageEndEvent struct {
-	Role  string
-	Text  string // accumulated text for assistant messages
-	Usage *provider.Usage
+	Role             string
+	Text             string // accumulated text for assistant messages
+	ReasoningContent string
+	Usage            *provider.Usage
 }
 
 // ToolCallEvent describes a tool call from the model.
@@ -209,9 +210,10 @@ func (r *runner) run(ctx context.Context) (*Result, error) {
 			r.emit(Event{
 				Type: "message_end",
 				MessageEnd: &MessageEndEvent{
-					Role:  "assistant",
-					Text:  step.Text,
-					Usage: step.Usage,
+					Role:             "assistant",
+					Text:             step.Text,
+					ReasoningContent: step.ReasoningContent,
+					Usage:            step.Usage,
 				},
 			})
 

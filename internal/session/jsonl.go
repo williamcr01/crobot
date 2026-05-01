@@ -31,6 +31,7 @@ type Record struct {
 	ParentID    string         `json:"parentId,omitempty"`
 	Role        string         `json:"role,omitempty"`
 	Content     string         `json:"content,omitempty"`
+	Reasoning   string         `json:"reasoning,omitempty"`
 	Title       string         `json:"title,omitempty"`
 	FirstPrompt string         `json:"firstPrompt,omitempty"`
 	Timestamp   time.Time      `json:"timestamp"`
