@@ -123,6 +123,15 @@ const collapsedPreviewLines = 10
 // RenderToolCall renders a tool call as a background-colored block (pi-mono style).
 // No box borders. When expanded is false and output exceeds collapsedPreviewLines,
 // only a preview is shown with a "ctrl+o to expand" hint.
+// ReadOnlyTools are tools whose output is hidden from the user TUI display.
+// The call line (name + args) is still shown, but the result content is not rendered.
+var ReadOnlyTools = map[string]bool{
+	"file_read": true,
+	"grep":      true,
+	"find":      true,
+	"ls":        true,
+}
+
 func RenderToolCall(tc toolRenderItem, width int, expanded bool, s Styles) string {
 	inner := width - 4
 	if inner < 20 {
@@ -174,8 +183,8 @@ func RenderToolCall(tc toolRenderItem, width int, expanded bool, s Styles) strin
 	var b strings.Builder
 	b.WriteString(block.Render(callLine))
 
-	// Output preview.
-	if tc.output != "" {
+	// Output preview (hidden for read-only tools like file_read, grep, find, ls).
+	if tc.output != "" && !ReadOnlyTools[tc.name] {
 		b.WriteString("\n")
 		collapsed := !expanded
 		maxLines := 1<<31 - 1 // effectively unlimited when expanded
@@ -191,7 +200,7 @@ func RenderToolCall(tc toolRenderItem, width int, expanded bool, s Styles) strin
 	}
 
 	// Status footer.
-	if statusLine != "" || (tc.output != "" && tc.state == toolDone) {
+	if statusLine != "" || tc.state == toolDone {
 		b.WriteString("\n")
 		statusBlock := lipgloss.NewStyle().
 			Background(bgColor).
