@@ -280,15 +280,6 @@ func registerCommands(cmdReg *commands.Registry, cfg *config.AgentConfig) {
 	})
 
 	cmdReg.Register(commands.Command{
-		Name:        "export",
-		Description: "Export conversation as Markdown",
-		Args:        "[path]",
-		Handler: func(args []string) (string, error) {
-			return "Export would write to " + getArg(args, 0, "session-output.md"), nil
-		},
-	})
-
-	cmdReg.Register(commands.Command{
 		Name:        "plugins",
 		Description: "List loaded plugins",
 		Handler: func(args []string) (string, error) {
