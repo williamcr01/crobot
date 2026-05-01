@@ -87,6 +87,13 @@ An empty config uses defaults. The full default config is:
   "systemPrompt": "You are Crobot, a coding assistant. You have access to the following tools:\nfile read,\nfile write,\nfile edit,\nbash,\n\nCurrent working directory: {cwd}",
   "appendPrompt": "",
   "sessionDir": "~/.crobot/sessions",
+  "sessions": {
+    "retentionDays": 30,
+    "maxSessions": 50,
+    "keepNamed": true,
+    "pruneOnStartup": true,
+    "pruneEmptyAfterHours": 24
+  },
   "showBanner": true,
   "slashCommands": true,
   "reasoning": true,
@@ -139,6 +146,18 @@ See [docs/themes.md](docs/themes.md) for the full theme format, install instruct
 Plugin support is planned. Crobot already reserves plugin configuration under `plugins` in `~/.crobot/agent.config.json`, including plugin directories and permissions. The intended model is a WASM middleware/tool system for extending prompts, responses, tool calls, and custom commands.
 
 Plugin loading is not currently wired into the app.
+
+## Sessions
+
+Crobot stores sessions in `sessionDir` as JSONL files. By default it prunes sessions on startup, keeping sessions modified within 30 days and at most 50 sessions, while keeping the current session.
+
+Startup flags:
+
+```text
+--continue, -c        Continue the most recent session
+--session <path>      Open a specific session file
+--no-session          Run without saving a session
+```
 
 ## Slash commands
 

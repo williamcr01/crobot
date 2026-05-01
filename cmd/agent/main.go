@@ -20,7 +20,25 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+type startupArgs struct {
+	continueRecent bool
+	noSession      bool
+	sessionPath    string
+	help           bool
+}
+
 func main() {
+	parsed, remainingArgs, err := parseStartupArgs(os.Args[1:])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+	if parsed.help {
+		fmt.Print(cliHelpText())
+		return
+	}
+	os.Args = append([]string{os.Args[0]}, remainingArgs...)
+
 	// Load config.
 	cfg, err := config.LoadConfig()
 	if err != nil {
@@ -87,17 +105,33 @@ func main() {
 	ev := events.NewLogger(cfg.SessionDir)
 
 	// Initialize session.
-	sessionID := fmt.Sprintf("%x", time.Now().UnixNano())
-	sess, err := session.NewManager(cfg.SessionDir, sessionID)
+	cwd, _ := os.Getwd()
+	var sess *session.Manager
+	if !parsed.noSession {
+		if parsed.sessionPath != "" {
+			sess, err = session.Open(parsed.sessionPath)
+		} else if parsed.continueRecent {
+			sess, err = session.ContinueRecent(cfg.SessionDir, cwd)
+		} else {
+			sess, err = session.Create(cfg.SessionDir, cwd)
+		}
+	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warning: session init: %v\n", err)
 		sess = nil
+	} else if sess != nil && cfg.Sessions.PruneOnStartup {
+		_, _ = session.Prune(cfg.SessionDir, session.RetentionPolicy{
+			MaxAge:              time.Duration(cfg.Sessions.RetentionDays) * 24 * time.Hour,
+			MaxSessions:         cfg.Sessions.MaxSessions,
+			KeepNamed:           cfg.Sessions.KeepNamed,
+			KeepCurrentPath:     sess.Path(),
+			PruneEmptyOlderThan: time.Duration(cfg.Sessions.PruneEmptyAfterHours) * time.Hour,
+		})
 	}
 
 	// Load skills from ~/.agents/skills/, ~/.crobot/skills/, and ./.crobot/skills/.
 	// Only metadata (name, description, path) is loaded into the system prompt.
 	// Full content is loaded lazily when the model calls read() or the user uses /skill:name.
-	cwd, _ := os.Getwd()
 	skillResult := skills.LoadSkills(cwd, nil, true)
 	for _, d := range skillResult.Diagnostics {
 		if d.Level == "warning" {
@@ -134,6 +168,33 @@ func main() {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+func parseStartupArgs(args []string) (startupArgs, []string, error) {
+	var parsed startupArgs
+	remaining := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--help", "-h", "help":
+			parsed.help = true
+		case "--continue", "-c":
+			parsed.continueRecent = true
+		case "--no-session":
+			parsed.noSession = true
+		case "--session":
+			if i+1 >= len(args) {
+				return parsed, nil, fmt.Errorf("--session requires a path")
+			}
+			i++
+			parsed.sessionPath = args[i]
+		default:
+			remaining = append(remaining, args[i])
+		}
+	}
+	if parsed.noSession && (parsed.continueRecent || parsed.sessionPath != "") {
+		return parsed, nil, fmt.Errorf("--no-session cannot be combined with --continue or --session")
+	}
+	return parsed, remaining, nil
 }
 
 // registerCommands wires up all native slash commands.

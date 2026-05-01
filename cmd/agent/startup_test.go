@@ -74,6 +74,98 @@ func TestCreateStartupProvider_ConfiguredProviderWithoutCredentialsDoesNotRewrit
 	}
 }
 
+func TestParseStartupArgs(t *testing.T) {
+	parsed, remaining, err := parseStartupArgs([]string{"--continue", "prompt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !parsed.continueRecent || parsed.noSession || parsed.sessionPath != "" || parsed.help {
+		t.Fatalf("unexpected parsed args: %+v", parsed)
+	}
+	if len(remaining) != 1 || remaining[0] != "prompt" {
+		t.Fatalf("unexpected remaining args: %v", remaining)
+	}
+
+	parsed, _, err = parseStartupArgs([]string{"--session", "/tmp/s.jsonl"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if parsed.sessionPath != "/tmp/s.jsonl" {
+		t.Fatalf("expected session path, got %+v", parsed)
+	}
+
+	if _, _, err := parseStartupArgs([]string{"--no-session", "--continue"}); err == nil {
+		t.Fatal("expected conflicting session args error")
+	}
+}
+
+func TestParseStartupArgs_Help(t *testing.T) {
+	for _, name := range []string{"--help"} {
+		parsed, remaining, err := parseStartupArgs([]string{name})
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if !parsed.help {
+			t.Fatalf("%s: expected help=true", name)
+		}
+		if len(remaining) != 0 {
+			t.Fatalf("%s: unexpected remaining: %v", name, remaining)
+		}
+	}
+}
+
+func TestParseStartupArgs_ShortHelp(t *testing.T) {
+	for _, name := range []string{"-h"} {
+		parsed, remaining, err := parseStartupArgs([]string{name})
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if !parsed.help {
+			t.Fatalf("%s: expected help=true", name)
+		}
+		if len(remaining) != 0 {
+			t.Fatalf("%s: unexpected remaining: %v", name, remaining)
+		}
+	}
+}
+
+func TestParseStartupArgs_HelpSubcommand(t *testing.T) {
+	for _, name := range []string{"help"} {
+		parsed, remaining, err := parseStartupArgs([]string{name})
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if !parsed.help {
+			t.Fatalf("%s: expected help=true", name)
+		}
+		if len(remaining) != 0 {
+			t.Fatalf("%s: unexpected remaining: %v", name, remaining)
+		}
+	}
+}
+
+func TestCliHelpText(t *testing.T) {
+	text := cliHelpText()
+
+	checks := []string{
+		"Crobot",
+		"Usage:",
+		"--help",
+		"-h",
+		"--continue",
+		"-c",
+		"--session <path>",
+		"--no-session",
+		"/help",
+		"slash commands",
+	}
+	for _, check := range checks {
+		if !strings.Contains(text, check) {
+			t.Errorf("cliHelpText() missing: %q", check)
+		}
+	}
+}
+
 func writeAgentConfig(t *testing.T, home, content string) {
 	t.Helper()
 	path := filepath.Join(home, ".crobot", "agent.config.json")

@@ -84,7 +84,11 @@ type logoutResultMsg struct {
 // sessionWriter is the subset of session.Manager used by the TUI.
 type sessionWriter interface {
 	Append(rec session.Record) error
+	Load() ([]session.Record, error)
 	Path() string
+	ID() string
+	Info() (session.SessionInfo, error)
+	ExportMarkdown(path string) error
 }
 
 const noProviderWarning = "No provider added. Add credentials to ~/.crobot/auth.json or use /login."
@@ -178,6 +182,15 @@ func NewModel(
 	sp := NewLoaderSpinner()
 	SetLoaderSpinnerStyle(&sp, s)
 	messages := []messageItem{}
+	if sess != nil {
+		if records, err := sess.Load(); err == nil {
+			for _, rec := range records {
+				if rec.Role == "user" || rec.Role == "assistant" {
+					messages = append(messages, messageItem{role: rec.Role, content: rec.Content})
+				}
+			}
+		}
+	}
 	if prov == nil && !cfg.HasAuthorizedProvider {
 		messages = append(messages, messageItem{role: "error", content: noProviderWarning})
 	}
@@ -480,6 +493,35 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.ResetSession()
 				m.messages = append(m.messages, messageItem{role: "system", content: "New session started.", ephemeral: true})
+				m.refreshViewport()
+				m.textarea.Reset()
+				m.textarea.Focus()
+				return m, nil
+			}
+
+			// /session: show current session details.
+			if input == "/session" {
+				m.messages = append(m.messages, messageItem{role: "system", content: m.sessionInfoText(), ephemeral: true})
+				m.refreshViewport()
+				m.textarea.Reset()
+				m.textarea.Focus()
+				return m, nil
+			}
+
+			// /export [path]: export current session as Markdown.
+			if strings.HasPrefix(input, "/export") {
+				path := strings.TrimSpace(strings.TrimPrefix(input, "/export"))
+				msg := "Session export unavailable."
+				if m.session != nil {
+					if err := m.session.ExportMarkdown(path); err != nil {
+						msg = "Export failed: " + err.Error()
+					} else if path == "" {
+						msg = "Exported session."
+					} else {
+						msg = "Exported session to " + path
+					}
+				}
+				m.messages = append(m.messages, messageItem{role: "system", content: msg, ephemeral: true})
 				m.refreshViewport()
 				m.textarea.Reset()
 				m.textarea.Focus()
@@ -1713,6 +1755,24 @@ func (m Model) visibleThemePickerRange(infos []themes.Info) (start, end, selecte
 	return start, end, selected
 }
 
+func (m *Model) sessionInfoText() string {
+	if m.session == nil {
+		return "Session: disabled"
+	}
+	info, err := m.session.Info()
+	if err != nil {
+		return "Session: " + m.session.Path()
+	}
+	return fmt.Sprintf("Session: %s\nPath: %s\nMessages: %d\nCreated: %s\nModified: %s\nFirst message: %s",
+		m.session.ID(),
+		info.Path,
+		info.MessageCount,
+		info.Created.Format(time.RFC3339),
+		info.Modified.Format(time.RFC3339),
+		info.FirstMessage,
+	)
+}
+
 // ResetSession clears all conversation state and creates a new session file.
 // This is effectively like restarting the app without exiting.
 func (m *Model) ResetSession() {
@@ -1727,8 +1787,8 @@ func (m *Model) ResetSession() {
 	m.pending = false
 
 	// Create a new session file with a fresh ID.
-	sessionID := fmt.Sprintf("%x", time.Now().UnixNano())
-	sess, err := session.NewManager(m.config.SessionDir, sessionID)
+	cwd, _ := os.Getwd()
+	sess, err := session.Create(m.config.SessionDir, cwd)
 	if err == nil {
 		m.session = sess
 	}

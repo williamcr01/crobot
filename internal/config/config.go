@@ -23,6 +23,15 @@ type PluginConfig struct {
 	Permissions []string `json:"permissions"`
 }
 
+// SessionsConfig controls session persistence and retention.
+type SessionsConfig struct {
+	RetentionDays        int  `json:"retentionDays"`
+	MaxSessions          int  `json:"maxSessions"`
+	KeepNamed            bool `json:"keepNamed"`
+	PruneOnStartup       bool `json:"pruneOnStartup"`
+	PruneEmptyAfterHours int  `json:"pruneEmptyAfterHours"`
+}
+
 // AgentConfig is the top-level configuration for the agent.
 type AgentConfig struct {
 	Provider      string           `json:"provider"`
@@ -38,6 +47,7 @@ type AgentConfig struct {
 	Alignment     string           `json:"alignment"`
 	Theme         string           `json:"theme"`
 	Compaction    CompactionConfig `json:"compaction"`
+	Sessions      SessionsConfig   `json:"sessions"`
 	Plugins       PluginConfig     `json:"plugins"`
 
 	HasAuthorizedProvider bool `json:"-"`
@@ -67,6 +77,13 @@ var DEFAULTS = AgentConfig{
 		Enabled:          true,
 		ReserveTokens:    16384,
 		KeepRecentTokens: 20000,
+	},
+	Sessions: SessionsConfig{
+		RetentionDays:        30,
+		MaxSessions:          50,
+		KeepNamed:            true,
+		PruneOnStartup:       true,
+		PruneEmptyAfterHours: 24,
 	},
 	Plugins: PluginConfig{
 		Enabled:     true,
@@ -160,6 +177,23 @@ func LoadConfig() (*AgentConfig, error) {
 			cfg.Compaction.Model = file.Compaction.Model
 		}
 
+		// Sessions nested merge.
+		if hasNestedKey(raw, "sessions", "retentionDays") {
+			cfg.Sessions.RetentionDays = file.Sessions.RetentionDays
+		}
+		if hasNestedKey(raw, "sessions", "maxSessions") {
+			cfg.Sessions.MaxSessions = file.Sessions.MaxSessions
+		}
+		if hasNestedKey(raw, "sessions", "keepNamed") {
+			cfg.Sessions.KeepNamed = file.Sessions.KeepNamed
+		}
+		if hasNestedKey(raw, "sessions", "pruneOnStartup") {
+			cfg.Sessions.PruneOnStartup = file.Sessions.PruneOnStartup
+		}
+		if hasNestedKey(raw, "sessions", "pruneEmptyAfterHours") {
+			cfg.Sessions.PruneEmptyAfterHours = file.Sessions.PruneEmptyAfterHours
+		}
+
 		// Plugins nested merge.
 		if len(file.Plugins.Directories) > 0 {
 			cfg.Plugins.Directories = file.Plugins.Directories
@@ -205,6 +239,15 @@ func LoadConfig() (*AgentConfig, error) {
 	}
 	if cfg.MaxTurns < -1 {
 		return nil, fmt.Errorf("invalid maxTurns: %d (must be -1 or greater)", cfg.MaxTurns)
+	}
+	if cfg.Sessions.RetentionDays < 0 {
+		return nil, fmt.Errorf("invalid sessions.retentionDays: %d (must be >= 0)", cfg.Sessions.RetentionDays)
+	}
+	if cfg.Sessions.MaxSessions < 0 {
+		return nil, fmt.Errorf("invalid sessions.maxSessions: %d (must be >= 0)", cfg.Sessions.MaxSessions)
+	}
+	if cfg.Sessions.PruneEmptyAfterHours < 0 {
+		return nil, fmt.Errorf("invalid sessions.pruneEmptyAfterHours: %d (must be >= 0)", cfg.Sessions.PruneEmptyAfterHours)
 	}
 
 	if cfg.SessionDir, err = expandHome(cfg.SessionDir); err != nil {

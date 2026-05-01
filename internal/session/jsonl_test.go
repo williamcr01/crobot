@@ -3,6 +3,7 @@ package session
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -109,6 +110,117 @@ func TestSession_DirCreated(t *testing.T) {
 	}
 	if _, err := os.Stat(mgr.Path()); os.IsNotExist(err) {
 		t.Error("file should exist after append")
+	}
+}
+
+func TestSession_CreateWritesHeaderAndInfo(t *testing.T) {
+	dir := t.TempDir()
+	mgr, err := Create(dir, "/tmp/project")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := mgr.Append(Record{Role: "user", Content: "first", Timestamp: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	info, err := mgr.Info()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.ID != mgr.ID() || info.CWD != "/tmp/project" || info.MessageCount != 1 || info.FirstMessage != "first" {
+		t.Fatalf("unexpected info: %+v", info)
+	}
+}
+
+func TestSession_ListSortedByModified(t *testing.T) {
+	dir := t.TempDir()
+	old, err := NewManager(dir, "old")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := old.Append(Record{Role: "user", Content: "old", Timestamp: time.Now().Add(-time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	newer, err := NewManager(dir, "new")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := newer.Append(Record{Role: "user", Content: "new", Timestamp: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+
+	infos, err := List(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(infos) != 2 {
+		t.Fatalf("expected 2 sessions, got %d", len(infos))
+	}
+	if infos[0].ID != newer.ID() {
+		t.Fatalf("expected newest first, got %+v", infos)
+	}
+}
+
+func TestSession_ExportMarkdown(t *testing.T) {
+	dir := t.TempDir()
+	mgr, err := NewManager(dir, "export")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := mgr.Append(Record{Role: "user", Content: "hello", Timestamp: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(dir, "out.md")
+	if err := mgr.ExportMarkdown(out); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "## User") || !strings.Contains(string(data), "hello") {
+		t.Fatalf("unexpected export: %s", string(data))
+	}
+}
+
+func TestSession_PruneByMaxSessionsKeepsCurrent(t *testing.T) {
+	dir := t.TempDir()
+	old, err := NewManager(dir, "old-prune")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := old.Append(Record{Role: "user", Content: "old", Timestamp: time.Now().Add(-2 * time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	current, err := NewManager(dir, "current-prune")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := current.Append(Record{Role: "user", Content: "current", Timestamp: time.Now().Add(-time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	newer, err := NewManager(dir, "newer-prune")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := newer.Append(Record{Role: "user", Content: "newer", Timestamp: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Prune(dir, RetentionPolicy{MaxSessions: 1, KeepCurrentPath: current.Path()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Deleted != 1 {
+		t.Fatalf("expected 1 deleted, got %+v", result)
+	}
+	if _, err := os.Stat(old.Path()); !os.IsNotExist(err) {
+		t.Fatalf("expected old session deleted, stat err=%v", err)
+	}
+	if _, err := os.Stat(current.Path()); err != nil {
+		t.Fatalf("expected current kept: %v", err)
+	}
+	if _, err := os.Stat(newer.Path()); err != nil {
+		t.Fatalf("expected newest kept: %v", err)
 	}
 }
 
