@@ -154,10 +154,14 @@ Crobot stores sessions in `sessionDir` as JSONL files. By default it prunes sess
 Startup flags:
 
 ```text
---continue, -c        Continue the most recent session
---session <path>      Open a specific session file
---no-session          Run without saving a session
+-h, --help            Show help and exit
+-c, --continue        Continue the most recent session
+    --session <path>  Open a specific session file
+    --no-session      Run without saving a session
+    --skill <path>    Load a skill from directory or .md file (repeatable)
 ```
+
+You can also run `crobot help` as a subcommand.
 
 ## Slash commands
 

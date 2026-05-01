@@ -20,13 +20,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-type startupArgs struct {
-	continueRecent bool
-	noSession      bool
-	sessionPath    string
-	help           bool
-}
-
 func main() {
 	parsed, remainingArgs, err := parseStartupArgs(os.Args[1:])
 	if err != nil {
@@ -129,10 +122,10 @@ func main() {
 		})
 	}
 
-	// Load skills from ~/.agents/skills/, ~/.crobot/skills/, and ./.crobot/skills/.
+	// Load skills from ~/.agents/skills/, ~/.crobot/skills/, ./.crobot/skills/, and --skill paths.
 	// Only metadata (name, description, path) is loaded into the system prompt.
 	// Full content is loaded lazily when the model calls read() or the user uses /skill:name.
-	skillResult := skills.LoadSkills(cwd, nil, true)
+	skillResult := skills.LoadSkills(cwd, parsed.skillPaths, true)
 	for _, d := range skillResult.Diagnostics {
 		if d.Level == "warning" {
 			fmt.Fprintf(os.Stderr, "skills warning: %s (%s)\n", d.Message, d.Path)
@@ -168,33 +161,6 @@ func main() {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
-}
-
-func parseStartupArgs(args []string) (startupArgs, []string, error) {
-	var parsed startupArgs
-	remaining := make([]string, 0, len(args))
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--help", "-h", "help":
-			parsed.help = true
-		case "--continue", "-c":
-			parsed.continueRecent = true
-		case "--no-session":
-			parsed.noSession = true
-		case "--session":
-			if i+1 >= len(args) {
-				return parsed, nil, fmt.Errorf("--session requires a path")
-			}
-			i++
-			parsed.sessionPath = args[i]
-		default:
-			remaining = append(remaining, args[i])
-		}
-	}
-	if parsed.noSession && (parsed.continueRecent || parsed.sessionPath != "") {
-		return parsed, nil, fmt.Errorf("--no-session cannot be combined with --continue or --session")
-	}
-	return parsed, remaining, nil
 }
 
 // registerCommands wires up all native slash commands.

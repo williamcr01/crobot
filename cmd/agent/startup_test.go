@@ -144,6 +144,39 @@ func TestParseStartupArgs_HelpSubcommand(t *testing.T) {
 	}
 }
 
+func TestParseStartupArgs_Skill(t *testing.T) {
+	parsed, remaining, err := parseStartupArgs([]string{"--skill", "/tmp/skill.md"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(parsed.skillPaths) != 1 || parsed.skillPaths[0] != "/tmp/skill.md" {
+		t.Fatalf("expected skill path, got %+v", parsed.skillPaths)
+	}
+	if len(remaining) != 0 {
+		t.Fatalf("unexpected remaining: %v", remaining)
+	}
+}
+
+func TestParseStartupArgs_SkillRepeatable(t *testing.T) {
+	parsed, remaining, err := parseStartupArgs([]string{"--skill", "a.md", "--skill", "b.md"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(parsed.skillPaths) != 2 || parsed.skillPaths[0] != "a.md" || parsed.skillPaths[1] != "b.md" {
+		t.Fatalf("expected 2 skill paths, got %+v", parsed.skillPaths)
+	}
+	if len(remaining) != 0 {
+		t.Fatalf("unexpected remaining: %v", remaining)
+	}
+}
+
+func TestParseStartupArgs_SkillMissingArg(t *testing.T) {
+	_, _, err := parseStartupArgs([]string{"--skill"})
+	if err == nil {
+		t.Fatal("expected error for --skill without path")
+	}
+}
+
 func TestCliHelpText(t *testing.T) {
 	text := cliHelpText()
 
@@ -156,6 +189,7 @@ func TestCliHelpText(t *testing.T) {
 		"-c",
 		"--session <path>",
 		"--no-session",
+		"--skill <path>",
 		"/help",
 		"slash commands",
 	}
