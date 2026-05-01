@@ -10,6 +10,7 @@ import (
 	"crobot/internal/commands"
 	"crobot/internal/config"
 	"crobot/internal/events"
+	pluginpkg "crobot/internal/plugins"
 	"crobot/internal/provider"
 	"crobot/internal/session"
 	"crobot/internal/skills"
@@ -94,12 +95,22 @@ func main() {
 	toolReg.Register(tools.FileWriteTool)
 	toolReg.Register(tools.FileEditTool)
 	toolReg.Register(tools.BashTool)
+	toolReg.Register(tools.GrepTool)
+	toolReg.Register(tools.FindTool)
+	toolReg.Register(tools.LsTool)
 
 	// Register native commands.
 	registerCommands(cmdReg, cfg)
 
 	// Initialize events logger.
 	ev := events.NewLogger(cfg.SessionDir)
+
+	// Initialize plugin manager and register plugin management commands.
+	pluginMgr := pluginpkg.NewManager(cfg.Plugins, toolReg, cmdReg, ev)
+	registerPluginManagementCommands(cmdReg, pluginMgr)
+	if err := pluginMgr.LoadAll(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: loading plugins: %v\n", err)
+	}
 
 	// Initialize session.
 	cwd, _ := os.Getwd()
@@ -139,15 +150,13 @@ func main() {
 	// Register the /skills command (after loading, so we can capture the loaded skills).
 	registerSkillsCommand(cmdReg, skillResult.Skills)
 
-	_ = context.Background() // reserved for future plugin manager
-
 	// Headless mode: run a single prompt and print the response to stdout.
 	if parsed.promptText != "" {
 		if prov == nil {
 			fmt.Fprintf(os.Stderr, "error: no provider configured\n")
 			os.Exit(1)
 		}
-		runHeadless(cfg, prov, toolReg, skillResult.Skills, parsed.promptText)
+		runHeadless(cfg, prov, toolReg, pluginMgr, skillResult.Skills, parsed.promptText)
 		return
 	}
 
@@ -163,7 +172,7 @@ func main() {
 	styles := tui.NewStyles(theme)
 
 	// Create and run the TUI.
-	m := tui.NewModel(cfg, prov, toolReg, ev, cmdReg, modelReg, sess, auth.APIKey, skillResult.Skills, styles)
+	m := tui.NewModel(cfg, prov, toolReg, ev, cmdReg, modelReg, sess, auth.APIKey, skillResult.Skills, styles, pluginMgr)
 
 	p := tea.NewProgram(
 		m,
@@ -175,6 +184,28 @@ func main() {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+func registerPluginManagementCommands(cmdReg *commands.Registry, pluginMgr *pluginpkg.Manager) {
+	cmdReg.Register(commands.Command{
+		Name:        "plugins",
+		Description: "List loaded WASM plugins",
+		Source:      "native",
+		Handler: func(args []string) (string, error) {
+			return pluginMgr.Summary(), nil
+		},
+	})
+	cmdReg.Register(commands.Command{
+		Name:        "reload",
+		Description: "Reload WASM plugins",
+		Source:      "native",
+		Handler: func(args []string) (string, error) {
+			if err := pluginMgr.Reload(context.Background()); err != nil {
+				return "", err
+			}
+			return pluginMgr.Summary(), nil
+		},
+	})
 }
 
 // registerCommands wires up all native slash commands.
