@@ -192,6 +192,55 @@ func TestParseStartupArgs_SkillMissingArg(t *testing.T) {
 	}
 }
 
+func TestParseStartupArgs_PromptFlag(t *testing.T) {
+	tests := []struct {
+		name   string
+		args   []string
+		want   string
+		hasErr bool
+	}{
+		{name: "long flag", args: []string{"--prompt", "hello world"}, want: "hello world"},
+		{name: "short flag", args: []string{"-p", "hello world"}, want: "hello world"},
+		{name: "prompt with remaining args", args: []string{"-p", "hello", "--continue"}, want: "hello"},
+		{name: "missing value long", args: []string{"--prompt"}, hasErr: true},
+		{name: "missing value short", args: []string{"-p"}, hasErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			parsed, remaining, err := parseStartupArgs(tt.args)
+			if tt.hasErr {
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if parsed.promptText != tt.want {
+				t.Fatalf("expected promptText=%q, got %q", tt.want, parsed.promptText)
+			}
+			_ = remaining // ignore remaining args in these tests
+		})
+	}
+}
+
+func TestParseStartupArgs_PromptAndContinueConflict(t *testing.T) {
+	// --prompt and --continue should not conflict — prompt wins.
+	parsed, remaining, err := parseStartupArgs([]string{"-p", "hello", "--continue"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if parsed.promptText != "hello" {
+		t.Fatalf("expected promptText=hello, got %q", parsed.promptText)
+	}
+	if !parsed.continueRecent {
+		t.Fatal("expected --continue to be parsed too")
+	}
+	_ = remaining
+}
+
 func TestCliHelpText(t *testing.T) {
 	text := cliHelpText()
 
@@ -207,6 +256,9 @@ func TestCliHelpText(t *testing.T) {
 		"--session <path>",
 		"--no-session",
 		"--skill <path>",
+		"--prompt",
+		"-p",
+		"headless",
 		"/help",
 		"slash commands",
 	}

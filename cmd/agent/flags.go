@@ -15,6 +15,7 @@ type startupArgs struct {
 	help           bool
 	showVersion    bool
 	skillPaths     []string
+	promptText     string // headless mode prompt
 }
 
 // cliFlag describes a single command-line flag — the canonical source for
@@ -37,6 +38,7 @@ var startupFlags = []cliFlag{
 	{Name: "--session", Arg: "<path>", Description: "Open a specific session file"},
 	{Name: "--no-session", Description: "Run without saving a session"},
 	{Name: "--skill", Arg: "<path>", Description: "Load a skill from a directory or .md file (repeatable)"},
+	{Name: "--prompt", Short: "-p", Arg: "<text>", Description: "Run in headless mode with a single prompt; print response to stdout"},
 }
 
 // flagHandler receives the current arg index, full args slice, and a pointer
@@ -91,6 +93,20 @@ var flagHandlers = map[string]flagHandler{
 			return 0, fmt.Errorf("--skill requires a path")
 		}
 		p.skillPaths = append(p.skillPaths, args[i+1])
+		return 2, nil
+	},
+	"--prompt": func(args []string, i int, p *startupArgs) (int, error) {
+		if i+1 >= len(args) {
+			return 0, fmt.Errorf("--prompt requires text")
+		}
+		p.promptText = args[i+1]
+		return 2, nil
+	},
+	"-p": func(args []string, i int, p *startupArgs) (int, error) {
+		if i+1 >= len(args) {
+			return 0, fmt.Errorf("-p requires text")
+		}
+		p.promptText = args[i+1]
 		return 2, nil
 	},
 }

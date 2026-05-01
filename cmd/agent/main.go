@@ -141,6 +141,16 @@ func main() {
 
 	_ = context.Background() // reserved for future plugin manager
 
+	// Headless mode: run a single prompt and print the response to stdout.
+	if parsed.promptText != "" {
+		if prov == nil {
+			fmt.Fprintf(os.Stderr, "error: no provider configured\n")
+			os.Exit(1)
+		}
+		runHeadless(cfg, prov, toolReg, skillResult.Skills, parsed.promptText)
+		return
+	}
+
 	// Load theme and create styles.
 	if err := themes.EnsureThemeDir(); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: creating theme directory: %v\n", err)
