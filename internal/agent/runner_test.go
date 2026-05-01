@@ -21,12 +21,12 @@ type mockProvider struct {
 }
 
 type responseStep struct {
-	text       string
-	reasoning  string
-	toolCalls  []provider.ToolCall
-	usage      *provider.Usage
-	err        error
-	cancelMid  bool // cancel context after sending reasoning but before text
+	text      string
+	reasoning string
+	toolCalls []provider.ToolCall
+	usage     *provider.Usage
+	err       error
+	cancelMid bool // cancel context after sending reasoning but before text
 }
 
 func (m *mockProvider) Name() string { return m.name }
@@ -407,10 +407,14 @@ func (m *mockPluginManager) CallPostToolResult(name string, args map[string]any,
 	return result, nil
 }
 
-func (m *mockPluginManager) CallOnEvent(ev any) error {
+func (m *mockPluginManager) CallOnEvent(ev Event) error {
 	if m.onOnEvent != nil {
 		return m.onOnEvent(ev)
 	}
+	return nil
+}
+
+func (m *mockPluginManager) DrainMessages() []provider.Message {
 	return nil
 }
 

@@ -143,9 +143,16 @@ See [docs/themes.md](docs/themes.md) for the full theme format, install instruct
 
 ## Plugins
 
-Plugin support is planned. Crobot already reserves plugin configuration under `plugins` in `~/.crobot/agent.config.json`, including plugin directories and permissions. The intended model is a WASM middleware/tool system for extending prompts, responses, tool calls, and custom commands.
+Crobot supports WASM plugins for adding tools, middleware hooks, and custom slash commands. Plugins load from configured directories under `plugins` in `~/.crobot/agent.config.json`.
 
-Plugin loading is not currently wired into the app.
+Useful commands:
+
+```text
+/plugins  List loaded plugins and load errors
+/reload   Unload and reload all plugins
+```
+
+See [docs/plugins.md](docs/plugins.md) for the ABI, manifest format, permissions, and authoring details.
 
 ## Sessions
 

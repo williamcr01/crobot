@@ -38,6 +38,7 @@ type Command struct {
 	Description   string
 	Args          string // usage hint, e.g. "<model>"
 	Handler       Handler
+	Source        string // "native" | "plugin:<name>"
 	ModelID       string // non-empty if this is a model suggestion (e.g., "anthropic/claude-opus-4-7")
 	ModelProvider string // provider for model suggestions
 }
@@ -78,7 +79,45 @@ func (r *Registry) FilterModels(filter string) []Command {
 
 // Register adds a command to the registry.
 func (r *Registry) Register(cmd Command) {
+	if cmd.Source == "" {
+		cmd.Source = "native"
+	}
 	r.commands[cmd.Name] = cmd
+}
+
+// Has reports whether a command is registered.
+func (r *Registry) Has(name string) bool {
+	_, ok := r.commands[name]
+	return ok
+}
+
+// Get returns a registered command.
+func (r *Registry) Get(name string) (Command, bool) {
+	cmd, ok := r.commands[name]
+	return cmd, ok
+}
+
+// Unregister removes a command by name.
+func (r *Registry) Unregister(name string) {
+	delete(r.commands, name)
+}
+
+// UnregisterBySource removes all commands from the given source.
+func (r *Registry) UnregisterBySource(source string) {
+	for name, cmd := range r.commands {
+		if cmd.Source == source {
+			delete(r.commands, name)
+		}
+	}
+}
+
+// UnregisterPluginCommands removes all plugin-provided commands.
+func (r *Registry) UnregisterPluginCommands() {
+	for name, cmd := range r.commands {
+		if strings.HasPrefix(cmd.Source, "plugin:") {
+			delete(r.commands, name)
+		}
+	}
 }
 
 // Execute parses input and runs the matching command.

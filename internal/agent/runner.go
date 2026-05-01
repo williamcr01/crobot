@@ -89,7 +89,8 @@ type PluginManager interface {
 	CallPostResponse(resp *Result) (*Result, error)
 	CallPreToolCall(name string, args map[string]any) (string, map[string]any, bool, error)
 	CallPostToolResult(name string, args map[string]any, result any) (any, error)
-	CallOnEvent(event any) error
+	CallOnEvent(event Event) error
+	DrainMessages() []provider.Message
 }
 
 // Run executes the agent loop: send messages to the provider, stream events,
@@ -163,6 +164,9 @@ func (r *runner) run(ctx context.Context) (*Result, error) {
 			sysPrompt, msgs, err = r.plugins.CallPrePrompt(sysPrompt, msgs)
 			if err != nil {
 				return nil, fmt.Errorf("plugin pre_prompt: %w", err)
+			}
+			if queued := r.plugins.DrainMessages(); len(queued) > 0 {
+				msgs = append(msgs, queued...)
 			}
 		}
 
@@ -446,7 +450,7 @@ func (r *runner) executeTool(ctx context.Context, tc provider.ToolCall) (output 
 	if r.plugins != nil {
 		modified, hookErr := r.plugins.CallPostToolResult(name, args, rawResult)
 		if hookErr == nil && modified != nil {
-			result = fmt.Sprintf("%v[plugin modified]", modified)
+			result = fmt.Sprintf("%v", modified)
 		}
 	}
 
@@ -456,6 +460,9 @@ func (r *runner) executeTool(ctx context.Context, tc provider.ToolCall) (output 
 func (r *runner) emit(ev Event) {
 	if r.onEvent != nil {
 		r.onEvent(ev)
+	}
+	if r.plugins != nil {
+		_ = r.plugins.CallOnEvent(ev)
 	}
 }
 

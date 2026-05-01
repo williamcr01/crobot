@@ -104,6 +104,7 @@ type Model struct {
 	events   *events.Logger
 	cmdReg   *commands.Registry
 	modelReg *provider.ModelRegistry
+	plugins  agent.PluginManager
 	styles   Styles
 
 	// apiKeyFor returns the API key for a provider name, or "" if not authorized.
@@ -173,6 +174,7 @@ func NewModel(
 	apiKeyFor func(string) string,
 	skls []skills.Skill,
 	s Styles,
+	pluginOpt ...agent.PluginManager,
 ) *Model {
 	ta := textarea.New()
 	ta.Prompt = ""
@@ -189,6 +191,10 @@ func NewModel(
 	sp := NewLoaderSpinner()
 	SetLoaderSpinnerStyle(&sp, s)
 	messages := []messageItem{}
+	var plugins agent.PluginManager
+	if len(pluginOpt) > 0 {
+		plugins = pluginOpt[0]
+	}
 	if sess != nil {
 		if records, err := sess.Load(); err == nil {
 			for _, rec := range records {
@@ -209,6 +215,7 @@ func NewModel(
 		events:      ev,
 		cmdReg:      cmdReg,
 		modelReg:    modelReg,
+		plugins:     plugins,
 		session:     sess,
 		apiKeyFor:   apiKeyFor,
 		skills:      skls,
@@ -2464,10 +2471,10 @@ func centerContent(s string, width int) string {
 	lines := strings.Split(s, "\n")
 	for i, line := range lines {
 		visualWidth := lipgloss.Width(line)
-		padding := (width - visualWidth) / 2
-		if padding < 0 {
-			padding = 0
+		if visualWidth >= width {
+			continue
 		}
+		padding := (width - visualWidth) / 2
 		lines[i] = strings.Repeat(" ", padding) + line + strings.Repeat(" ", width-padding-visualWidth)
 	}
 	return strings.Join(lines, "\n")
@@ -2644,7 +2651,7 @@ func (m *Model) startAgent(ctx context.Context, input string) {
 		sysPrompt,
 		llmMsgs,
 		m.toolReg,
-		nil, // plugins
+		m.plugins,
 		func(ev agent.Event) {
 			select {
 			case ch <- ev:

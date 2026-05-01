@@ -19,6 +19,7 @@ func runHeadless(
 	cfg *config.AgentConfig,
 	prov provider.Provider,
 	toolReg *tools.Registry,
+	plugins agent.PluginManager,
 	skillsList []skills.Skill,
 	promptText string,
 ) {
@@ -32,7 +33,7 @@ func runHeadless(
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	err := runHeadlessAgent(ctx, prov, cfg.Model, cfg.Thinking, cfg.MaxTurns, sysPrompt, msgs, toolReg)
+	err := runHeadlessAgent(ctx, prov, cfg.Model, cfg.Thinking, cfg.MaxTurns, sysPrompt, msgs, toolReg, plugins)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "\nerror: %v\n", err)
 		os.Exit(1)
@@ -49,6 +50,7 @@ func runHeadlessAgent(
 	systemPrompt string,
 	messages []provider.Message,
 	toolReg *tools.Registry,
+	plugins agent.PluginManager,
 ) error {
 	_, err := agent.RunWithThinking(
 		ctx,
@@ -59,7 +61,7 @@ func runHeadlessAgent(
 		systemPrompt,
 		messages,
 		toolReg,
-		nil,
+		plugins,
 		headlessEventHandler,
 	)
 	return err
