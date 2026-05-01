@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"crobot/internal/commands"
@@ -11,6 +12,7 @@ import (
 	"crobot/internal/events"
 	"crobot/internal/provider"
 	"crobot/internal/session"
+	"crobot/internal/skills"
 	"crobot/internal/tools"
 	"crobot/internal/tui"
 
@@ -34,26 +36,13 @@ func main() {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
-	var prov provider.Provider
-	cfg.HasAuthorizedProvider = auth.HasAuthorizedProvider()
-	if !cfg.HasAuthorizedProvider {
-		cfg.Provider = ""
-		cfg.Model = ""
-		_ = config.ClearProviderModel()
-		fmt.Fprintln(os.Stderr, "warning: No provider added. Add credentials to ~/.crobot/auth.json or use /login.")
-	} else if cfg.Provider != "" {
-		apiKey := auth.APIKey(cfg.Provider)
-		if apiKey == "" {
-			cfg.Provider = ""
-			cfg.Model = ""
-			_ = config.ClearProviderModel()
-		} else {
-			prov, err = provider.Create(cfg.Provider, apiKey)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(1)
-			}
-		}
+	prov, startupWarning, err := createStartupProvider(cfg, auth)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+	if startupWarning != "" {
+		fmt.Fprintln(os.Stderr, startupWarning)
 	}
 
 	// Initialize registries.
@@ -104,10 +93,24 @@ func main() {
 		sess = nil
 	}
 
+	// Load skills from ~/.agents/skills/, ~/.crobot/skills/, and ./.crobot/skills/.
+	// Only metadata (name, description, path) is loaded into the system prompt.
+	// Full content is loaded lazily when the model calls read() or the user uses /skill:name.
+	cwd, _ := os.Getwd()
+	skillResult := skills.LoadSkills(cwd, nil, true)
+	for _, d := range skillResult.Diagnostics {
+		if d.Level == "warning" {
+			fmt.Fprintf(os.Stderr, "skills warning: %s (%s)\n", d.Message, d.Path)
+		}
+	}
+
+	// Register the /skills command (after loading, so we can capture the loaded skills).
+	registerSkillsCommand(cmdReg, skillResult.Skills)
+
 	_ = context.Background() // reserved for future plugin manager
 
 	// Create and run the TUI.
-	m := tui.NewModel(cfg, prov, toolReg, ev, cmdReg, modelReg, sess, auth.APIKey)
+	m := tui.NewModel(cfg, prov, toolReg, ev, cmdReg, modelReg, sess, auth.APIKey, skillResult.Skills)
 
 	p := tea.NewProgram(
 		m,
@@ -260,6 +263,30 @@ func registerCommands(cmdReg *commands.Registry, cfg *config.AgentConfig) {
 				return "", err
 			}
 			return fmt.Sprintf("Alignment set to: %s", cfg.Alignment), nil
+		},
+	})
+}
+
+// registerSkillsCommand registers the /skills slash command.
+func registerSkillsCommand(cmdReg *commands.Registry, skls []skills.Skill) {
+	cmdReg.Register(commands.Command{
+		Name:        "skills",
+		Description: "List loaded skills",
+		Handler: func(args []string) (string, error) {
+			if len(skls) == 0 {
+				return "No skills loaded.", nil
+			}
+			var b strings.Builder
+			b.WriteString(fmt.Sprintf("Loaded skills (%d):\n", len(skls)))
+			for _, s := range skls {
+				disable := ""
+				if s.DisableModelInvocation {
+					disable = " (manual only)"
+				}
+				b.WriteString(fmt.Sprintf("  %s  %s%s\n", s.Name, s.Description, disable))
+				b.WriteString(fmt.Sprintf("       %s\n", s.FilePath))
+			}
+			return b.String(), nil
 		},
 	})
 }

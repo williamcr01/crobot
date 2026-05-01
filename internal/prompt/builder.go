@@ -8,11 +8,13 @@ import (
 	"time"
 
 	"crobot/internal/config"
+	"crobot/internal/skills"
 )
 
 // Build assembles the system prompt from the user config, replacing placeholders
 // and appending dynamic context about the current environment.
-func Build(cfg config.AgentConfig, cwd string) string {
+// If provided, skills are appended as an <available_skills> metadata block.
+func Build(cfg config.AgentConfig, cwd string, loadedSkills ...[]skills.Skill) string {
 	prompt := cfg.SystemPrompt
 	if prompt == "" {
 		prompt = config.DEFAULTS.SystemPrompt
@@ -45,6 +47,14 @@ func Build(cfg config.AgentConfig, cwd string) string {
 			b.WriteString("\n")
 		}
 	}
+
+	// Append skill metadata to system prompt (only name, description, location — not full content).
+	if len(loadedSkills) > 0 {
+		if skillsText := skills.FormatSkillsForPrompt(loadedSkills[0]); skillsText != "" {
+			b.WriteString(skillsText)
+		}
+	}
+
 	b.WriteString("\n")
 	b.WriteString("Current date: ")
 	b.WriteString(time.Now().Format("2006-01-02 15:04 MST"))

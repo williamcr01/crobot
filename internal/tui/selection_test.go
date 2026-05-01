@@ -269,7 +269,7 @@ func TestSelectionState_Clear(t *testing.T) {
 }
 
 func TestHandleMouseSelection_ViewportBoundary(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
 	m.ready = true
 	m.width = 80
 	m.height = 24
@@ -305,7 +305,7 @@ func TestHandleMouseSelection_ViewportBoundary(t *testing.T) {
 }
 
 func TestHandleMouseSelection_DynamicViewportHeight(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
 	m.ready = true
 	m.width = 80
 	m.height = 24
@@ -334,7 +334,7 @@ func TestHandleMouseSelection_DynamicViewportHeight(t *testing.T) {
 }
 
 func TestHandleMouseSelection_OutsideClearsExistingSelection(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
 	m.ready = true
 	m.width = 80
 	m.height = 24
@@ -367,7 +367,7 @@ func TestHandleMouseSelection_OutsideClearsExistingSelection(t *testing.T) {
 
 // TestUpdateMouseSelection verifies the full Update flow for mouse selection.
 func TestUpdateMouseSelection_FullFlow(t *testing.T) {
-	m := NewModel(&config.AgentConfig{HasAuthorizedProvider: true}, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{HasAuthorizedProvider: true}, nil, nil, nil, nil, nil, nil, nil, nil)
 	m.ready = true
 	m.width = 80
 	m.height = 24
@@ -459,7 +459,7 @@ func TestUpdateMouseSelection_FullFlow(t *testing.T) {
 
 // TestUpdateMouseSelection_NoSelectionOnEmptyViewport verifies no crash with empty content.
 func TestUpdateMouseSelection_EmptyViewport(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
 	m.ready = true
 	m.width = 80
 	m.height = 24

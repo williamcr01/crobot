@@ -18,6 +18,7 @@ import (
 	"crobot/internal/prompt"
 	"crobot/internal/provider"
 	"crobot/internal/session"
+	"crobot/internal/skills"
 	"crobot/internal/tools"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -131,6 +132,9 @@ type Model struct {
 	logoutPickerFilter string
 	logoutPickerIndex  int
 
+	// Loaded skills (metadata only).
+	skills []skills.Skill
+
 	// Text selection state for mouse drag-select + copy.
 	selection  selectionState
 	plainLines []string // unstyled viewport content lines, 1:1 with styled lines
@@ -149,6 +153,7 @@ func NewModel(
 	modelReg *provider.ModelRegistry,
 	sess sessionWriter,
 	apiKeyFor func(string) string,
+	skls []skills.Skill,
 ) *Model {
 	ta := textarea.New()
 	ta.Prompt = ""
@@ -177,6 +182,7 @@ func NewModel(
 		modelReg:    modelReg,
 		session:     sess,
 		apiKeyFor:   apiKeyFor,
+		skills:      skls,
 		textarea:    ta,
 		spinner:     s,
 		messages:    messages,
@@ -861,7 +867,7 @@ func truncatePlainLine(line string, maxWidth int) string {
 }
 
 func (m Model) estimatedContextUsed() int {
-	chars := len(prompt.Build(*m.config, getCwd()))
+	chars := len(prompt.Build(*m.config, getCwd(), m.skills))
 
 	if m.toolReg != nil {
 		if toolBytes, err := json.Marshal(m.toolReg.ToProviderTools()); err == nil {
@@ -2017,7 +2023,7 @@ func (m *Model) startAgent(ctx context.Context, input string) {
 	ch := m.agentEvents
 	defer close(ch)
 
-	sysPrompt := prompt.Build(*m.config, getCwd())
+	sysPrompt := prompt.Build(*m.config, getCwd(), m.skills)
 
 	// Build conversation history for the LLM from the canonical conversation format.
 	llmMsgs := conversation.MessagesToProvider(messagesToConversation(m.messages, false))

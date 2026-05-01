@@ -17,7 +17,7 @@ import (
 )
 
 func testModel() Model {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
 	m.pending = true
 	m.agentEvents = make(chan agent.Event, 1)
 	return *m
@@ -113,7 +113,7 @@ func TestAgentDoneMsg_ClearsPending(t *testing.T) {
 }
 
 func TestNewModelShowsProviderWarningWhenAuthMissing(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	if len(m.messages) != 1 || m.messages[0].role != "error" || !strings.Contains(m.messages[0].content, "No provider added") {
 		t.Fatalf("expected no provider warning, got %#v", m.messages)
@@ -121,7 +121,7 @@ func TestNewModelShowsProviderWarningWhenAuthMissing(t *testing.T) {
 }
 
 func TestNewModelDoesNotWarnWhenAuthExistsButProviderUnselected(t *testing.T) {
-	m := NewModel(&config.AgentConfig{HasAuthorizedProvider: true}, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{HasAuthorizedProvider: true}, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	if len(m.messages) != 0 {
 		t.Fatalf("expected no startup warning, got %#v", m.messages)
@@ -129,7 +129,7 @@ func TestNewModelDoesNotWarnWhenAuthExistsButProviderUnselected(t *testing.T) {
 }
 
 func TestNewModelConfiguresTextareaInput(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	if m.textarea.Prompt != "" {
 		t.Fatalf("expected empty textarea prompt, got %q", m.textarea.Prompt)
@@ -146,7 +146,7 @@ func TestNewModelConfiguresTextareaInput(t *testing.T) {
 }
 
 func TestGhosttyShiftEnterInsertsNewline(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
 	m.textarea.SetValue("hello")
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlJ})
@@ -158,7 +158,7 @@ func TestGhosttyShiftEnterInsertsNewline(t *testing.T) {
 }
 
 func TestAltEnterInsertsNewline(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
 	m.textarea.SetValue("hello")
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter, Alt: true})
@@ -186,7 +186,7 @@ func TestShiftEnterRawSequences(t *testing.T) {
 }
 
 func TestViewUsesInputViewForInput(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
 	m.ready = true
 	m.width = 80
 	m.height = 24
@@ -201,7 +201,7 @@ func TestViewUsesInputViewForInput(t *testing.T) {
 }
 
 func TestViewShowsProviderModelThinkingAndContextAboveInput(t *testing.T) {
-	m := NewModel(&config.AgentConfig{Provider: "openrouter", Model: "test/model", Thinking: "medium"}, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{Provider: "openrouter", Model: "test/model", Thinking: "medium"}, nil, nil, nil, nil, nil, nil, nil, nil)
 	m.ready = true
 	m.width = 80
 	m.height = 24
@@ -223,7 +223,7 @@ func TestViewShowsProviderModelThinkingAndContextAboveInput(t *testing.T) {
 }
 
 func TestStatusLineDoesNotExceedTerminalWidth(t *testing.T) {
-	m := NewModel(&config.AgentConfig{Provider: "openrouter", Model: "anthropic/claude-super-long-model-name-that-would-wrap-the-footer-and-break-the-tui", Thinking: "medium"}, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{Provider: "openrouter", Model: "anthropic/claude-super-long-model-name-that-would-wrap-the-footer-and-break-the-tui", Thinking: "medium"}, nil, nil, nil, nil, nil, nil, nil, nil)
 	m.width = 40
 
 	status := stripANSI(m.renderStatusLine())
@@ -235,7 +235,7 @@ func TestStatusLineDoesNotExceedTerminalWidth(t *testing.T) {
 func TestShiftTabCyclesThinkingLevels(t *testing.T) {
 	withTempWorkingDir(t)
 	t.Setenv("HOME", t.TempDir())
-	m := NewModel(&config.AgentConfig{Provider: "openrouter", Thinking: "none"}, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{Provider: "openrouter", Thinking: "none"}, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
 	updatedModel := updated.(Model)
@@ -257,7 +257,7 @@ func TestShiftTabCyclesThinkingLevels(t *testing.T) {
 }
 
 func TestShiftTabDoesNotCycleThinkingWhenPending(t *testing.T) {
-	m := NewModel(&config.AgentConfig{Thinking: "none"}, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{Thinking: "none"}, nil, nil, nil, nil, nil, nil, nil, nil)
 	m.pending = true
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
@@ -275,7 +275,7 @@ func TestSelectModelRecreatesProviderWhenProviderChanges(t *testing.T) {
 	}
 	m := NewModel(&config.AgentConfig{Provider: "deepseek", Model: "deepseek-v4-pro"}, deepseek, nil, nil, nil, nil, nil, func(name string) string {
 		return map[string]string{"openrouter": "sk-or-test", "deepseek": "sk-test"}[name]
-	})
+	}, nil)
 
 	m.selectModel("openrouter", "openai/gpt-4o")
 
@@ -297,7 +297,7 @@ func TestStatusLineUsesSelectedModelContextLength(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	m := NewModel(&config.AgentConfig{Provider: "metadata", Model: "small-model", Thinking: "none"}, nil, nil, nil, nil, reg, nil, nil)
+	m := NewModel(&config.AgentConfig{Provider: "metadata", Model: "small-model", Thinking: "none"}, nil, nil, nil, nil, reg, nil, nil, nil)
 	m.width = 120
 	if got := stripANSI(m.renderStatusLine()); !strings.Contains(got, "/32k") {
 		t.Fatalf("expected small model context in status, got %q", got)
@@ -319,7 +319,7 @@ func TestTurnUsageUpdatesCostWithoutClearingPending(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	m := NewModel(&config.AgentConfig{Provider: "metadata", Model: "priced-model", Thinking: "none"}, nil, nil, nil, nil, reg, nil, nil)
+	m := NewModel(&config.AgentConfig{Provider: "metadata", Model: "priced-model", Thinking: "none"}, nil, nil, nil, nil, reg, nil, nil, nil)
 	m.pending = true
 	m.agentEvents = make(chan agent.Event)
 	m.messages = []messageItem{{role: "assistant"}}
@@ -345,7 +345,7 @@ func TestStatusLineShowsCumulativeCost(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	m := NewModel(&config.AgentConfig{Provider: "metadata", Model: "priced-model", Thinking: "none"}, nil, nil, nil, nil, reg, nil, nil)
+	m := NewModel(&config.AgentConfig{Provider: "metadata", Model: "priced-model", Thinking: "none"}, nil, nil, nil, nil, reg, nil, nil, nil)
 	m.width = 120
 	usage := &provider.Usage{InputTokens: 1_000_000, OutputTokens: 100_000}
 	m.calculateUsageCost(usage)
@@ -357,7 +357,7 @@ func TestStatusLineShowsCumulativeCost(t *testing.T) {
 }
 
 func TestStatusLineShowsSubscriptionInsteadOfCost(t *testing.T) {
-	m := NewModel(&config.AgentConfig{Provider: "openai-codex", Model: "gpt-5.1", Thinking: "none"}, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{Provider: "openai-codex", Model: "gpt-5.1", Thinking: "none"}, nil, nil, nil, nil, nil, nil, nil, nil)
 	m.width = 120
 	m.messages = []messageItem{{role: "assistant", usageData: &provider.Usage{InputTokens: 1_000_000, OutputTokens: 100_000}}}
 
@@ -367,7 +367,7 @@ func TestStatusLineShowsSubscriptionInsteadOfCost(t *testing.T) {
 }
 
 func TestStatusLineUsesStaticContextFallbackWhenRegistryMissingMetadata(t *testing.T) {
-	m := NewModel(&config.AgentConfig{Provider: "openrouter", Model: "anthropic/claude-sonnet-4-5", Thinking: "none"}, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{Provider: "openrouter", Model: "anthropic/claude-sonnet-4-5", Thinking: "none"}, nil, nil, nil, nil, nil, nil, nil, nil)
 	m.width = 120
 	if got := stripANSI(m.renderStatusLine()); !strings.Contains(got, "/200k") {
 		t.Fatalf("expected claude context fallback in status, got %q", got)
@@ -389,7 +389,7 @@ func TestSelectModelClearsStaleProviderWhenNewProviderUnauthorized(t *testing.T)
 			return "sk-test"
 		}
 		return ""
-	})
+	}, nil)
 
 	m.selectModel("openrouter", "openai/gpt-4o")
 
@@ -399,7 +399,7 @@ func TestSelectModelClearsStaleProviderWhenNewProviderUnauthorized(t *testing.T)
 }
 
 func TestRenderMessagesShowsReasoningWhenEnabled(t *testing.T) {
-	m := NewModel(&config.AgentConfig{Reasoning: true}, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{Reasoning: true}, nil, nil, nil, nil, nil, nil, nil, nil)
 	m.messages = append(m.messages, messageItem{role: "assistant", reasoning: "hidden chain", content: "final answer"})
 
 	got := m.renderMessages()
@@ -412,7 +412,7 @@ func TestRenderMessagesShowsReasoningWhenEnabled(t *testing.T) {
 }
 
 func TestRenderMessagesHidesReasoningWhenDisabled(t *testing.T) {
-	m := NewModel(&config.AgentConfig{Reasoning: false}, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{Reasoning: false}, nil, nil, nil, nil, nil, nil, nil, nil)
 	m.messages = append(m.messages, messageItem{role: "assistant", reasoning: "hidden chain", content: "final answer"})
 
 	got := m.renderMessages()
@@ -425,7 +425,7 @@ func TestRenderMessagesHidesReasoningWhenDisabled(t *testing.T) {
 }
 
 func TestUpdateRoutesReasoningDeltaToReasoningField(t *testing.T) {
-	m := NewModel(&config.AgentConfig{Reasoning: true}, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{Reasoning: true}, nil, nil, nil, nil, nil, nil, nil, nil)
 	m.messages = []messageItem{{role: "assistant"}}
 
 	updated, _ := m.Update(agentEventMsg(agent.Event{Type: "reasoning_delta", ReasoningDelta: "thinking..."}))
@@ -440,7 +440,7 @@ func TestUpdateRoutesReasoningDeltaToReasoningField(t *testing.T) {
 }
 
 func TestUpdateRoutesPageKeysToViewport(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
 	m.ready = true
 	m.width = 80
 	m.height = 10
@@ -457,7 +457,7 @@ func TestUpdateRoutesPageKeysToViewport(t *testing.T) {
 }
 
 func TestRefreshViewportPreservesManualScrollPosition(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
 	m.viewport = viewport.New(80, 5)
 	for i := 0; i < 30; i++ {
 		m.messages = append(m.messages, messageItem{role: "system", content: fmt.Sprintf("line %02d", i)})
@@ -511,7 +511,7 @@ func TestOAuthProviderOptionUsesOpenAIOAuthID(t *testing.T) {
 }
 
 func TestEscCancelsPendingAgent(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	m.pending = true
 	m.agentCancel = cancel
@@ -577,7 +577,7 @@ func TestWrapText_PreservesNewlines(t *testing.T) {
 }
 
 func TestWrapText_WrapsAllMessages(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil)
 	m.width = 40
 	m.messages = append(m.messages, messageItem{role: "assistant", content: "this is a long response that should wrap to multiple lines"})
 	m.messages = append(m.messages, messageItem{role: "system", content: "this is a system message that is also very long and must wrap"})
@@ -592,7 +592,7 @@ func TestWrapText_WrapsAllMessages(t *testing.T) {
 	}
 }
 func TestEscDoesNothingWhenNotPending(t *testing.T) {
-	m := NewModel(&config.AgentConfig{HasAuthorizedProvider: true}, nil, nil, nil, nil, nil, nil, nil)
+	m := NewModel(&config.AgentConfig{HasAuthorizedProvider: true}, nil, nil, nil, nil, nil, nil, nil, nil)
 	m.ready = true
 	m.width = 80
 	m.height = 24

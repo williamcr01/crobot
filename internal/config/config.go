@@ -327,6 +327,9 @@ func EnsureBaseConfig() error {
 	if err := os.MkdirAll(filepath.Join(dir, "plugins"), 0o755); err != nil {
 		return fmt.Errorf("create plugin directory: %w", err)
 	}
+	if err := os.MkdirAll(filepath.Join(dir, "skills"), 0o755); err != nil {
+		return fmt.Errorf("create skills directory: %w", err)
+	}
 	path := filepath.Join(dir, "agent.config.json")
 	if _, err := os.Stat(path); err == nil {
 		return nil
