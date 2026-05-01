@@ -195,11 +195,10 @@ func RenderToolCall(tc toolRenderItem, width int, expanded bool, s Styles) strin
 		statusLine = blockStyles.ToolMeta.Render("running…")
 	case toolDone:
 		dur := formatDuration(tc.duration)
-		statusLine = fmt.Sprintf("%s %s %s",
-			statusColor.Render(statusIcon),
-			blockStyles.ToolMeta.Render(dur),
-			statusColor.Render(statusLabel(tc.success)),
-		)
+		sep := blockStyles.ToolMeta.Render(" ")
+		statusLine = statusColor.Render(statusIcon) + sep +
+			blockStyles.ToolMeta.Render(dur) + sep +
+			statusColor.Render(statusLabel(tc.success))
 	default:
 		// pending — no status line yet.
 	}
@@ -208,7 +207,7 @@ func RenderToolCall(tc toolRenderItem, width int, expanded bool, s Styles) strin
 		content.WriteString(statusLine)
 	} else if tc.state == toolDone && tc.output != "" {
 		content.WriteString("\n")
-		content.WriteString(statusColor.Render(statusIcon) + " " + blockStyles.ToolMeta.Render(formatDuration(tc.duration)))
+		content.WriteString(statusColor.Render(statusIcon) + blockStyles.ToolMeta.Render(" ") + blockStyles.ToolMeta.Render(formatDuration(tc.duration)))
 	}
 
 	// Render the entire content as a single block for uniform background.
@@ -228,7 +227,7 @@ func formatSingleToolCallLine(tc toolRenderItem, s Styles) string {
 		return s.BashHeader.Render(tc.args)
 	}
 
-	return label + " " + s.ToolOutput.Render(tc.args)
+	return label + s.ToolOutput.Render(" ") + s.ToolOutput.Render(tc.args)
 }
 
 // formatOutputPreview returns a preview of the tool output, capped at maxLines.
