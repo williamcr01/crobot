@@ -853,16 +853,16 @@ func (m Model) handleAgentEvent(ev agent.Event) (tea.Model, tea.Cmd) {
 			m.attachUsageToLastAssistant(ev.MessageEnd.Usage)
 
 			if m.session != nil {
-			rec := session.Record{
-				Role:      "assistant",
-				Content:   ev.MessageEnd.Text,
-				Reasoning: ev.MessageEnd.ReasoningContent,
-				Timestamp: time.Now(),
+				rec := session.Record{
+					Role:      "assistant",
+					Content:   ev.MessageEnd.Text,
+					Reasoning: ev.MessageEnd.ReasoningContent,
+					Timestamp: time.Now(),
+				}
+				if rec.Content != "" || rec.Reasoning != "" {
+					_ = m.session.Append(rec)
+				}
 			}
-			if rec.Content != "" || rec.Reasoning != "" {
-				_ = m.session.Append(rec)
-			}
-		}
 		}
 		m.refreshViewport()
 

@@ -2080,6 +2080,27 @@ func TestCenterContent_Empty(t *testing.T) {
 	}
 }
 
+func TestRenderMessagesCenteredUsesNarrowWrapWidth(t *testing.T) {
+	m := NewModel(&config.AgentConfig{Alignment: "centered"}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
+	m.width = 80
+	m.messages = []messageItem{{role: "assistant", content: strings.Repeat("word ", 40)}}
+
+	got := m.renderMessages()
+	var contentLines int
+	for _, line := range strings.Split(got, "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		contentLines++
+		if w := lipgloss.Width(line); w > 60 {
+			t.Fatalf("expected centered content to wrap to narrow column, got width %d for %q", w, line)
+		}
+	}
+	if contentLines < 2 {
+		t.Fatalf("expected response to wrap to multiple lines, got %d content lines: %q", contentLines, got)
+	}
+}
+
 // --- Status line truncation ---
 
 func TestTruncatePlainLine(t *testing.T) {
