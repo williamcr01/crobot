@@ -28,6 +28,7 @@ import (
 	"crobot/internal/tools"
 	"crobot/internal/version"
 
+	"github.com/charmbracelet/bubbles/cursor"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -210,6 +211,8 @@ func NewModel(
 	ta.Focus()
 	ta.CharLimit = 0
 	ta.ShowLineNumbers = false
+	// Disable blinking cursor
+	ta.Cursor.SetMode(cursor.CursorStatic)
 	// Bubble Tea v1 parses LF (\n) as ctrl+j. Several terminals emit LF for Shift+Enter.
 	ta.KeyMap.InsertNewline.SetKeys("ctrl+j")
 	ta.KeyMap.InsertNewline.SetEnabled(true)
@@ -258,7 +261,6 @@ func NewModel(
 // Init returns the initial commands.
 func (m Model) Init() tea.Cmd {
 	return tea.Batch(
-		textarea.Blink,
 		m.spinner.Tick,
 	)
 }
