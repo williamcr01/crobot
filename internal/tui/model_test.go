@@ -3291,3 +3291,268 @@ func TestSelectThemeUpdatesConfigAndStyles(t *testing.T) {
 		t.Fatalf("expected theme switch message, got %#v", m.messages)
 	}
 }
+
+// --- Text input wrapping tests ---
+
+func TestInputVisualLineCount_Empty(t *testing.T) {
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
+
+	if m.inputVisualLineCount() != 1 {
+		t.Fatalf("expected 1 line for empty input, got %d", m.inputVisualLineCount())
+	}
+}
+
+func TestInputVisualLineCount_ShortText(t *testing.T) {
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
+	m.textarea.SetValue("hello")
+	m.textarea.SetWidth(80)
+
+	if m.inputVisualLineCount() != 1 {
+		t.Fatalf("expected 1 line for short text, got %d", m.inputVisualLineCount())
+	}
+}
+
+func TestInputVisualLineCount_WrapsToMultipleLines(t *testing.T) {
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
+	// Set a narrow window width so text wraps.
+	m.width = 20
+	m.textarea.SetWidth(m.textareaWidth())
+	m.textarea.SetValue("hello world this is long")
+
+	count := m.inputVisualLineCount()
+	if count < 2 {
+		t.Fatalf("expected at least 2 lines for long text, got %d", count)
+	}
+	if count > 5 {
+		t.Fatalf("expected at most 5 lines (max), got %d", count)
+	}
+}
+
+func TestInputVisualLineCount_CappedAtFive(t *testing.T) {
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
+	m.width = 20
+	m.textarea.SetWidth(m.textareaWidth())
+	m.textarea.SetValue(strings.Repeat("abcdefghij ", 10))
+
+	count := m.inputVisualLineCount()
+	if count != 5 {
+		t.Fatalf("expected max 5 lines, got %d", count)
+	}
+}
+
+func TestInputVisualLineCount_RespectsNewlines(t *testing.T) {
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
+	m.textarea.SetWidth(80)
+	m.textarea.SetValue("line one\nline two\nline three")
+
+	count := m.inputVisualLineCount()
+	if count != 3 {
+		t.Fatalf("expected 3 lines for 3 newlines, got %d", count)
+	}
+}
+
+func TestInputVisualLineCount_NewlinePlusWrap(t *testing.T) {
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
+	m.width = 40
+	m.textarea.SetWidth(m.textareaWidth())
+	m.textarea.SetValue("hello world\nfoo bar baz")
+
+	count := m.inputVisualLineCount()
+	// "hello world" is 11 chars, textareaWidth = 36, fits on 1 line
+	// "foo bar baz" is 11 chars, textareaWidth = 36, fits on 1 line
+	// total = 2
+	if count < 2 {
+		t.Fatalf("expected at least 2 lines, got %d", count)
+	}
+}
+
+func TestRenderInputView_WrapsLongText(t *testing.T) {
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
+	m.width = 80
+	m.textarea.SetWidth(m.textareaWidth())
+	// textareaWidth is 76. 77 chars will wrap to 2 lines.
+	m.textarea.SetValue(strings.Repeat("a", 77))
+
+	view := m.renderInputView()
+	lines := strings.Split(view, "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 lines for text just past width, got %d: %q", len(lines), view)
+	}
+	// Second line should have "  " indent
+	if !strings.HasPrefix(lines[1], "  ") {
+		t.Fatalf("expected continuation indent on second line: %q", lines[1])
+	}
+}
+
+func TestRenderInputView_NoWrapForShortText(t *testing.T) {
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
+	m.width = 80
+	m.textarea.SetWidth(m.textareaWidth())
+	m.textarea.SetValue("hello")
+
+	view := m.renderInputView()
+	if strings.Contains(view, "\n") {
+		t.Fatalf("expected single line for short text, got %q", view)
+	}
+	// Should include cursor
+	if !strings.Contains(stripANSI(view), "hello") {
+		t.Fatalf("expected text in view: %q", view)
+	}
+}
+
+func TestRenderInputView_PendingShowsNoWrapping(t *testing.T) {
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
+	m.pending = true
+	m.textarea.SetValue(strings.Repeat("a", 200))
+
+	view := m.renderInputView()
+	if strings.Contains(view, "\n") {
+		t.Fatalf("expected no wrapping when pending, got %q", view)
+	}
+}
+
+func TestRenderInputView_CursorOnLastLine(t *testing.T) {
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
+	m.width = 80
+	m.textarea.SetWidth(m.textareaWidth())
+	// 77 chars wraps to 2 lines (textareaWidth = 76)
+	m.textarea.SetValue(strings.Repeat("a", 77))
+
+	view := m.renderInputView()
+	lines := strings.Split(view, "\n")
+	if len(lines) < 2 {
+		t.Fatalf("expected at least 2 lines, got %d: %q", len(lines), view)
+	}
+	// Cursor should be on the last line
+	lastLine := lines[len(lines)-1]
+	if !strings.Contains(lastLine, "█") {
+		t.Fatalf("expected cursor on last line: %q", lastLine)
+	}
+	// First line should NOT have cursor
+	if strings.Contains(lines[0], "█") {
+		t.Fatalf("expected no cursor on first wrapped line: %q", lines[0])
+	}
+}
+
+func TestTextareaWidth_UsesWindowWidth(t *testing.T) {
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
+	m.width = 100
+
+	w := m.textareaWidth()
+	if w != 96 {
+		t.Fatalf("expected width 96 (100-4), got %d", w)
+	}
+}
+
+func TestTextareaWidth_Minimum(t *testing.T) {
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
+	m.width = 10
+
+	w := m.textareaWidth()
+	if w < 20 {
+		t.Fatalf("expected at least 20, got %d", w)
+	}
+}
+
+func TestTextareaHeightUpdatedOnTyping(t *testing.T) {
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
+	m.ready = true
+	m.width = 40
+	m.textarea.SetWidth(m.textareaWidth())
+	m.textarea.SetHeight(1)
+
+	// Type a long string that should wrap
+	m.textarea.SetValue(strings.Repeat("a", 50))
+
+	// Simulate the fallthrough update
+	var cmd tea.Cmd
+	m.textarea, cmd = m.textarea.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	if m.ready && m.textarea.Height() != m.inputVisualLineCount() {
+		m.textarea.SetHeight(m.inputVisualLineCount())
+	}
+	_ = cmd
+
+	h := m.textarea.Height()
+	if h <= 1 {
+		t.Fatalf("expected height > 1 for long text, got %d", h)
+	}
+}
+
+func TestResetTextarea_ResetsHeight(t *testing.T) {
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
+	m.ready = true
+	m.width = 80
+	m.textarea.SetWidth(m.textareaWidth())
+	m.textarea.SetHeight(3)
+	m.textarea.SetValue("some text")
+
+	m.resetTextarea()
+
+	if m.textarea.Value() != "" {
+		t.Fatalf("expected reset value, got %q", m.textarea.Value())
+	}
+	if m.textarea.Height() != 1 {
+		t.Fatalf("expected height reset to 1, got %d", m.textarea.Height())
+	}
+}
+
+func TestInputVisualLineCount_ZeroWidth(t *testing.T) {
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
+	m.width = 0
+	m.textarea.SetValue("hello world this is very long")
+
+	// With width 0, textareaWidth() falls back to 20.
+	// 31 chars at width 20 = 2 lines.
+	count := m.inputVisualLineCount()
+	if count < 1 {
+		t.Fatalf("expected at least 1 line, got %d", count)
+	}
+}
+
+func TestRenderInputView_ZeroWidth(t *testing.T) {
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
+	m.width = 0
+	m.textarea.SetValue("hello")
+
+	view := m.renderInputView()
+	if !strings.Contains(view, "hello") {
+		t.Fatalf("expected text in view with zero width: %q", view)
+	}
+	if !strings.Contains(view, "█") {
+		t.Fatalf("expected cursor in view with zero width: %q", view)
+	}
+}
+
+func TestInputVisualLineCount_EmptyLogicalLines(t *testing.T) {
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
+	m.width = 80
+	m.textarea.SetWidth(m.textareaWidth())
+	m.textarea.SetValue("\n\n")
+
+	// Three lines: empty, empty, empty
+	count := m.inputVisualLineCount()
+	if count != 3 {
+		t.Fatalf("expected 3 lines for \\n\\n, got %d", count)
+	}
+}
+
+func TestRenderInputView_NewlineContinuation(t *testing.T) {
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
+	m.width = 80
+	m.textarea.SetWidth(m.textareaWidth())
+	m.textarea.SetValue("line one\nline two")
+
+	view := m.renderInputView()
+	lines := strings.Split(view, "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 lines, got %d: %q", len(lines), view)
+	}
+	// Second line should have indent
+	if !strings.HasPrefix(lines[1], "  ") {
+		t.Fatalf("expected indent on continuation line: %q", lines[1])
+	}
+	// Cursor on last line
+	if !strings.Contains(lines[1], "█") {
+		t.Fatalf("expected cursor on last line: %q", lines[1])
+	}
+}

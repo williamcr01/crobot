@@ -259,7 +259,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.viewport.YPosition = 0
 		m.viewport.SetContent(m.renderViewportContent())
 
-		m.textarea.SetWidth(msg.Width - 4)
+		tw := m.textareaWidth()
+		m.textarea.SetWidth(tw)
+		m.textarea.SetHeight(m.inputVisualLineCount())
 		return m, nil
 
 	case logoutResultMsg:
@@ -456,14 +458,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if !compaction.CanCompact(messagesToCompaction(m.messages)) {
 					m.messages = append(m.messages, messageItem{role: "error", content: "Nothing to compact (session already compacted or empty)."})
 					m.refreshViewport()
-					m.textarea.Reset()
+					m.resetTextarea()
 					m.textarea.Focus()
 					return m, nil
 				}
 				instructions := strings.TrimSpace(strings.TrimPrefix(input, "/compact"))
 				m.messages = append(m.messages, messageItem{role: "system", content: "Compacting context...", ephemeral: true})
 				m.refreshViewport()
-				m.textarea.Reset()
+				m.resetTextarea()
 				m.textarea.Blur()
 				return m, m.startCompaction(instructions)
 			}
@@ -473,7 +475,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.modelPickerActive = true
 				m.modelPickerFilter = ""
 				m.modelPickerIndex = 0
-				m.textarea.Reset()
+				m.resetTextarea()
 				m.textarea.Focus()
 				return m, nil
 			}
@@ -483,7 +485,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.themePickerActive = true
 				m.themePickerFilter = ""
 				m.themePickerIndex = 0
-				m.textarea.Reset()
+				m.resetTextarea()
 				m.textarea.Focus()
 				return m, nil
 			}
@@ -493,7 +495,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.loginPickerActive = true
 				m.loginPickerFilter = ""
 				m.loginPickerIndex = 0
-				m.textarea.Reset()
+				m.resetTextarea()
 				m.textarea.Focus()
 				return m, nil
 			}
@@ -503,7 +505,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.logoutPickerActive = true
 				m.logoutPickerFilter = ""
 				m.logoutPickerIndex = 0
-				m.textarea.Reset()
+				m.resetTextarea()
 				m.textarea.Focus()
 				return m, nil
 			}
@@ -513,7 +515,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.resumePickerActive = true
 				m.resumePickerFilter = ""
 				m.resumePickerIndex = 0
-				m.textarea.Reset()
+				m.resetTextarea()
 				m.textarea.Focus()
 				return m, nil
 			}
@@ -526,7 +528,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.ResetSession()
 				m.messages = append(m.messages, messageItem{role: "system", content: "New session started.", ephemeral: true})
 				m.refreshViewport()
-				m.textarea.Reset()
+				m.resetTextarea()
 				m.textarea.Focus()
 				return m, nil
 			}
@@ -535,7 +537,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if input == "/session" {
 				m.messages = append(m.messages, messageItem{role: "system", content: m.sessionInfoText(), ephemeral: true})
 				m.refreshViewport()
-				m.textarea.Reset()
+				m.resetTextarea()
 				m.textarea.Focus()
 				return m, nil
 			}
@@ -555,12 +557,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.messages = append(m.messages, messageItem{role: "system", content: msg, ephemeral: true})
 				m.refreshViewport()
-				m.textarea.Reset()
+				m.resetTextarea()
 				m.textarea.Focus()
 				return m, nil
 			}
 
-			m.textarea.Reset()
+			m.resetTextarea()
 			m.textarea.Blur()
 
 			// Slash commands.
@@ -664,6 +666,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	prevValue := m.textarea.Value()
 	m.textarea, cmd = m.textarea.Update(msg)
+	if m.ready && m.textarea.Height() != m.inputVisualLineCount() {
+		m.textarea.SetHeight(m.inputVisualLineCount())
+	}
 	if m.modelPickerActive {
 		prev := m.modelPickerFilter
 		m.modelPickerFilter = m.textarea.Value()
@@ -971,7 +976,13 @@ func (m Model) View() string {
 		}
 		b.WriteString(statusLine)
 		b.WriteString("\n")
-		input := "> " + m.renderInputView()
+		input := m.renderInputView()
+		// Prepend "> " only to the first line.
+		if idx := strings.Index(input, "\n"); idx >= 0 {
+			input = "> " + input[:idx] + "\n" + input[idx+1:]
+		} else {
+			input = "> " + input
+		}
 		if m.config.Alignment == "centered" {
 			input = centerContent(input, m.width)
 		}
@@ -987,12 +998,54 @@ func (m Model) View() string {
 	return b.String()
 }
 
+func (m *Model) resetTextarea() {
+	m.textarea.Reset()
+	m.textarea.SetHeight(1)
+}
+
 func (m Model) renderInputView() string {
 	value := m.textarea.Value()
 	if m.pending {
 		return value
 	}
-	return value + m.styles.InputCursor.Render("█")
+
+	width := m.textareaWidth()
+	if width <= 0 {
+		return value + m.styles.InputCursor.Render("█")
+	}
+
+	cursor := m.styles.InputCursor.Render("█")
+
+	var lines []string
+	logicalLines := strings.Split(value, "\n")
+	if len(logicalLines) == 0 {
+		return cursor
+	}
+
+	for li, logical := range logicalLines {
+		wrapped := wrapLine(logical, width)
+		subLines := strings.Split(wrapped, "\n")
+		for si, sub := range subLines {
+			if li == 0 && si == 0 {
+				// First line — "> " prefix added in View().
+				lines = append(lines, sub)
+			} else {
+				// Continuation — indent to align with text after "> ".
+				lines = append(lines, "  "+sub)
+			}
+		}
+	}
+
+	if len(lines) == 0 {
+		return cursor
+	}
+
+	// Append cursor to last line.
+	last := lines[len(lines)-1]
+	last += cursor
+	lines[len(lines)-1] = last
+
+	return strings.Join(lines, "\n")
 }
 
 func (m Model) renderStatusLine() string {
@@ -1255,7 +1308,7 @@ func (m Model) handleResumePickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) 
 	switch msg.Type {
 	case tea.KeyCtrlC, tea.KeyEsc:
 		m.resumePickerActive = false
-		m.textarea.Reset()
+		m.resetTextarea()
 		m.textarea.Focus()
 		return m, nil, true
 	case tea.KeyEnter, tea.KeyTab:
@@ -1264,7 +1317,7 @@ func (m Model) handleResumePickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) 
 			m.resumeSession(sessions[m.resumePickerIndex])
 		}
 		m.resumePickerActive = false
-		m.textarea.Reset()
+		m.resetTextarea()
 		m.textarea.Focus()
 		return m, nil, true
 	case tea.KeyUp:
@@ -1377,13 +1430,13 @@ func (m Model) handleModelPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 	switch msg.Type {
 	case tea.KeyCtrlC:
 		m.modelPickerActive = false
-		m.textarea.Reset()
+		m.resetTextarea()
 		m.textarea.Focus()
 		return m, nil, true
 
 	case tea.KeyEsc:
 		m.modelPickerActive = false
-		m.textarea.Reset()
+		m.resetTextarea()
 		m.textarea.Focus()
 		return m, nil, true
 
@@ -1394,7 +1447,7 @@ func (m Model) handleModelPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 			m.selectModel(selected.ModelProvider, selected.ModelID)
 		}
 		m.modelPickerActive = false
-		m.textarea.Reset()
+		m.resetTextarea()
 		m.textarea.Focus()
 		return m, nil, true
 
@@ -1419,7 +1472,7 @@ func (m Model) handleModelPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 			m.selectModel(selected.ModelProvider, selected.ModelID)
 		}
 		m.modelPickerActive = false
-		m.textarea.Reset()
+		m.resetTextarea()
 		m.textarea.Focus()
 		return m, nil, true
 	}
@@ -1450,13 +1503,13 @@ func (m Model) handleThemePickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 	switch msg.Type {
 	case tea.KeyCtrlC:
 		m.themePickerActive = false
-		m.textarea.Reset()
+		m.resetTextarea()
 		m.textarea.Focus()
 		return m, nil, true
 
 	case tea.KeyEsc:
 		m.themePickerActive = false
-		m.textarea.Reset()
+		m.resetTextarea()
 		m.textarea.Focus()
 		return m, nil, true
 
@@ -1467,7 +1520,7 @@ func (m Model) handleThemePickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 			m.selectTheme(selected.Name)
 		}
 		m.themePickerActive = false
-		m.textarea.Reset()
+		m.resetTextarea()
 		m.textarea.Focus()
 		return m, nil, true
 
@@ -1492,7 +1545,7 @@ func (m Model) handleThemePickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 			m.selectTheme(selected.Name)
 		}
 		m.themePickerActive = false
-		m.textarea.Reset()
+		m.resetTextarea()
 		m.textarea.Focus()
 		return m, nil, true
 	}
@@ -1662,12 +1715,12 @@ func (m Model) handleLoginPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 	switch msg.Type {
 	case tea.KeyCtrlC:
 		m.loginPickerActive = false
-		m.textarea.Reset()
+		m.resetTextarea()
 		m.textarea.Focus()
 		return m, nil, true
 	case tea.KeyEsc:
 		m.loginPickerActive = false
-		m.textarea.Reset()
+		m.resetTextarea()
 		m.textarea.Focus()
 		return m, nil, true
 	case tea.KeyEnter, tea.KeyTab:
@@ -1677,7 +1730,7 @@ func (m Model) handleLoginPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 		m.clampLoginPickerIndex(providers)
 		selected := providers[m.loginPickerIndex]
 		m.loginPickerActive = false
-		m.textarea.Reset()
+		m.resetTextarea()
 		m.textarea.Blur()
 		m.pending = true
 		m.messages = append(m.messages, messageItem{role: "system", content: fmt.Sprintf("Opening browser for %s OAuth login...", selected.Name), ephemeral: true})
@@ -1768,12 +1821,12 @@ func (m Model) handleLogoutPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) 
 	switch msg.Type {
 	case tea.KeyCtrlC:
 		m.logoutPickerActive = false
-		m.textarea.Reset()
+		m.resetTextarea()
 		m.textarea.Focus()
 		return m, nil, true
 	case tea.KeyEsc:
 		m.logoutPickerActive = false
-		m.textarea.Reset()
+		m.resetTextarea()
 		m.textarea.Focus()
 		return m, nil, true
 	case tea.KeyEnter, tea.KeyTab:
@@ -1783,7 +1836,7 @@ func (m Model) handleLogoutPickerKey(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) 
 		m.clampLogoutPickerIndex(providers)
 		selected := providers[m.logoutPickerIndex]
 		m.logoutPickerActive = false
-		m.textarea.Reset()
+		m.resetTextarea()
 		m.textarea.Blur()
 		m.pending = true
 		return m, m.logoutProviderCmd(selected.ID), true
@@ -2061,7 +2114,7 @@ func (m *Model) ResetSession() {
 	// Clear messages, compaction state, input, and selection.
 	m.messages = nil
 	m.previousCompactionSummary = ""
-	m.textarea.Reset()
+	m.resetTextarea()
 	m.selection.clear()
 	m.commandSuggestionIndex = 0
 }
@@ -2112,7 +2165,7 @@ func (m *Model) selectModel(providerName, modelID string) {
 		}
 	}
 
-	m.textarea.Reset()
+	m.resetTextarea()
 	m.commandSuggestionIndex = 0
 	m.messages = append(m.messages, messageItem{
 		role:      "system",
@@ -2268,7 +2321,7 @@ func (m Model) themePickerHeight() int {
 }
 
 func (m Model) dynamicViewportHeight() int {
-	footerHeight := 5 + m.commandSuggestionHeight()
+	footerHeight := 4 + m.textarea.Height() + m.commandSuggestionHeight()
 	if m.modelPickerActive {
 		footerHeight = 3 + m.modelPickerHeight()
 	}
@@ -2452,6 +2505,54 @@ func (m *Model) refreshViewport() {
 	}
 }
 
+// inputVisualLineCount returns the number of visual lines the textarea value needs.
+// Lines wrap at the textarea width.
+func (m Model) inputVisualLineCount() int {
+	value := m.textarea.Value()
+	if value == "" {
+		return 1
+	}
+	width := m.textareaWidth()
+	if width <= 0 {
+		return 1
+	}
+
+	lines := strings.Split(value, "\n")
+	count := 0
+	for _, logicalLine := range lines {
+		if logicalLine == "" {
+			count++
+			continue
+		}
+		vl := lipgloss.Width(logicalLine)
+		if vl == 0 {
+			count++
+			continue
+		}
+		n := (vl + width - 1) / width
+		if n < 1 {
+			n = 1
+		}
+		count += n
+	}
+	if count < 1 {
+		count = 1
+	}
+	const maxLines = 5
+	if count > maxLines {
+		count = maxLines
+	}
+	return count
+}
+
+func (m Model) textareaWidth() int {
+	w := m.width - 4
+	if w < 20 {
+		w = 20
+	}
+	return w
+}
+
 // renderViewportContent returns the full viewport content, with selection overlay if active.
 func (m Model) renderViewportContent() string {
 	content := m.renderMessages()
@@ -2561,7 +2662,7 @@ func (m *Model) handleCompactionResult(msg compactionResultMsg) (tea.Model, tea.
 	if msg.err != nil {
 		m.messages = append(m.messages, messageItem{role: "error", content: fmt.Sprintf("Compaction failed: %v", msg.err)})
 		m.refreshViewport()
-		m.textarea.Reset()
+		m.resetTextarea()
 		m.textarea.Focus()
 		return m, nil
 	}
@@ -2579,7 +2680,7 @@ func (m *Model) handleCompactionResult(msg compactionResultMsg) (tea.Model, tea.
 	status := fmt.Sprintf("Context compacted — %d tokens summarized.", result.TokensBefore)
 	m.messages = append(m.messages, messageItem{role: "system", content: status, ephemeral: true})
 	m.refreshViewport()
-	m.textarea.Reset()
+	m.resetTextarea()
 	m.textarea.Focus()
 	return m, nil
 }
