@@ -3632,6 +3632,34 @@ func TestRenderInputView_NewlineContinuation(t *testing.T) {
 	}
 }
 
+func TestRenderInputView_TrailingNewline(t *testing.T) {
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
+	m.width = 80
+	m.textarea.SetWidth(m.textareaWidth())
+	m.textarea.SetValue("hello\n")
+	m.textareaCursorRune = len([]rune(m.textarea.Value()))
+
+	view := m.renderInputView()
+	lines := strings.Split(view, "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 lines for text ending with newline, got %d: %q", len(lines), view)
+	}
+}
+
+func TestRenderInputView_TrailingNewlineMultiple(t *testing.T) {
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
+	m.width = 80
+	m.textarea.SetWidth(m.textareaWidth())
+	m.textarea.SetValue("hello\nworld\n")
+	m.textareaCursorRune = len([]rune(m.textarea.Value()))
+
+	view := m.renderInputView()
+	lines := strings.Split(view, "\n")
+	if len(lines) != 3 {
+		t.Fatalf("expected 3 lines for text with trailing newline, got %d: %q", len(lines), view)
+	}
+}
+
 func TestExpandPasteMarkers_NoStore(t *testing.T) {
 	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	input := "hello world"

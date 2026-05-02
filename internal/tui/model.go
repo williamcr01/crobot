@@ -1284,6 +1284,15 @@ func buildVisualLines(runes []rune, width int) []visualLineRange {
 		}
 	}
 
+	// If the text ends with a newline, append an empty visual line.
+	// Without this, "hello\n" renders as 1 line instead of 2.
+	if len(runes) > 0 && runes[len(runes)-1] == '\n' {
+		lines = append(lines, visualLineRange{
+			startRune: len(runes),
+			endRune:   len(runes),
+		})
+	}
+
 	return lines
 }
 
