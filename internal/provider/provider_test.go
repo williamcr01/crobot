@@ -172,6 +172,11 @@ func TestDeepSeekReasoningEffort(t *testing.T) {
 	prov := &OpenAIProvider{name: "deepseek"}
 
 	params := prov.toChatParams(Request{Model: "deepseek-v4-pro", Thinking: "xhigh"}, true)
+	if got := string(params.ReasoningEffort); got != "max" {
+		t.Fatalf("expected reasoning_effort max, got %q", got)
+	}
+
+	params = prov.toChatParams(Request{Model: "deepseek-v4-pro", Thinking: "medium"}, true)
 	if got := string(params.ReasoningEffort); got != "high" {
 		t.Fatalf("expected reasoning_effort high, got %q", got)
 	}
@@ -179,6 +184,70 @@ func TestDeepSeekReasoningEffort(t *testing.T) {
 	params = prov.toChatParams(Request{Model: "deepseek-v4-pro", Thinking: "none"}, true)
 	if got := string(params.ReasoningEffort); got != "" {
 		t.Fatalf("expected no reasoning_effort for none, got %q", got)
+	}
+}
+
+func TestDeepSeekThinkingToggle(t *testing.T) {
+	prov := &OpenAIProvider{name: "deepseek"}
+
+	params := prov.toChatParams(Request{Model: "deepseek-v4-pro", Thinking: "none"}, true)
+	data, err := json.Marshal(params)
+	if err != nil {
+		t.Fatalf("marshal params: %v", err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("unmarshal params: %v", err)
+	}
+	thinking, ok := raw["thinking"].(map[string]any)
+	if !ok || thinking["type"] != "disabled" {
+		t.Fatalf("expected disabled thinking toggle, got %s", string(data))
+	}
+
+	params = prov.toChatParams(Request{Model: "deepseek-v4-pro", Thinking: "high"}, true)
+	data, err = json.Marshal(params)
+	if err != nil {
+		t.Fatalf("marshal params: %v", err)
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("unmarshal params: %v", err)
+	}
+	thinking, ok = raw["thinking"].(map[string]any)
+	if !ok || thinking["type"] != "enabled" {
+		t.Fatalf("expected enabled thinking toggle, got %s", string(data))
+	}
+}
+
+func TestDeepSeekAssistantToolCallIncludesEmptyReasoningContent(t *testing.T) {
+	prov := &OpenAIProvider{name: "deepseek"}
+	params := prov.toChatParams(Request{
+		Model:    "deepseek-v4-pro",
+		Thinking: "high",
+		Messages: []Message{
+			{Role: "assistant", ToolCalls: []ToolCall{{Name: "echo", ID: "call_1", Args: map[string]any{"message": "hi"}}}},
+			{Role: "tool", ToolCallID: "call_1", Content: "hi"},
+		},
+	}, true)
+
+	data, err := json.Marshal(params)
+	if err != nil {
+		t.Fatalf("marshal params: %v", err)
+	}
+	var raw struct {
+		Messages []map[string]any `json:"messages"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("unmarshal params: %v", err)
+	}
+	if len(raw.Messages) == 0 {
+		t.Fatalf("expected messages, got %s", string(data))
+	}
+	reasoning, ok := raw.Messages[0]["reasoning_content"]
+	if !ok {
+		t.Fatalf("expected reasoning_content field on assistant tool-call message, got %s", string(data))
+	}
+	if reasoning != "" {
+		t.Fatalf("expected empty reasoning_content to be preserved as empty string, got %#v", reasoning)
 	}
 }
 

@@ -123,7 +123,7 @@ func (p *OpenAIProvider) toChatParams(req Request, stream bool) openai.ChatCompl
 		messages = append(messages, openai.SystemMessage(req.SystemPrompt))
 	}
 	for _, m := range req.Messages {
-		messages = append(messages, p.convertMessage(m))
+		messages = append(messages, p.convertMessage(m, req))
 	}
 
 	params := openai.ChatCompletionNewParams{
@@ -141,7 +141,7 @@ func (p *OpenAIProvider) toChatParams(req Request, stream bool) openai.ChatCompl
 	return params
 }
 
-func (p *OpenAIProvider) convertMessage(m Message) openai.ChatCompletionMessageParamUnion {
+func (p *OpenAIProvider) convertMessage(m Message, req Request) openai.ChatCompletionMessageParamUnion {
 	switch m.Role {
 	case "assistant":
 		if len(m.ToolCalls) > 0 {
@@ -151,7 +151,7 @@ func (p *OpenAIProvider) convertMessage(m Message) openai.ChatCompletionMessageP
 					OfString: openai.String(m.Content),
 				}
 			}
-			if m.ReasoningContent != "" {
+			if p.shouldSendReasoningContent(m, req) {
 				assistant.SetExtraFields(map[string]any{
 					"reasoning_content": m.ReasoningContent,
 				})
@@ -175,7 +175,7 @@ func (p *OpenAIProvider) convertMessage(m Message) openai.ChatCompletionMessageP
 				OfString: openai.String(m.Content),
 			},
 		}
-		if m.ReasoningContent != "" {
+		if p.shouldSendReasoningContent(m, req) {
 			assistant.SetExtraFields(map[string]any{
 				"reasoning_content": m.ReasoningContent,
 			})
@@ -191,6 +191,18 @@ func (p *OpenAIProvider) convertMessage(m Message) openai.ChatCompletionMessageP
 	default:
 		return openai.UserMessage(m.Content)
 	}
+}
+
+func (p *OpenAIProvider) shouldSendReasoningContent(m Message, req Request) bool {
+	if m.ReasoningContent != "" {
+		return true
+	}
+	// DeepSeek's thinking-mode tool-call protocol requires the assistant
+	// reasoning_content field to be present on every historical assistant
+	// message that made tool calls. Some responses can carry an empty
+	// reasoning_content; preserving the field (even as "") prevents DeepSeek
+	// from rejecting the next tool-call turn as missing reasoning_content.
+	return p.name == "deepseek" && deepSeekThinkingEnabled(req.Thinking) && len(m.ToolCalls) > 0
 }
 
 func (p *OpenAIProvider) convertTools(tools []ToolDefinition) []openai.ChatCompletionToolUnionParam {
@@ -224,6 +236,15 @@ func (p *OpenAIProvider) setReasoningEffort(params *openai.ChatCompletionNewPara
 		return
 	}
 	if p.name == "deepseek" {
+		if !deepSeekThinkingEnabled(req.Thinking) {
+			params.SetExtraFields(map[string]any{
+				"thinking": map[string]any{"type": "disabled"},
+			})
+			return
+		}
+		params.SetExtraFields(map[string]any{
+			"thinking": map[string]any{"type": "enabled"},
+		})
 		if effort, ok := deepSeekReasoningEffort(req.Thinking); ok {
 			params.ReasoningEffort = shared.ReasoningEffort(effort)
 		}
@@ -234,16 +255,25 @@ func (p *OpenAIProvider) setReasoningEffort(params *openai.ChatCompletionNewPara
 	}
 }
 
+func deepSeekThinkingEnabled(thinking string) bool {
+	switch thinking {
+	case "", "none", "disabled":
+		return false
+	default:
+		return true
+	}
+}
+
 func deepSeekReasoningEffort(thinking string) (string, bool) {
 	switch thinking {
-	case "", "none":
+	case "", "none", "disabled":
 		return "", false
-	case "minimal", "low":
-		return "low", true
-	case "medium":
-		return "medium", true
-	case "high", "xhigh":
+	case "minimal", "low", "medium":
 		return "high", true
+	case "high":
+		return "high", true
+	case "xhigh", "max":
+		return "max", true
 	default:
 		return thinking, true
 	}
