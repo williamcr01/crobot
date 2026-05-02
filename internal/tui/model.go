@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mattn/go-runewidth"
+
 	"crobot/internal/agent"
 	"crobot/internal/commands"
 	"crobot/internal/compaction"
@@ -161,6 +163,12 @@ type Model struct {
 	// Text selection state for mouse drag-select + copy.
 	selection  selectionState
 	plainLines []string // unstyled viewport content lines, 1:1 with styled lines
+
+	// textareaCursorRune tracks the cursor position as a rune offset into the
+	// textarea value. This is needed because the textarea's cursor row/col
+	// are private fields, and we need the position to render the cursor at
+	// the correct visual location when the user navigates with arrow keys.
+	textareaCursorRune int
 
 	// Global toggle for tool output expansion (ctrl+o).
 	toolOutputExpanded bool
@@ -669,7 +677,86 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	var cmd tea.Cmd
 	prevValue := m.textarea.Value()
+	prevCursor := m.textareaCursorRune
+
+	// Track cursor position for navigation keys before the textarea processes them.
+	if keyMsg, ok := msg.(tea.KeyMsg); ok {
+		runes := []rune(prevValue)
+		switch {
+		case keyMsg.Type == tea.KeyLeft || keyMsg.Type == tea.KeyCtrlB:
+			if prevCursor > 0 {
+				m.textareaCursorRune = prevCursor - 1
+			}
+		case keyMsg.Type == tea.KeyRight || keyMsg.Type == tea.KeyCtrlF:
+			if prevCursor < len(runes) {
+				m.textareaCursorRune = prevCursor + 1
+			}
+		case keyMsg.Type == tea.KeyHome || keyMsg.Type == tea.KeyCtrlA:
+			// Start of current logical line.
+			pos := -1
+			for i := prevCursor - 1; i >= 0; i-- {
+				if runes[i] == '\n' {
+					pos = i + 1
+					break
+				}
+			}
+			if pos < 0 {
+				pos = 0
+			}
+			m.textareaCursorRune = pos
+		case keyMsg.Type == tea.KeyEnd || keyMsg.Type == tea.KeyCtrlE:
+			// End of current logical line.
+			pos := -1
+			for i := prevCursor; i < len(runes); i++ {
+				if runes[i] == '\n' {
+					pos = i
+					break
+				}
+			}
+			if pos < 0 {
+				pos = len(runes)
+			}
+			m.textareaCursorRune = pos
+		case keyMsg.Type == tea.KeyUp || keyMsg.Type == tea.KeyCtrlP:
+			m.textareaCursorRune = m.cursorMoveUp(runes, prevCursor)
+		case keyMsg.Type == tea.KeyDown || keyMsg.Type == tea.KeyCtrlN:
+			m.textareaCursorRune = m.cursorMoveDown(runes, prevCursor)
+		}
+	}
+
 	m.textarea, cmd = m.textarea.Update(msg)
+	newValue := m.textarea.Value()
+
+	// Recalculate cursor position if value changed (typing, backspace, delete, paste).
+	if newValue != prevValue {
+		prevRunes := []rune(prevValue)
+		newRunes := []rune(newValue)
+		delta := len(newRunes) - len(prevRunes)
+		if delta > 0 {
+			// Typing or paste: cursor moved forward by inserted runes.
+			m.textareaCursorRune = prevCursor + delta
+		} else if delta < 0 {
+			// Value shrank: backspace (cursor moves backward) or delete (cursor stays).
+			if keyMsg, ok := msg.(tea.KeyMsg); ok && (keyMsg.Type == tea.KeyDelete || keyMsg.Type == tea.KeyCtrlD || keyMsg.Type == tea.KeyCtrlK) {
+				// Delete/Ctrl+D (delete character forward), Ctrl+K (delete after cursor):
+				// Cursor stays in place.
+				m.textareaCursorRune = prevCursor
+			} else {
+				// Backspace, Ctrl+U (delete before cursor), Ctrl+W (delete word backward), etc.
+				m.textareaCursorRune = prevCursor + delta
+			}
+		}
+	}
+
+	// Clamp cursor to valid range.
+	if m.textareaCursorRune < 0 {
+		m.textareaCursorRune = 0
+	}
+	maxRunes := len([]rune(m.textarea.Value()))
+	if m.textareaCursorRune > maxRunes {
+		m.textareaCursorRune = maxRunes
+	}
+
 	if m.ready && m.textarea.Height() != m.inputVisualLineCount() {
 		m.textarea.SetHeight(m.inputVisualLineCount())
 	}
@@ -1032,6 +1119,10 @@ func (m Model) View() string {
 	}
 	b.WriteString("\n")
 	cwd := m.styles.Dim.Render(compactCwd())
+	sessionName := m.sessionDisplayName()
+	if sessionName != "" {
+		cwd += m.styles.Dim.Render("  ·  " + sessionName)
+	}
 	if m.config.Alignment == "centered" {
 		cwd = centerContent(cwd, m.width)
 	}
@@ -1045,6 +1136,152 @@ func (m *Model) resetTextarea() {
 	m.textarea.SetHeight(1)
 }
 
+// visualLineRange holds the rune offset range of one visual (wrapped) line.
+type visualLineRange struct {
+	startRune   int // rune offset of the first rune in this visual line
+	endRune     int // rune offset past the last rune in this visual line (exclusive)
+	isFirstLine bool // true if this is the first visual line of a logical line
+}
+
+// buildVisualLines computes the visual line ranges for the given text.
+// For each logical line, the text is split at width boundaries, producing
+// one or more visual lines. Empty logical lines produce one empty visual line.
+func buildVisualLines(runes []rune, width int) []visualLineRange {
+	if width <= 0 {
+		return []visualLineRange{{startRune: 0, endRune: len(runes), isFirstLine: true}}
+	}
+
+	var lines []visualLineRange
+	// Split runes by newline to get logical lines.
+	logicalLines := splitRunesByNewline(runes)
+	runeOffset := 0
+
+	for _, logicalRunes := range logicalLines {
+		if len(logicalRunes) == 0 {
+			// Empty logical line produces one empty visual line.
+			lines = append(lines, visualLineRange{
+				startRune:   runeOffset,
+				endRune:     runeOffset,
+				isFirstLine: true,
+			})
+			continue
+		}
+
+		remaining := logicalRunes
+		firstVis := true
+		for len(remaining) > 0 {
+			start := runeOffset
+			visWidth := 0
+			segLen := 0
+			for _, r := range remaining {
+				rw := runeDisplayWidth(r)
+				if visWidth+rw > width && visWidth > 0 {
+					break
+				}
+				visWidth += rw
+				runeOffset++
+				segLen++
+			}
+			lines = append(lines, visualLineRange{
+				startRune:   start,
+				endRune:     runeOffset,
+				isFirstLine: firstVis,
+			})
+			firstVis = false
+			remaining = remaining[segLen:]
+		}
+		// Advance runeOffset past the newline that this logical line ended with.
+		// If the original runes had a newline after this logical line, consume it.
+		if runeOffset < len(runes) && runes[runeOffset] == '\n' {
+			runeOffset++
+		}
+	}
+
+	return lines
+}
+
+// splitRunesByNewline splits runes into [][]rune separated by '\n'.
+func splitRunesByNewline(runes []rune) [][]rune {
+	var result [][]rune
+	start := 0
+	for i, r := range runes {
+		if r == '\n' {
+			result = append(result, runes[start:i])
+			start = i + 1
+		}
+	}
+	result = append(result, runes[start:])
+	return result
+}
+
+// cursorMoveUp returns the new cursor rune offset after moving up one visual line.
+// It tries to maintain the horizontal column position.
+func (m Model) cursorMoveUp(runes []rune, cursorRune int) int {
+	return m.cursorMoveVertical(runes, cursorRune, -1)
+}
+
+// cursorMoveDown returns the new cursor rune offset after moving down one visual line.
+// It tries to maintain the horizontal column position.
+func (m Model) cursorMoveDown(runes []rune, cursorRune int) int {
+	return m.cursorMoveVertical(runes, cursorRune, 1)
+}
+
+// cursorMoveVertical moves the cursor up (dir=-1) or down (dir=+1) one visual line,
+// maintaining the horizontal column position as much as possible.
+func (m Model) cursorMoveVertical(runes []rune, cursorRune int, dir int) int {
+	width := m.textareaWidth()
+	if width <= 0 || len(runes) == 0 {
+		return cursorRune
+	}
+
+	lines := buildVisualLines(runes, width)
+	if len(lines) == 0 {
+		return cursorRune
+	}
+
+	// Find current visual line index.
+	currentIdx := -1
+	for i, vl := range lines {
+		if cursorRune >= vl.startRune && cursorRune <= vl.endRune {
+			currentIdx = i
+			break
+		}
+	}
+	if currentIdx < 0 {
+		// Cursor past end of all lines — clamp to last visual line.
+		currentIdx = len(lines) - 1
+	}
+
+	targetIdx := currentIdx + dir
+	if targetIdx < 0 || targetIdx >= len(lines) {
+		// Already at the top or bottom edge — stay where we are.
+		return cursorRune
+	}
+
+	// Calculate the visual column of the cursor in the current visual line.
+	col := 0
+	for ri := lines[currentIdx].startRune; ri < cursorRune && ri < len(runes); ri++ {
+		col += runeDisplayWidth(runes[ri])
+	}
+
+	// Move to the target visual line.
+	targetLine := lines[targetIdx]
+	newPos := targetLine.startRune
+
+	// Walk forward in the target line by the same visual column.
+	remainingCol := col
+	for ri := targetLine.startRune; ri < targetLine.endRune && ri < len(runes); ri++ {
+		rw := runeDisplayWidth(runes[ri])
+		if remainingCol-rw < 0 {
+			break
+		}
+		remainingCol -= rw
+		newPos = ri + 1
+	}
+
+	return newPos
+}
+
 func (m Model) renderInputView() string {
 	value := m.textarea.Value()
 	if m.pending {
@@ -1056,38 +1293,132 @@ func (m Model) renderInputView() string {
 		return value + m.styles.InputCursor.Render("█")
 	}
 
-	cursor := m.styles.InputCursor.Render("█")
+	cursorStr := m.styles.InputCursor.Render("█")
 
-	var lines []string
-	logicalLines := strings.Split(value, "\n")
-	if len(logicalLines) == 0 {
-		return cursor
+	// Build visual layout: for each visual line, track the rune offset range
+	// it covers and the rendered text (without cursor marker).
+	type visLine struct {
+		startRune int // rune offset where this visual line starts
+		endRune   int // rune offset where this visual line ends (exclusive)
+		text      string
 	}
+	var visualLines []visLine
 
-	for li, logical := range logicalLines {
-		wrapped := wrapLine(logical, width)
-		subLines := strings.Split(wrapped, "\n")
-		for si, sub := range subLines {
-			if li == 0 && si == 0 {
-				// First line — "> " prefix added in View().
-				lines = append(lines, sub)
-			} else {
-				// Continuation — indent to align with text after "> ".
-				lines = append(lines, "  "+sub)
+	runes := []rune(value)
+	logicalLines := strings.Split(value, "\n")
+	runeOffset := 0
+	isFirstVisLine := true
+
+	for _, logical := range logicalLines {
+		logicalRunes := []rune(logical)
+
+		if len(logicalRunes) == 0 {
+			// Empty logical line produces one empty visual line (with indent
+			// if not the first visual line).
+			indent := ""
+			if !isFirstVisLine {
+				indent = "  "
 			}
+			visualLines = append(visualLines, visLine{
+				startRune: runeOffset,
+				endRune:   runeOffset,
+				text:      indent,
+			})
+			isFirstVisLine = false
+			continue
+		}
+
+		for len(logicalRunes) > 0 {
+			start := runeOffset
+			// Wrap at width boundary.
+			visWidth := 0
+			var seg []rune
+			for _, r := range logicalRunes {
+				rw := runeDisplayWidth(r)
+				if visWidth+rw > width && visWidth > 0 {
+					break
+				}
+				seg = append(seg, r)
+				visWidth += rw
+				runeOffset++
+			}
+
+			indent := ""
+			if !isFirstVisLine {
+				indent = "  "
+			}
+			visualLines = append(visualLines, visLine{
+				startRune: start,
+				endRune:   runeOffset,
+				text:      indent + string(seg),
+			})
+			isFirstVisLine = false
+			logicalRunes = logicalRunes[len(seg):]
 		}
 	}
 
-	if len(lines) == 0 {
-		return cursor
+	if len(visualLines) == 0 {
+		return cursorStr
 	}
 
-	// Append cursor to last line.
-	last := lines[len(lines)-1]
-	last += cursor
-	lines[len(lines)-1] = last
+	// Find the visual position of the cursor based on tracked rune offset.
+	cursorRune := m.textareaCursorRune
+	totalRunes := len(runes)
+	if cursorRune < 0 {
+		cursorRune = 0
+	}
+	if cursorRune > totalRunes {
+		cursorRune = totalRunes
+	}
 
-	return strings.Join(lines, "\n")
+	cursorVisLine := len(visualLines) - 1
+	cursorVisCol := 0
+	for i, vl := range visualLines {
+		if cursorRune >= vl.startRune && cursorRune <= vl.endRune {
+			cursorVisLine = i
+			// Calculate visual column: width of runes from startRune to cursorRune.
+			col := 0
+			for ri := vl.startRune; ri < cursorRune && ri < totalRunes; ri++ {
+				col += runeDisplayWidth(runes[ri])
+			}
+			// Account for "  " indent on continuation lines.
+			if i > 0 {
+				col += 2
+			}
+			cursorVisCol = col
+			break
+		}
+	}
+
+	// Build output with cursor inserted at correct position.
+	var out strings.Builder
+	for i, vl := range visualLines {
+		if i == cursorVisLine {
+			// Insert cursorStr at cursorVisCol within the plain text.
+			plainText := vl.text
+			col := 0
+			pos := 0
+			runes := []rune(plainText)
+			for _, r := range runes {
+				if col >= cursorVisCol {
+					break
+				}
+				col += runeDisplayWidth(r)
+				pos++
+			}
+			// Convert rune index pos to byte position.
+			bytePos := len(string(runes[:pos]))
+			out.WriteString(plainText[:bytePos])
+			out.WriteString(cursorStr)
+			out.WriteString(plainText[bytePos:])
+		} else {
+			out.WriteString(vl.text)
+		}
+		if i < len(visualLines)-1 {
+			out.WriteByte('\n')
+		}
+	}
+	return out.String()
 }
 
 func (m Model) renderStatusLine() string {
@@ -2888,6 +3219,22 @@ func compactCwd() string {
 	return cwd
 }
 
+// sessionDisplayName returns the session title if available, or "New session"
+// if the session has no name yet. Returns empty string if sessions are disabled.
+func (m Model) sessionDisplayName() string {
+	if m.session == nil {
+		return ""
+	}
+	info, err := m.session.Info()
+	if err != nil {
+		return "New session"
+	}
+	if info.Title == "" {
+		return "New session"
+	}
+	return info.Title
+}
+
 func getCwd() string {
 	d, err := os.Getwd()
 	if err != nil {
@@ -3135,6 +3482,14 @@ func wrapLine(line string, width int) string {
 		b.WriteString(strings.TrimLeft(line[lineStart:], " "))
 	}
 	return b.String()
+}
+
+// runeDisplayWidth returns the display width of a rune (1 for normal,
+// 2 for CJK wide characters, 0 for zero-width characters).
+func runeDisplayWidth(r rune) int {
+	// Use go-runewidth for accurate width measurement.
+	// This handles CJK, emoji, combining characters, etc.
+	return runewidth.RuneWidth(r)
 }
 
 // decodeRune decodes a single UTF-8 rune from s at byte position pos,
