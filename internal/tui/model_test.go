@@ -3631,3 +3631,97 @@ func TestRenderInputView_NewlineContinuation(t *testing.T) {
 		t.Fatalf("expected cursor at end of text, got position %d", m.textareaCursorRune)
 	}
 }
+
+func TestExpandPasteMarkers_NoStore(t *testing.T) {
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
+	input := "hello world"
+	result := m.expandPasteMarkers(input)
+	if result != input {
+		t.Fatalf("expected %q, got %q", input, result)
+	}
+}
+
+func TestExpandPasteMarkers_ExpandLineMarker(t *testing.T) {
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
+	m.pasteStore[1] = "line1\nline2\nline3\nline4\nline5"
+	result := m.expandPasteMarkers("[paste #1 +5 lines]")
+	if result != "line1\nline2\nline3\nline4\nline5" {
+		t.Fatalf("expected expanded text, got %q", result)
+	}
+}
+
+func TestExpandPasteMarkers_ExpandCharMarker(t *testing.T) {
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
+	longText := string(make([]byte, 500))
+	m.pasteStore[1] = longText
+	result := m.expandPasteMarkers("[paste #1 500 chars]")
+	if result != longText {
+		t.Fatalf("expected expanded text of length %d, got length %d", len(longText), len(result))
+	}
+}
+
+func TestExpandPasteMarkers_UnknownID(t *testing.T) {
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
+	marker := "[paste #99 +10 lines]"
+	result := m.expandPasteMarkers(marker)
+	if result != marker {
+		t.Fatalf("expected marker unchanged for unknown ID, got %q", result)
+	}
+}
+
+func TestExpandPasteMarkers_MultipleMarkers(t *testing.T) {
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
+	m.pasteStore[1] = "alpha"
+	m.pasteStore[2] = "beta"
+	result := m.expandPasteMarkers("[paste #1 5 chars] and [paste #2 4 chars]")
+	expected := "alpha and beta"
+	if result != expected {
+		t.Fatalf("expected %q, got %q", expected, result)
+	}
+}
+
+func TestExpandPasteMarkers_EmptyMarker(t *testing.T) {
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
+	m.pasteStore[1] = "some text"
+	result := m.expandPasteMarkers("")
+	if result != "" {
+		t.Fatalf("expected empty string, got %q", result)
+	}
+}
+
+func TestResetTextarea_ClearsPasteStore(t *testing.T) {
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
+	m.pasteStore[1] = "test"
+	m.pasteCounter = 5
+	m.resetTextarea()
+	if len(m.pasteStore) != 0 {
+		t.Fatalf("expected pasteStore cleared, got %d entries", len(m.pasteStore))
+	}
+	if m.pasteCounter != 0 {
+		t.Fatalf("expected pasteCounter reset, got %d", m.pasteCounter)
+	}
+}
+
+func TestExpandPasteMarkers_WithMarkersInTextarea(t *testing.T) {
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
+	m.pasteStore[1] = "some config content here"
+
+	input := "tell me about [paste #1 22 chars] and summarize it"
+	result := m.expandPasteMarkers(input)
+	expected := "tell me about some config content here and summarize it"
+	if result != expected {
+		t.Fatalf("expected %q, got %q", expected, result)
+	}
+}
+
+func TestNewModel_InitializesPasteStore(t *testing.T) {
+	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
+	if m.pasteStore == nil {
+		t.Fatal("expected pasteStore to be initialized")
+	}
+	if m.pasteCounter != 0 {
+		t.Fatalf("expected pasteCounter to be 0, got %d", m.pasteCounter)
+	}
+}
+
+

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -170,6 +172,11 @@ type Model struct {
 	// the correct visual location when the user navigates with arrow keys.
 	textareaCursorRune int
 
+	// pasteStore holds full text of large pastes that were replaced with markers.
+	// On submit, markers are expanded back to the original text.
+	pasteStore   map[int]string
+	pasteCounter int
+
 	// Global toggle for tool output expansion (ctrl+o).
 	toolOutputExpanded bool
 }
@@ -237,6 +244,7 @@ func NewModel(
 		spinner:      sp,
 		styles:       s,
 		messages:     messages,
+		pasteStore:   make(map[int]string),
 		agentEvents:  make(chan agent.Event, 64),
 	}
 }
@@ -376,9 +384,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selection.clear()
 				m.refreshViewport()
 				if text != "" {
-					m.messages = append(m.messages, messageItem{role: "system", content: "Copied to clipboard.", ephemeral: true})
-					m.refreshViewport()
-					return m, copyToClipboardCmd(text)
+				m.refreshViewport()
+				return m, copyToClipboardCmd(text)
 				}
 				return m, nil
 			}
@@ -449,6 +456,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			input := strings.TrimSpace(m.textarea.Value())
+
+			// Expand paste markers before processing the input.
+			input = m.expandPasteMarkers(input)
 
 			// Normal command suggestion handling
 			if suggestions := m.commandSuggestions(); len(suggestions) > 0 && !m.commandInputExactlyMatchesSuggestion(suggestions) {
@@ -727,6 +737,60 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.textarea, cmd = m.textarea.Update(msg)
 	newValue := m.textarea.Value()
 
+	// Detect and squash large pastes: if the textarea grew by more than a
+	// single character, that's a paste. Squash it to a compact marker when
+	// the pasted text exceeds 10 lines or 1000 characters.
+	if newValue != prevValue && !m.modelPickerActive && !m.themePickerActive &&
+		!m.loginPickerActive && !m.logoutPickerActive && !m.resumePickerActive {
+		prevRunes := []rune(prevValue)
+		newRunes := []rune(newValue)
+		delta := len(newRunes) - len(prevRunes)
+		end := prevCursor + delta
+		if end > len(newRunes) {
+			end = len(newRunes)
+		}
+		if end < 0 {
+			end = 0
+		}
+		if delta > 1000 || (delta > 1 && strings.Count(string(newRunes[prevCursor:end]), "\n") >= 10) {
+			// Extract the pasted text (inserted at cursor position).
+			pastedRunes := newRunes[prevCursor:end]
+			pastedText := string(pastedRunes)
+
+			// Compute stats.
+			lines := strings.Count(pastedText, "\n") + 1
+			charCount := len(pastedRunes)
+
+			// Store the full paste and increment counter.
+			m.pasteCounter++
+			id := m.pasteCounter
+			m.pasteStore[id] = pastedText
+
+			// Build a compact marker.
+			var marker string
+			if lines > 10 {
+				marker = fmt.Sprintf("[paste #%d +%d lines]", id, lines)
+			} else {
+				marker = fmt.Sprintf("[paste #%d %d chars]", id, charCount)
+			}
+
+			// Replace the pasted text with the marker in the textarea.
+			beforeRunes := newRunes[:prevCursor]
+			afterRunes := newRunes[end:]
+			newVal := string(beforeRunes) + marker + string(afterRunes)
+			m.textarea.SetValue(newVal)
+
+			// Move cursor past the marker.
+			m.textareaCursorRune = prevCursor + len([]rune(marker))
+		}
+	}
+
+	// Clear ephemeral messages when user edits the input (typing, backspace, delete, paste).
+	if newValue != prevValue {
+		m.clearEphemeralMessages()
+		m.refreshViewport()
+	}
+
 	// Recalculate cursor position if value changed (typing, backspace, delete, paste).
 	if newValue != prevValue {
 		prevRunes := []rune(prevValue)
@@ -821,6 +885,16 @@ func (m Model) shouldInsertInputNewline(msg tea.Msg) bool {
 func (m Model) insertInputNewline() (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.textarea, cmd = m.textarea.Update(tea.KeyMsg{Type: tea.KeyCtrlJ})
+	// Advance cursor past the inserted newline.
+	m.textareaCursorRune++
+	maxRunes := len([]rune(m.textarea.Value()))
+	if m.textareaCursorRune > maxRunes {
+		m.textareaCursorRune = maxRunes
+	}
+	// Update textarea height to accommodate new visual lines.
+	if m.ready && m.textarea.Height() != m.inputVisualLineCount() {
+		m.textarea.SetHeight(m.inputVisualLineCount())
+	}
 	return m, cmd
 }
 
@@ -1131,9 +1205,22 @@ func (m Model) View() string {
 	return b.String()
 }
 
+// clearEphemeralMessages removes all ephemeral messages from the message list.
+func (m *Model) clearEphemeralMessages() {
+	filtered := make([]messageItem, 0, len(m.messages))
+	for _, msg := range m.messages {
+		if !msg.ephemeral {
+			filtered = append(filtered, msg)
+		}
+	}
+	m.messages = filtered
+}
+
 func (m *Model) resetTextarea() {
 	m.textarea.Reset()
 	m.textarea.SetHeight(1)
+	clear(m.pasteStore)
+	m.pasteCounter = 0
 }
 
 // visualLineRange holds the rune offset range of one visual (wrapped) line.
@@ -2508,11 +2595,6 @@ func (m *Model) selectModel(providerName, modelID string) {
 
 	m.resetTextarea()
 	m.commandSuggestionIndex = 0
-	m.messages = append(m.messages, messageItem{
-		role:      "system",
-		content:   fmt.Sprintf("Model changed to %s (%s)", modelID, m.config.Provider),
-		ephemeral: true,
-	})
 	m.refreshViewport()
 	m.textarea.Focus()
 }
@@ -3128,6 +3210,29 @@ func expandShellShortcut(reg *tools.Registry, input string) string {
 		return b.String()
 	}
 	return fmt.Sprintf("%v", result)
+}
+
+// expandPasteMarkers expands any paste markers in the input back to their
+// original full text. Markers have the form [paste #N +M lines] or [paste #N M chars].
+func (m *Model) expandPasteMarkers(input string) string {
+	if len(m.pasteStore) == 0 {
+		return input
+	}
+	re := regexp.MustCompile(`\[paste #(\d+) [^]]+\]`)
+	return re.ReplaceAllStringFunc(input, func(marker string) string {
+		matches := re.FindStringSubmatch(marker)
+		if len(matches) < 2 {
+			return marker
+		}
+		id, err := strconv.Atoi(matches[1])
+		if err != nil {
+			return marker
+		}
+		if text, ok := m.pasteStore[id]; ok {
+			return text
+		}
+		return marker
+	})
 }
 
 func expandFileRefs(reg *tools.Registry, input string) string {

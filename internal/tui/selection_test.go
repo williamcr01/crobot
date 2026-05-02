@@ -441,17 +441,6 @@ func TestUpdateMouseSelection_FullFlow(t *testing.T) {
 	if m5.selection.finished {
 		t.Fatal("expected selection to be cleared after copy")
 	}
-	// Verify a "Copied to clipboard" message was appended.
-	found := false
-	for _, msg := range m5.messages {
-		if msg.role == "system" && strings.Contains(msg.content, "Copied to clipboard") {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Fatal("expected 'Copied to clipboard' system message")
-	}
 	if cmd == nil {
 		t.Fatal("expected a cmd for clipboard copy")
 	}
