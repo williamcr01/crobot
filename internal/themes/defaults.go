@@ -17,7 +17,7 @@ func DefaultTheme() *Theme {
 			StyleToolTitle:    "#ffffff",
 			StyleToolOutput:   "#9ca3af",
 			StyleToolMeta:     "#9ca3af",
-			StyleBashHeader:   "#22c55e",
+			StyleBashHeader:   "#ffffff",
 			StyleUserPrompt:   "#93c5fd",
 			StyleUserCaret:    "#22c55e",
 			StyleInputCursor:  "#ffffff",
