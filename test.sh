@@ -10,8 +10,4 @@ echo ""
 echo "==> Coverage summary"
 go tool cover -func=build/coverage.coverprofile | tail -1
 
-echo ""
-echo "==> Building agent binary"
-go build -o agent ./cmd/agent/
-
 echo "==> All checks passed"
