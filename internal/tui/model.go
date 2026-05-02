@@ -602,6 +602,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				_ = m.session.Append(session.Record{Role: "user", Content: input, Timestamp: time.Now()})
 			}
 
+			// Scroll to bottom when a new turn starts so the user sees
+			// the agent response appear, even if they were reading history.
+			m.viewport.GotoBottom()
+
 			m.pending = true
 			ctx, cancel := context.WithCancel(context.Background())
 			m.agentCancel = cancel
