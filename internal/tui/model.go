@@ -210,7 +210,7 @@ func NewModel(
 		}
 	}
 	if prov == nil && !cfg.HasAuthorizedProvider {
-		messages = append(messages, messageItem{role: "error", content: noProviderWarning})
+		messages = append(messages, messageItem{role: "error", content: noProviderWarning, ephemeral: true})
 	}
 
 	return &Model{
@@ -267,7 +267,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.pending = false
 		m.textarea.Focus()
 		if msg.err != nil {
-			m.messages = append(m.messages, messageItem{role: "error", content: msg.err.Error()})
+			m.messages = append(m.messages, messageItem{role: "error", content: msg.err.Error(), ephemeral: true})
 		} else {
 			if m.config.Provider == msg.provider || (msg.provider == "openai-codex" && m.config.Provider == "openai") {
 				m.provider = nil
@@ -287,9 +287,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.config.Model = ""
 				_ = config.ClearProviderModel()
 				m.messages = append(m.messages, messageItem{role: "system", content: fmt.Sprintf("Logged out of %s", msg.provider), ephemeral: true})
-				m.messages = append(m.messages, messageItem{role: "error", content: noProviderWarning})
+				m.messages = append(m.messages, messageItem{role: "error", content: noProviderWarning, ephemeral: true})
 			} else if err := m.reloadAuthorizedProviders(); err != nil {
-				m.messages = append(m.messages, messageItem{role: "error", content: fmt.Sprintf("Logged out of %s; model refresh warning: %v", msg.provider, err)})
+				m.messages = append(m.messages, messageItem{role: "error", content: fmt.Sprintf("Logged out of %s; model refresh warning: %v", msg.provider, err), ephemeral: true})
 			} else {
 				m.messages = append(m.messages, messageItem{role: "system", content: fmt.Sprintf("Logged out of %s", msg.provider), ephemeral: true})
 			}
@@ -301,7 +301,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.pending = false
 		m.textarea.Focus()
 		if msg.err != nil {
-			m.messages = append(m.messages, messageItem{role: "error", content: msg.err.Error()})
+			m.messages = append(m.messages, messageItem{role: "error", content: msg.err.Error(), ephemeral: true})
 		} else {
 			m.config.HasAuthorizedProvider = true
 			m.config.Provider = msg.provider
@@ -429,7 +429,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyShiftTab:
 			if !m.pending {
 				if err := m.cycleThinkingLevel(); err != nil {
-					m.messages = append(m.messages, messageItem{role: "error", content: err.Error()})
+					m.messages = append(m.messages, messageItem{role: "error", content: err.Error(), ephemeral: true})
 					m.refreshViewport()
 				}
 				return m, nil
@@ -455,7 +455,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// /compact: trigger context compaction
 			if strings.HasPrefix(input, "/compact") {
 				if !compaction.CanCompact(messagesToCompaction(m.messages)) {
-					m.messages = append(m.messages, messageItem{role: "error", content: "Nothing to compact (session already compacted or empty)."})
+					m.messages = append(m.messages, messageItem{role: "error", content: "Nothing to compact (session already compacted or empty).", ephemeral: true})
 					m.refreshViewport()
 					m.resetTextarea()
 					m.textarea.Focus()
@@ -572,7 +572,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				result, err := m.cmdReg.Execute(input)
 				if err != nil {
-					m.messages = append(m.messages, messageItem{role: "error", content: err.Error()})
+					m.messages = append(m.messages, messageItem{role: "error", content: err.Error(), ephemeral: true})
 				} else if result != "" {
 					m.messages = append(m.messages, messageItem{role: "system", content: result, ephemeral: true})
 				}
@@ -592,7 +592,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.config.HasAuthorizedProvider {
 					message = "No provider selected. Select a provider before sending a message."
 				}
-				m.messages = append(m.messages, messageItem{role: "error", content: message})
+				m.messages = append(m.messages, messageItem{role: "error", content: message, ephemeral: true})
 				m.refreshViewport()
 				m.textarea.Focus()
 				return m, nil
@@ -917,7 +917,7 @@ func (m Model) handleAgentEvent(ev agent.Event) (tea.Model, tea.Cmd) {
 		if ev.Error != nil {
 			m.pending = false
 			m.textarea.Focus()
-			m.messages = append(m.messages, messageItem{role: "error", content: ev.Error.Error()})
+			m.messages = append(m.messages, messageItem{role: "error", content: ev.Error.Error(), ephemeral: true})
 			m.refreshViewport()
 		}
 	}
@@ -2100,14 +2100,14 @@ func (m *Model) resumeSession(info session.SessionInfo) {
 	m.pending = false
 	sess, err := session.Open(info.Path)
 	if err != nil {
-		m.messages = append(m.messages, messageItem{role: "error", content: "Resume failed: " + err.Error()})
+		m.messages = append(m.messages, messageItem{role: "error", content: "Resume failed: " + err.Error(), ephemeral: true})
 		m.refreshViewport()
 		return
 	}
 	m.session = sess
 	records, err := sess.Load()
 	if err != nil {
-		m.messages = append(m.messages, messageItem{role: "error", content: "Resume failed: " + err.Error()})
+		m.messages = append(m.messages, messageItem{role: "error", content: "Resume failed: " + err.Error(), ephemeral: true})
 		m.refreshViewport()
 		return
 	}
@@ -2722,7 +2722,7 @@ func (m *Model) startCompaction(instructions string) tea.Cmd {
 // handleCompactionResult applies the compaction result to the model state.
 func (m *Model) handleCompactionResult(msg compactionResultMsg) (tea.Model, tea.Cmd) {
 	if msg.err != nil {
-		m.messages = append(m.messages, messageItem{role: "error", content: fmt.Sprintf("Compaction failed: %v", msg.err)})
+		m.messages = append(m.messages, messageItem{role: "error", content: fmt.Sprintf("Compaction failed: %v", msg.err), ephemeral: true})
 		m.refreshViewport()
 		m.resetTextarea()
 		m.textarea.Focus()
@@ -2761,7 +2761,10 @@ func (m *Model) runAutoCompactCmd() tea.Cmd {
 func messagesToConversation(msgs []messageItem, includeEphemeral bool) []conversation.Message {
 	result := make([]conversation.Message, 0, len(msgs))
 	for _, msg := range msgs {
-		if !includeEphemeral && msg.role != "assistant" && msg.role != "user" && msg.ephemeral {
+		// Skip ephemeral messages and non-conversation roles (error, system) when building
+	// the LLM-facing conversation history. Only user and assistant messages represent
+	// actual dialogue. Error and system messages are UI-only annotations.
+	if !includeEphemeral && (msg.ephemeral || msg.role == "error" || msg.role == "system") {
 			continue
 		}
 		result = append(result, messageToConversation(msg))
