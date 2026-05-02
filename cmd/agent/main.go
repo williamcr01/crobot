@@ -19,6 +19,8 @@ import (
 	"crobot/internal/tui"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 )
 
 func main() {
@@ -180,6 +182,7 @@ func main() {
 		theme = themes.DefaultTheme()
 	}
 	styles := tui.NewStyles(theme)
+	lipgloss.SetColorProfile(termenv.TrueColor)
 
 	// Create and run the TUI.
 	m := tui.NewModel(cfg, prov, toolReg, ev, cmdReg, modelReg, modelHistory, sess, auth.APIKey, skillResult.Skills, styles, pluginMgr)
