@@ -786,19 +786,57 @@ func (m Model) handleAgentEvent(ev agent.Event) (tea.Model, tea.Cmd) {
 		}
 
 	case "tool_call_start":
-		// Handled by tool_call_end.
+		// Show the tool call immediately as it's being made by the model.
+		if ev.ToolCallStart != nil {
+			if len(m.messages) > 0 && m.messages[len(m.messages)-1].role == "assistant" {
+				last := &m.messages[len(m.messages)-1]
+				last.toolCalls = append(last.toolCalls, toolRenderItem{
+					name:   ev.ToolCallStart.Name,
+					callID: ev.ToolCallStart.CallID,
+					state:  toolPending,
+				})
+				m.refreshViewport()
+			}
+		}
+
+	case "tool_call_args":
+		// Stream tool call args as they arrive so the user sees them building up.
+		if ev.ToolCallArgs != "" {
+			if len(m.messages) > 0 && m.messages[len(m.messages)-1].role == "assistant" {
+				last := &m.messages[len(m.messages)-1]
+				for i := len(last.toolCalls) - 1; i >= 0; i-- {
+					if last.toolCalls[i].state == toolPending && last.toolCalls[i].name != "" {
+						last.toolCalls[i].args += ev.ToolCallArgs
+						break
+					}
+				}
+				m.refreshViewport()
+			}
+		}
 
 	case "tool_call_end":
 		if ev.ToolCallEnd != nil {
 			if len(m.messages) > 0 && m.messages[len(m.messages)-1].role == "assistant" {
+				// Find the existing item created by tool_call_start and update its args.
 				last := &m.messages[len(m.messages)-1]
-				last.toolCalls = append(last.toolCalls, toolRenderItem{
-					name:    ev.ToolCallEnd.Name,
-					callID:  ev.ToolCallEnd.CallID,
-					args:    formatToolCallLine(ev.ToolCallEnd.Name, ev.ToolCallEnd.Args),
-					rawArgs: ev.ToolCallEnd.Args,
-					state:   toolPending,
-				})
+				found := false
+				for i := len(last.toolCalls) - 1; i >= 0; i-- {
+					if last.toolCalls[i].callID == ev.ToolCallEnd.CallID {
+						last.toolCalls[i].args = formatToolCallLine(ev.ToolCallEnd.Name, ev.ToolCallEnd.Args)
+						last.toolCalls[i].rawArgs = ev.ToolCallEnd.Args
+						found = true
+						break
+					}
+				}
+				if !found {
+					last.toolCalls = append(last.toolCalls, toolRenderItem{
+						name:    ev.ToolCallEnd.Name,
+						callID:  ev.ToolCallEnd.CallID,
+						args:    formatToolCallLine(ev.ToolCallEnd.Name, ev.ToolCallEnd.Args),
+						rawArgs: ev.ToolCallEnd.Args,
+						state:   toolPending,
+					})
+				}
 				m.refreshViewport()
 			}
 		}
