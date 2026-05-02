@@ -14,7 +14,7 @@ import (
 
 func init() {
 	Register("openai", NewOpenAI)
-	Register("openai-codex", NewOpenAIOAuth)
+	Register("openai-codex", NewOpenAICodex)
 	Register("deepseek", NewDeepSeek)
 }
 
@@ -34,20 +34,6 @@ func NewOpenAI(apiKey string) (Provider, error) {
 	}
 	return &OpenAIProvider{
 		name:   "openai",
-		apiKey: apiKey,
-		client: openai.NewClient(
-			option.WithAPIKey(apiKey),
-			option.WithBaseURL(openAIBaseURL),
-		),
-	}, nil
-}
-
-func NewOpenAIOAuth(apiKey string) (Provider, error) {
-	if strings.TrimSpace(apiKey) == "" {
-		return nil, fmt.Errorf("openai-codex: missing OAuth access token")
-	}
-	return &OpenAIProvider{
-		name:   "openai-codex",
 		apiKey: apiKey,
 		client: openai.NewClient(
 			option.WithAPIKey(apiKey),
@@ -309,11 +295,15 @@ func isOpenAIOAuthToken(token string) bool {
 
 func openAIOAuthModels() []string {
 	return []string{
-		"gpt-5.1",
-		"gpt-5.2",
-		"gpt-5.3",
-		"gpt-5.4",
 		"gpt-5.5",
+		"gpt-5.4",
+		"gpt-5.4-mini",
+		"gpt-5.3-codex",
+		"gpt-5.3-codex-spark",
+		"gpt-5.2",
+		"gpt-5.2-codex",
+		"gpt-5.1-codex-max",
+		"gpt-5.1-codex-mini",
 	}
 }
 

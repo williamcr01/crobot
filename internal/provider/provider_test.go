@@ -2,8 +2,11 @@ package provider
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -66,7 +69,7 @@ func TestCreateAnthropic(t *testing.T) {
 }
 
 func TestCreateOpenAIOAuth(t *testing.T) {
-	prov, err := Create("openai-codex", "oauth-token")
+	prov, err := Create("openai-codex", testOpenAICodexToken("acct_test"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -126,7 +129,7 @@ func TestDeepSeekListModelsUsesStaticModels(t *testing.T) {
 }
 
 func TestOpenAIOAuthListModelsUsesStaticFallback(t *testing.T) {
-	prov, err := NewOpenAI("oauth.jwt.token")
+	prov, err := NewOpenAICodex(testOpenAICodexToken("acct_test"))
 	if err != nil {
 		t.Fatalf("NewOpenAI: %v", err)
 	}
@@ -137,12 +140,91 @@ func TestOpenAIOAuthListModelsUsesStaticFallback(t *testing.T) {
 	if len(models) == 0 {
 		t.Fatal("expected static OAuth models")
 	}
-	if models[0] != "gpt-5.1" {
-		t.Fatalf("expected gpt-5.1 first, got %q", models[0])
+	if models[0] != "gpt-5.5" {
+		t.Fatalf("expected gpt-5.5 first, got %q", models[0])
 	}
-	if models[len(models)-1] != "gpt-5.5" {
-		t.Fatalf("expected gpt-5.5 last, got %q", models[len(models)-1])
+	for _, unsupported := range []string{"gpt-5.1", "gpt-5.3"} {
+		for _, model := range models {
+			if model == unsupported {
+				t.Fatalf("unsupported Codex model %q should not be listed: %#v", unsupported, models)
+			}
+		}
 	}
+}
+
+func TestOpenAICodexStreamUsesChatGPTBackendHeadersAndResponsesBody(t *testing.T) {
+	token := testOpenAICodexToken("acct_test")
+	var gotHeaders http.Header
+	var gotBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotHeaders = r.Header.Clone()
+		if r.URL.Path != "/codex/responses" {
+			t.Fatalf("expected /codex/responses, got %s", r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"type\":\"response.output_text.delta\",\"delta\":\"Hello\"}\n\n" +
+			"data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":5,\"output_tokens\":3,\"input_tokens_details\":{\"cached_tokens\":2}}}}\n\n"))
+	}))
+	defer server.Close()
+
+	prov, err := NewOpenAICodex(token)
+	if err != nil {
+		t.Fatalf("NewOpenAICodex: %v", err)
+	}
+	codex := prov.(*OpenAICodexProvider)
+	codex.baseURL = server.URL + "/codex/responses"
+
+	stream, err := codex.Stream(context.Background(), Request{Model: "gpt-5.5", Thinking: "minimal", SystemPrompt: "sys", Messages: []Message{{Role: "user", Content: "hi"}}})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	var text string
+	var usage *Usage
+	for ev := range stream {
+		if ev.Error != nil {
+			t.Fatalf("stream error: %v", ev.Error)
+		}
+		text += ev.TextDelta
+		if ev.Done != nil {
+			usage = ev.Done
+		}
+	}
+	if text != "Hello" {
+		t.Fatalf("expected Hello, got %q", text)
+	}
+	if usage == nil || usage.InputTokens != 5 || usage.OutputTokens != 3 || usage.CacheReadTokens != 2 || !usage.Subscription {
+		t.Fatalf("unexpected usage: %#v", usage)
+	}
+	if gotHeaders.Get("Authorization") != "Bearer "+token {
+		t.Fatalf("missing bearer auth: %s", gotHeaders.Get("Authorization"))
+	}
+	if gotHeaders.Get("chatgpt-account-id") != "acct_test" {
+		t.Fatalf("missing account id header: %s", gotHeaders.Get("chatgpt-account-id"))
+	}
+	if gotHeaders.Get("OpenAI-Beta") != "responses=experimental" || gotHeaders.Get("Accept") != "text/event-stream" {
+		t.Fatalf("unexpected codex headers: %#v", gotHeaders)
+	}
+	if gotBody["model"] != "gpt-5.5" || gotBody["instructions"] != "sys" || gotBody["store"] != false || gotBody["stream"] != true {
+		t.Fatalf("unexpected body: %#v", gotBody)
+	}
+	if reasoning, _ := gotBody["reasoning"].(map[string]any); reasoning["effort"] != "low" || reasoning["summary"] != "auto" {
+		t.Fatalf("unexpected reasoning: %#v", gotBody["reasoning"])
+	}
+}
+
+func TestOpenAICodexRejectsTokenWithoutAccountID(t *testing.T) {
+	if _, err := NewOpenAICodex("not-a-jwt"); err == nil {
+		t.Fatal("expected invalid OAuth token error")
+	}
+}
+
+func testOpenAICodexToken(accountID string) string {
+	payload := map[string]any{"https://api.openai.com/auth": map[string]any{"chatgpt_account_id": accountID}}
+	data, _ := json.Marshal(payload)
+	return "aaa." + base64.RawURLEncoding.EncodeToString(data) + ".bbb"
 }
 
 func TestOpenAIReasoningEffort(t *testing.T) {
