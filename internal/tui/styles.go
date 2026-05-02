@@ -286,16 +286,45 @@ func statusLabel(success bool) string {
 	return "err"
 }
 
-// truncateToWidth truncates a string to fit within a given width, appending "…" if needed.
+// truncateToWidth truncates a string to fit within a given visible width, appending "…" if needed.
+// It is ANSI-aware — uses lipgloss.Width to measure visible column width.
 func truncateToWidth(s string, maxWidth int) string {
 	if maxWidth <= 0 {
 		return ""
 	}
-	runes := []rune(s)
-	if len(runes) <= maxWidth {
+	if lipgloss.Width(s) <= maxWidth {
 		return s
 	}
-	return string(runes[:maxWidth-1]) + "…"
+	// Manually truncate while preserving ANSI escape sequences.
+	var b strings.Builder
+	visible := 0
+	runes := []rune(s)
+	for i := 0; i < len(runes) && visible < maxWidth-1; i++ {
+		r := runes[i]
+		if r == '\x1b' {
+			// Copy the full ANSI escape sequence: \x1b[...letter
+			b.WriteRune(r)
+			i++
+			if i < len(runes) && runes[i] == '[' {
+				b.WriteRune(runes[i])
+				for i+1 < len(runes) {
+					next := runes[i+1]
+					if next >= 'A' && next <= 'Z' || next >= 'a' && next <= 'z' {
+						i++
+						b.WriteRune(runes[i])
+						break
+					}
+					i++
+					b.WriteRune(runes[i])
+				}
+			}
+			continue
+		}
+		b.WriteRune(r)
+		visible++
+	}
+	b.WriteRune('…')
+	return b.String()
 }
 
 func fmtSprintf(format string, a ...interface{}) string {
