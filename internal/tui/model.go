@@ -2550,8 +2550,14 @@ func (m *Model) handleMouseSelection(msg tea.MouseMsg) bool {
 }
 
 func (m *Model) refreshViewport() {
-	m.viewport.Height = m.dynamicViewportHeight()
+	// Check AtBottom before changing Height so the check uses the same
+	// Height that any prior GotoBottom() used to set YOffset. Otherwise
+	// a Height change (e.g. when pending becomes true and the viewport
+	// loses 1 line) makes AtBottom() return false even though we just
+	// forced a scroll-to-bottom, causing the viewport to drift above the
+	// bottom during agent streaming.
 	wasAtBottom := m.viewport.AtBottom()
+	m.viewport.Height = m.dynamicViewportHeight()
 	content := m.renderViewportContent()
 	m.viewport.SetContent(content)
 	m.plainLines = strings.Split(stripANSI(content), "\n")
