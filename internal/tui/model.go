@@ -179,6 +179,12 @@ type Model struct {
 
 	// Global toggle for tool output expansion (ctrl+o).
 	toolOutputExpanded bool
+
+	// messageHistory stores previously submitted non-empty inputs (newest at end)
+	// for Up/Down arrow navigation, similar to a terminal's command history.
+	messageHistory      []string
+	messageHistoryPos   int    // -1 = not browsing, 0 = most recent, 1 = older, etc.
+	messageHistorySaved string // saved current input when starting to browse
 }
 
 // NewModel creates a fully initialized TUI model.
@@ -423,12 +429,46 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 
+			// Navigate message history backward (previous messages).
+			if !m.pending && len(m.messageHistory) > 0 {
+				if m.messageHistoryPos == -1 {
+					m.messageHistorySaved = m.textarea.Value()
+				}
+				m.messageHistoryPos++
+				if m.messageHistoryPos >= len(m.messageHistory) {
+					m.messageHistoryPos = len(m.messageHistory) - 1
+				}
+				idx := len(m.messageHistory) - 1 - m.messageHistoryPos
+				m.textarea.SetValue(m.messageHistory[idx])
+				m.textareaCursorRune = len([]rune(m.messageHistory[idx]))
+				m.textarea.CursorEnd()
+				return m, nil
+			}
+
 		case tea.KeyDown:
 			if suggestions := m.commandSuggestions(); len(suggestions) > 0 {
 				m.commandSuggestionIndex++
 				if m.commandSuggestionIndex >= len(suggestions) {
 					m.commandSuggestionIndex = 0
 				}
+				return m, nil
+			}
+
+			// Navigate message history forward (more recent messages).
+			if !m.pending && m.messageHistoryPos >= 0 {
+				if m.messageHistoryPos > 0 {
+					m.messageHistoryPos--
+					idx := len(m.messageHistory) - 1 - m.messageHistoryPos
+					m.textarea.SetValue(m.messageHistory[idx])
+					m.textareaCursorRune = len([]rune(m.messageHistory[idx]))
+					m.textarea.CursorEnd()
+					return m, nil
+				}
+				// Was at most recent (pos == 0), restore saved input.
+				m.messageHistoryPos = -1
+				m.textarea.SetValue(m.messageHistorySaved)
+				m.textareaCursorRune = len([]rune(m.messageHistorySaved))
+				m.textarea.CursorEnd()
 				return m, nil
 			}
 
@@ -469,6 +509,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if input == "" {
 				return m, nil
 			}
+
+			// Save to message history for Up/Down navigation.
+			m.saveToHistory(input)
 
 			// /compact: trigger context compaction
 			if strings.HasPrefix(input, "/compact") {
@@ -1221,6 +1264,14 @@ func (m *Model) resetTextarea() {
 	m.textarea.SetHeight(1)
 	clear(m.pasteStore)
 	m.pasteCounter = 0
+}
+
+// saveToHistory appends a non-empty input to the message history and resets
+// the navigation position so the next Up press starts from the most recent entry.
+func (m *Model) saveToHistory(input string) {
+	m.messageHistory = append(m.messageHistory, input)
+	m.messageHistoryPos = -1
+	m.messageHistorySaved = ""
 }
 
 // visualLineRange holds the rune offset range of one visual (wrapped) line.
