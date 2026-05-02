@@ -58,7 +58,7 @@ var DEFAULTS = AgentConfig{
 	Provider: "",
 	Model:    "",
 	Thinking: "none",
-	MaxTurns: 50,
+	MaxTurns: -1,
 	SystemPrompt: strings.Join([]string{
 		"You are Crobot, a coding assistant. You have access to the following tools:",
 		"file read,",

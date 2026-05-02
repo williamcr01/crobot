@@ -116,7 +116,7 @@ Valid values:
 
 Maximum number of model turns in a single user request. A turn is one model response, including responses that request tool calls.
 
-Default: `50`.
+Default: `-1`.
 
 Set to `-1` to disable the limit and allow unlimited turns.
 
