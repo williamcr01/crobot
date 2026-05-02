@@ -1739,7 +1739,10 @@ func (m *Model) completeCommandSuggestion(suggestions []commands.Command) {
 	}
 
 	// Normal command completion
-	m.textarea.SetValue("/" + selected.Name + " ")
+	val := "/" + selected.Name + " "
+	m.textarea.SetValue(val)
+	m.textareaCursorRune = len([]rune(val))
+	m.textarea.CursorEnd()
 	m.commandSuggestionIndex = 0
 }
 
