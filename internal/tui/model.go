@@ -2386,7 +2386,7 @@ func (m Model) renderMessages() string {
 			b.WriteString("  ")
 			b.WriteString(m.styles.UserCaret.Render(">"))
 			b.WriteString(" ")
-			b.WriteString(m.styles.UserPrompt.Render(msg.content))
+			b.WriteString(m.styles.UserPrompt.Render(wrapText(msg.content, wrapWidth-4)))
 			b.WriteString("\n\n")
 		case "assistant":
 			if msg.reasoning != "" && m.config.Reasoning {
