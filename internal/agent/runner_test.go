@@ -365,6 +365,64 @@ func TestRun_CancellationPreservesReasoning(t *testing.T) {
 	}
 }
 
+func TestFormatToolExecutionOutputFormatsMaps(t *testing.T) {
+	output, ok := formatToolExecutionOutput(map[string]any{"alpha": "one", "count": 2})
+	if !ok {
+		t.Fatal("expected success")
+	}
+	if strings.Contains(output, "map[") {
+		t.Fatalf("expected no Go map syntax, got %q", output)
+	}
+	if !strings.Contains(output, `"alpha": "one"`) || !strings.Contains(output, `"count": 2`) {
+		t.Fatalf("expected JSON-like map output, got %q", output)
+	}
+}
+
+func TestFormatToolExecutionOutputFormatsBashMap(t *testing.T) {
+	output, ok := formatToolExecutionOutput(map[string]any{"stdout": "hello\n", "stderr": "warn\n", "exitCode": 0})
+	if !ok {
+		t.Fatal("expected success")
+	}
+	if output != "hello\nwarn\n" {
+		t.Fatalf("expected joined streams, got %q", output)
+	}
+}
+
+func TestRunnerExecuteTool_PostToolMapResultUsesDiffField(t *testing.T) {
+	reg := tools.NewRegistry()
+	reg.Register(tools.Tool{
+		Name:        "file_edit",
+		Description: "test edit",
+		Execute: func(ctx context.Context, args map[string]any) (any, error) {
+			return map[string]any{
+				"diff":          "--- a\n+++ a\n@@ -1,1 +1,1 @@\n-old\n+new\n",
+				"diffTruncated": false,
+				"success":       true,
+			}, nil
+		},
+	})
+
+	r := &runner{
+		toolReg: reg,
+		plugins: &mockPluginManager{
+			onPostToolResult: func(name string, args map[string]any, result any) (any, error) {
+				return result, nil
+			},
+		},
+	}
+
+	output, success, _ := r.executeTool(context.Background(), provider.ToolCall{Name: "file_edit"})
+	if !success {
+		t.Fatal("expected success")
+	}
+	if strings.HasPrefix(output, "map[") {
+		t.Fatalf("expected formatted diff, got raw map: %q", output)
+	}
+	if !strings.Contains(output, "-old") || !strings.Contains(output, "+new") {
+		t.Fatalf("expected diff output, got %q", output)
+	}
+}
+
 func TestRun_PluginHooks(t *testing.T) {
 	var hookCalls []string
 

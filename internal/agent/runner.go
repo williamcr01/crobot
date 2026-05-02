@@ -2,7 +2,9 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -436,27 +438,87 @@ func (r *runner) executeTool(ctx context.Context, tc provider.ToolCall) (output 
 		return fmt.Sprintf("error: %v", err), false, dur
 	}
 
-	var result string
-	switch v := rawResult.(type) {
-	case map[string]any:
-		if err, ok := v["error"].(string); ok {
-			return err, false, dur
-		}
-		result = fmt.Sprintf("%v", rawResult)
-	case string:
-		result = v
-	default:
-		result = fmt.Sprintf("%v", rawResult)
+	result, resultOK := formatToolExecutionOutput(rawResult)
+	if !resultOK {
+		return result, false, dur
 	}
 
 	if r.plugins != nil {
 		modified, hookErr := r.plugins.CallPostToolResult(name, args, rawResult)
 		if hookErr == nil && modified != nil {
-			result = fmt.Sprintf("%v", modified)
+			result, resultOK = formatToolExecutionOutput(modified)
+			if !resultOK {
+				return result, false, dur
+			}
 		}
 	}
 
 	return result, true, dur
+}
+
+func formatToolExecutionOutput(rawResult any) (string, bool) {
+	switch v := rawResult.(type) {
+	case map[string]any:
+		if err, ok := v["error"].(string); ok {
+			return err, false
+		}
+		if diff, ok := v["diff"].(string); ok && diff != "" {
+			return diff, true
+		}
+		return formatMapToolOutput(v), true
+	case string:
+		return v, true
+	default:
+		return fmt.Sprintf("%v", rawResult), true
+	}
+}
+
+func formatMapToolOutput(v map[string]any) string {
+	// Bash returns structured stdout/stderr/exitCode; display the streams rather
+	// than Go's map[...] syntax.
+	stdout, hasStdout := v["stdout"].(string)
+	stderr, hasStderr := v["stderr"].(string)
+	if hasStdout || hasStderr {
+		var b strings.Builder
+		if stdout != "" {
+			b.WriteString(stdout)
+			if !strings.HasSuffix(stdout, "\n") && stderr != "" {
+				b.WriteByte('\n')
+			}
+		}
+		if stderr != "" {
+			b.WriteString(stderr)
+		}
+		if b.Len() > 0 {
+			return b.String()
+		}
+		if code, ok := v["exitCode"]; ok {
+			return fmt.Sprintf("exit %v", code)
+		}
+		return ""
+	}
+
+	// Common one-field plugin/tool results read better as their value.
+	if len(v) == 1 {
+		for _, value := range v {
+			return fmt.Sprintf("%v", value)
+		}
+	}
+
+	if data, err := json.MarshalIndent(v, "", "  "); err == nil {
+		return string(data)
+	}
+
+	keys := make([]string, 0, len(v))
+	for key := range v {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, key := range keys {
+		parts = append(parts, fmt.Sprintf("%s: %v", key, v[key]))
+	}
+	return strings.Join(parts, "\n")
 }
 
 func (r *runner) emit(ev Event) {
