@@ -306,3 +306,131 @@ func TestModelSuggestions_PreservesCommandSuggestions(t *testing.T) {
 		t.Fatalf("expected help command suggestion, got %v", suggestions)
 	}
 }
+
+func TestFilterModels_RecentFirst(t *testing.T) {
+	reg := NewRegistry()
+	reg.SetModelRegistry(&stubModelRegistry{
+		models: []ModelInfo{
+			{ID: "model-c", Provider: "test"},
+			{ID: "model-b", Provider: "test"},
+			{ID: "model-a", Provider: "test"},
+		},
+	})
+
+	history := NewModelHistory(t.TempDir())
+	history.Record("test", "model-b")
+	history.Record("test", "model-c")
+	reg.SetModelHistory(history)
+
+	suggestions := reg.FilterModels("")
+	if len(suggestions) != 3 {
+		t.Fatalf("expected 3 suggestions, got %d", len(suggestions))
+	}
+
+	// model-c was most recently used, then model-b, then model-a (not in history)
+	if suggestions[0].ModelID != "model-c" {
+		t.Fatalf("expected model-c first (most recent), got %q", suggestions[0].ModelID)
+	}
+	if suggestions[1].ModelID != "model-b" {
+		t.Fatalf("expected model-b second, got %q", suggestions[1].ModelID)
+	}
+	if suggestions[2].ModelID != "model-a" {
+		t.Fatalf("expected model-a last (not in history), got %q", suggestions[2].ModelID)
+	}
+}
+
+func TestFilterModels_NoHistory(t *testing.T) {
+	reg := NewRegistry()
+	reg.SetModelRegistry(&stubModelRegistry{
+		models: []ModelInfo{
+			{ID: "model-b", Provider: "test"},
+			{ID: "model-a", Provider: "test"},
+		},
+	})
+
+	// Without history, original order is preserved.
+	suggestions := reg.FilterModels("")
+	if len(suggestions) != 2 {
+		t.Fatalf("expected 2 suggestions, got %d", len(suggestions))
+	}
+	if suggestions[0].ModelID != "model-b" {
+		t.Fatalf("expected model-b first (original order), got %q", suggestions[0].ModelID)
+	}
+}
+
+func TestFilterModels_WithFilterIgnoresHistory(t *testing.T) {
+	reg := NewRegistry()
+	reg.SetModelRegistry(&stubModelRegistry{
+		models: []ModelInfo{
+			{ID: "model-a", Provider: "test"},
+			{ID: "model-b", Provider: "test"},
+		},
+	})
+
+	history := NewModelHistory(t.TempDir())
+	history.Record("test", "model-b")
+	reg.SetModelHistory(history)
+
+	// When a filter is active, sorting by recency is skipped.
+	suggestions := reg.FilterModels("a")
+	if len(suggestions) != 1 {
+		t.Fatalf("expected 1 suggestion, got %d", len(suggestions))
+	}
+	if suggestions[0].ModelID != "model-a" {
+		t.Fatalf("expected model-a (matching filter), got %q", suggestions[0].ModelID)
+	}
+}
+
+func TestStableSortByRecency(t *testing.T) {
+	history := NewModelHistory(t.TempDir())
+	history.Record("test", "model-c")
+	history.Record("test", "model-a")
+
+	cmds := []Command{
+		{ModelID: "model-a", ModelProvider: "test"},
+		{ModelID: "model-b", ModelProvider: "test"},
+		{ModelID: "model-c", ModelProvider: "test"},
+	}
+
+	stableSortByRecency(cmds, history)
+
+	// model-a has recency 0 (most recent), model-c has recency 1, model-b has recency -1
+	if cmds[0].ModelID != "model-a" {
+		t.Fatalf("expected model-a first, got %q", cmds[0].ModelID)
+	}
+	if cmds[1].ModelID != "model-c" {
+		t.Fatalf("expected model-c second, got %q", cmds[1].ModelID)
+	}
+	if cmds[2].ModelID != "model-b" {
+		t.Fatalf("expected model-b last, got %q", cmds[2].ModelID)
+	}
+}
+
+func TestStableSortByRecency_Empty(t *testing.T) {
+	// Should not panic with nil or empty slice.
+	history := NewModelHistory(t.TempDir())
+	stableSortByRecency(nil, history)
+	stableSortByRecency([]Command{}, history)
+}
+
+func TestRecencyBefore(t *testing.T) {
+	tests := []struct {
+		a, b int
+		want bool
+	}{
+		{0, 1, true},        // more recent (0) before less recent (1)
+		{1, 0, false},       // less recent (1) not before more recent (0)
+		{0, -1, true},       // recent before unknown
+		{-1, 0, false},      // unknown not before recent
+		{-1, -1, false},     // unknown preserves order
+		{2, 3, true},        // lower recency index = more recent
+		{3, 2, false},       // higher recency index = less recent
+	}
+
+	for _, tt := range tests {
+		got := recencyBefore(tt.a, tt.b)
+		if got != tt.want {
+			t.Errorf("recencyBefore(%d, %d) = %v, want %v", tt.a, tt.b, got, tt.want)
+		}
+	}
+}

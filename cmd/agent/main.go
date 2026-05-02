@@ -88,6 +88,16 @@ func main() {
 	if err := modelReg.LoadModels(ctx); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: failed to load models: %v\n", err)
 	}
+	// Create model history for recently used models.
+	configDir, err := config.ConfigDir()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: config dir: %v\n", err)
+	}
+	modelHistory := commands.NewModelHistory(configDir)
+	if cfg.Provider != "" && cfg.Model != "" {
+		modelHistory.Record(cfg.Provider, cfg.Model)
+	}
+	cmdReg.SetModelHistory(modelHistory)
 	cmdReg.SetModelRegistry(modelReg)
 
 	// Register native tools.
@@ -172,7 +182,7 @@ func main() {
 	styles := tui.NewStyles(theme)
 
 	// Create and run the TUI.
-	m := tui.NewModel(cfg, prov, toolReg, ev, cmdReg, modelReg, sess, auth.APIKey, skillResult.Skills, styles, pluginMgr)
+	m := tui.NewModel(cfg, prov, toolReg, ev, cmdReg, modelReg, modelHistory, sess, auth.APIKey, skillResult.Skills, styles, pluginMgr)
 
 	p := tea.NewProgram(
 		m,

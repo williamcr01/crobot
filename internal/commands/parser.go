@@ -47,6 +47,7 @@ type Command struct {
 type Registry struct {
 	commands      map[string]Command
 	modelRegistry ModelRegistry
+	modelHistory  *ModelHistory
 }
 
 // NewRegistry creates an empty command registry.
@@ -59,21 +60,33 @@ func (r *Registry) SetModelRegistry(mr ModelRegistry) {
 	r.modelRegistry = mr
 }
 
+// SetModelHistory sets the model history for sorting recently used models first.
+func (r *Registry) SetModelHistory(h *ModelHistory) {
+	r.modelHistory = h
+}
+
 // FilterModels returns model suggestions matching the filter text.
+// When no filter is provided, recently used models appear first.
 func (r *Registry) FilterModels(filter string) []Command {
 	if r.modelRegistry == nil {
 		return nil
 	}
 	models := r.modelRegistry.Filter(filter)
-	var suggestions []Command
-	for _, m := range models {
-		suggestions = append(suggestions, Command{
+	suggestions := make([]Command, len(models))
+	for i, m := range models {
+		suggestions[i] = Command{
 			Name:          m.ID,
 			Args:          m.Provider,
 			ModelID:       m.ID,
 			ModelProvider: m.Provider,
-		})
+		}
 	}
+
+	// Sort recently used models to the top when there is no active filter.
+	if filter == "" && r.modelHistory != nil {
+		stableSortByRecency(suggestions, r.modelHistory)
+	}
+
 	return suggestions
 }
 
@@ -219,6 +232,45 @@ func (r *Registry) modelSuggestions(input string) []Command {
 		})
 	}
 	return suggestions
+}
+
+// stableSortByRecency sorts Commands so that recently used models appear first,
+// preserving the original relative order among models with the same recency.
+// Models not in history stay at the bottom in their original order.
+func stableSortByRecency(cmds []Command, history *ModelHistory) {
+	if len(cmds) <= 1 {
+		return
+	}
+	// Build a recency map.
+	recency := make([]int, len(cmds))
+	for i, cmd := range cmds {
+		recency[i] = history.Recency(cmd.ModelProvider, cmd.ModelID)
+	}
+
+	// Simple insertion sort that keeps models ordered by recency.
+	// -1 (not in history) sorts last. Among same recency, original order is preserved.
+	for i := 1; i < len(cmds); i++ {
+		for j := i; j > 0 && recencyBefore(recency[j], recency[j-1]); j-- {
+			cmds[j], cmds[j-1] = cmds[j-1], cmds[j]
+			recency[j], recency[j-1] = recency[j-1], recency[j]
+		}
+	}
+}
+
+// recencyBefore returns true if a should be sorted before b.
+// a and b are recency values: -1 = not in history (sorts last),
+// 0 = most recent (sorts first).
+func recencyBefore(a, b int) bool {
+	if a == -1 && b == -1 {
+		return false // preserve original order for non-history models
+	}
+	if a == -1 {
+		return false // a not in history, b is — a goes after
+	}
+	if b == -1 {
+		return true // a in history, b not — a goes before
+	}
+	return a < b // both in history, lower recency index = more recent
 }
 
 // Parse splits an input line into command name and args.

@@ -107,6 +107,9 @@ type Model struct {
 	plugins  agent.PluginManager
 	styles   Styles
 
+	// modelHistory tracks recently used models for display priority.
+	modelHistory *commands.ModelHistory
+
 	// apiKeyFor returns the API key for a provider name, or "" if not authorized.
 	apiKeyFor func(string) string
 
@@ -170,6 +173,7 @@ func NewModel(
 	ev *events.Logger,
 	cmdReg *commands.Registry,
 	modelReg *provider.ModelRegistry,
+	modelHistory *commands.ModelHistory,
 	sess sessionWriter,
 	apiKeyFor func(string) string,
 	skls []skills.Skill,
@@ -209,21 +213,22 @@ func NewModel(
 	}
 
 	return &Model{
-		config:      cfg,
-		provider:    prov,
-		toolReg:     toolReg,
-		events:      ev,
-		cmdReg:      cmdReg,
-		modelReg:    modelReg,
-		plugins:     plugins,
-		session:     sess,
-		apiKeyFor:   apiKeyFor,
-		skills:      skls,
-		textarea:    ta,
-		spinner:     sp,
-		styles:      s,
-		messages:    messages,
-		agentEvents: make(chan agent.Event, 64),
+		config:       cfg,
+		provider:     prov,
+		toolReg:      toolReg,
+		events:       ev,
+		cmdReg:       cmdReg,
+		modelReg:     modelReg,
+		modelHistory: modelHistory,
+		plugins:      plugins,
+		session:      sess,
+		apiKeyFor:    apiKeyFor,
+		skills:       skls,
+		textarea:     ta,
+		spinner:      sp,
+		styles:       s,
+		messages:     messages,
+		agentEvents:  make(chan agent.Event, 64),
 	}
 }
 
@@ -468,6 +473,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.modelPickerActive = true
 				m.modelPickerFilter = ""
 				m.modelPickerIndex = 0
+				m.setModelPickerIndexToCurrent()
 				m.resetTextarea()
 				m.textarea.Focus()
 				return m, nil
@@ -1528,6 +1534,19 @@ func (m *Model) clampModelPickerIndex(models []commands.Command) {
 	}
 }
 
+func (m *Model) setModelPickerIndexToCurrent() {
+	if m.cmdReg == nil || m.config == nil || m.config.Provider == "" || m.config.Model == "" {
+		return
+	}
+	models := m.cmdReg.FilterModels(m.modelPickerFilter)
+	for i, model := range models {
+		if model.ModelProvider == m.config.Provider && model.ModelID == m.config.Model {
+			m.modelPickerIndex = i
+			return
+		}
+	}
+}
+
 // handleThemePickerKey processes key events when theme picker is active.
 // Returns (model, cmd, handled). If handled is false, the event falls through
 // to the textarea for character/backspace input.
@@ -2182,6 +2201,11 @@ func (m *Model) selectModel(providerName, modelID string) {
 	m.config.Provider = providerName
 	m.config.Model = modelID
 	_ = config.SaveConfig(m.config)
+
+	// Record model in history.
+	if m.modelHistory != nil {
+		m.modelHistory.Record(providerName, modelID)
+	}
 
 	// Create the provider for the selected model. If the provider changed,
 	// discard the old client so requests do not go to a stale endpoint.
