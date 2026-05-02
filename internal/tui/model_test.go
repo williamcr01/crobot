@@ -294,6 +294,7 @@ func TestShiftTabDoesNotCycleThinkingWhenPending(t *testing.T) {
 }
 
 func TestSelectModelRecreatesProviderWhenProviderChanges(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	deepseek, err := provider.Create("deepseek", "sk-test")
 	if err != nil {
 		t.Fatal(err)
@@ -405,6 +406,7 @@ func TestStatusLineUsesStaticContextFallbackWhenRegistryMissingMetadata(t *testi
 }
 
 func TestSelectModelClearsStaleProviderWhenNewProviderUnauthorized(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	deepseek, err := provider.Create("deepseek", "sk-test")
 	if err != nil {
 		t.Fatal(err)
@@ -2198,6 +2200,7 @@ func TestIsShiftEnterSequence(t *testing.T) {
 // --- SelectModel tests ---
 
 func TestSelectModel_SameProvider(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	m := NewModel(&config.AgentConfig{Provider: "openrouter", Model: "old-model"}, nil, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 
 	m.selectModel("openrouter", "new-model")
@@ -2212,6 +2215,7 @@ func TestSelectModel_SameProvider(t *testing.T) {
 }
 
 func TestSelectModel_NoAPIKey(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, func(name string) string {
 		return ""
 	}, nil, tuiStylesForTest())
@@ -2814,6 +2818,7 @@ func TestCompleteCommandSuggestion_Normal(t *testing.T) {
 }
 
 func TestCompleteCommandSuggestion_ModelSuggestion(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 
 	suggestions := []commands.Command{{ModelID: "openai/gpt-4o", ModelProvider: "openrouter"}}
@@ -2984,6 +2989,7 @@ func TestOpenModelPickerSelectsConfiguredModel(t *testing.T) {
 }
 
 func TestHandleModelPickerKey_EnterSelectsModel(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	cmdReg := commands.NewRegistry()
 	cmdReg.SetModelRegistry(&mockModelRegistry{models: []commands.ModelInfo{
 		{ID: "openai/gpt-4o", Provider: "openrouter"},
@@ -3007,6 +3013,7 @@ func TestHandleModelPickerKey_EnterSelectsModel(t *testing.T) {
 }
 
 func TestHandleModelPickerKey_TabSelectsModel(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	cmdReg := commands.NewRegistry()
 	cmdReg.SetModelRegistry(&mockModelRegistry{models: []commands.ModelInfo{
 		{ID: "openai/gpt-4o", Provider: "openrouter"},
