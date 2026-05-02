@@ -42,6 +42,11 @@ type diffStats struct {
 	hunks   int
 }
 
+type renderedDiffRow struct {
+	text    string
+	changed bool
+}
+
 func formatDiffPreview(output string, width int, maxLines int, collapsed bool, s Styles) string {
 	parsed, stats := parseUnifiedDiff(output)
 	if width >= splitDiffMinWidth {
@@ -90,15 +95,18 @@ func parseUnifiedDiff(output string) ([]parsedDiffLine, diffStats) {
 }
 
 func formatUnifiedDiffPreview(lines []parsedDiffLine, stats diffStats, width int, maxLines int, collapsed bool, s Styles) string {
-	rows := make([]string, 0, len(lines)+1)
-	rows = append(rows, s.ToolMeta.Render(truncateToWidth(fmt.Sprintf("↳ diff +%d -%d • %d hunks", stats.added, stats.removed, stats.hunks), width)))
+	header := s.ToolMeta.Render(truncateToWidth(fmt.Sprintf("↳ diff +%d -%d • %d hunks", stats.added, stats.removed, stats.hunks), width))
+	rows := make([]renderedDiffRow, 0, len(lines))
 	for _, line := range lines {
 		if line.kind == diffMeta || line.kind == diffHunk {
 			continue
 		}
-		rows = append(rows, styleNumberedDiffLine(line, width, s))
+		rows = append(rows, renderedDiffRow{
+			text:    styleNumberedDiffLine(line, width, s),
+			changed: line.kind == diffAdd || line.kind == diffRemove,
+		})
 	}
-	return collapseDiffRows(rows, maxLines, collapsed, s)
+	return collapseDiffRows(header, rows, maxLines, collapsed, s)
 }
 
 func styleNumberedDiffLine(line parsedDiffLine, width int, s Styles) string {
@@ -120,7 +128,8 @@ func styleNumberedDiffLine(line parsedDiffLine, width int, s Styles) string {
 }
 
 func formatSplitDiffPreview(lines []parsedDiffLine, stats diffStats, width int, maxLines int, collapsed bool, s Styles) string {
-	rows := []string{s.ToolMeta.Render(truncateToWidth(fmt.Sprintf("↳ diff +%d -%d • %d hunks", stats.added, stats.removed, stats.hunks), width))}
+	header := s.ToolMeta.Render(truncateToWidth(fmt.Sprintf("↳ diff +%d -%d • %d hunks", stats.added, stats.removed, stats.hunks), width))
+	rows := make([]renderedDiffRow, 0, len(lines))
 	colWidth := (width - 3) / 2
 	for i := 0; i < len(lines); i++ {
 		line := lines[i]
@@ -128,17 +137,17 @@ func formatSplitDiffPreview(lines []parsedDiffLine, stats diffStats, width int, 
 			continue
 		}
 		if line.kind == diffRemove && i+1 < len(lines) && lines[i+1].kind == diffAdd {
-			rows = append(rows, formatSplitRow(line, lines[i+1], colWidth, s))
+			rows = append(rows, renderedDiffRow{text: formatSplitRow(line, lines[i+1], colWidth, s), changed: true})
 			i++
 			continue
 		}
 		if line.kind == diffAdd {
-			rows = append(rows, formatSplitRow(parsedDiffLine{}, line, colWidth, s))
+			rows = append(rows, renderedDiffRow{text: formatSplitRow(parsedDiffLine{}, line, colWidth, s), changed: true})
 		} else {
-			rows = append(rows, formatSplitRow(line, parsedDiffLine{}, colWidth, s))
+			rows = append(rows, renderedDiffRow{text: formatSplitRow(line, parsedDiffLine{}, colWidth, s), changed: line.kind == diffRemove})
 		}
 	}
-	return collapseDiffRows(rows, maxLines, collapsed, s)
+	return collapseDiffRows(header, rows, maxLines, collapsed, s)
 }
 
 func formatSplitRow(left, right parsedDiffLine, colWidth int, s Styles) string {
@@ -163,27 +172,69 @@ func formatSplitCell(line parsedDiffLine, left bool, width int, s Styles) string
 	return styleDiffLine(fmt.Sprintf("%-*s", width, cell), line.kind, s)
 }
 
-func collapseDiffRows(rows []string, maxLines int, collapsed bool, s Styles) string {
-	hidden := 0
-	if len(rows) > maxLines {
-		hidden = len(rows) - maxLines
-		rows = rows[:maxLines]
+func collapseDiffRows(header string, rows []renderedDiffRow, maxLines int, collapsed bool, s Styles) string {
+	shown := rows
+	hiddenBefore := 0
+	hiddenAfter := 0
+	bodyLimit := maxLines - 1
+	if bodyLimit < 1 {
+		bodyLimit = 1
 	}
-	var b strings.Builder
-	for i, row := range rows {
-		if i > 0 {
-			b.WriteByte('\n')
+
+	if len(rows) > bodyLimit {
+		if collapsed {
+			start := changedWindowStart(rows, bodyLimit)
+			end := start + bodyLimit
+			shown = rows[start:end]
+			hiddenBefore = start
+			hiddenAfter = len(rows) - end
+		} else {
+			shown = rows[:bodyLimit]
+			hiddenAfter = len(rows) - bodyLimit
 		}
-		b.WriteString(row)
 	}
-	if collapsed && hidden > 0 {
+
+	var b strings.Builder
+	b.WriteString(header)
+	if hiddenBefore > 0 {
 		b.WriteByte('\n')
-		b.WriteString(s.ToolMeta.Render(fmt.Sprintf("… %d more lines (ctrl+o to expand)", hidden)))
-	} else if hidden > 0 {
+		b.WriteString(s.ToolMeta.Render(fmt.Sprintf("… %d earlier lines", hiddenBefore)))
+	}
+	for _, row := range shown {
 		b.WriteByte('\n')
-		b.WriteString(s.ToolMeta.Render(fmt.Sprintf("… %d more lines", hidden)))
+		b.WriteString(row.text)
+	}
+	if hiddenAfter > 0 {
+		b.WriteByte('\n')
+		if collapsed {
+			b.WriteString(s.ToolMeta.Render(fmt.Sprintf("… %d more lines (ctrl+o to expand)", hiddenAfter)))
+		} else {
+			b.WriteString(s.ToolMeta.Render(fmt.Sprintf("… %d more lines", hiddenAfter)))
+		}
 	}
 	return b.String()
+}
+
+func changedWindowStart(rows []renderedDiffRow, limit int) int {
+	firstChanged := 0
+	for i, row := range rows {
+		if row.changed {
+			firstChanged = i
+			break
+		}
+	}
+	contextBefore := limit / 3
+	start := firstChanged - contextBefore
+	if start < 0 {
+		return 0
+	}
+	if start+limit > len(rows) {
+		start = len(rows) - limit
+	}
+	if start < 0 {
+		return 0
+	}
+	return start
 }
 
 func styleDiffLine(line string, kind diffLineKind, s Styles) string {

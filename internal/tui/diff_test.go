@@ -51,6 +51,32 @@ func TestFormatDiffPreviewShowsSummaryAndLineNumbers(t *testing.T) {
 	}
 }
 
+func TestFormatDiffPreviewCollapsedCentersOnChanges(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("--- /tmp/a\n+++ /tmp/a\n@@ -1,20 +1,21 @@\n")
+	for i := 1; i <= 14; i++ {
+		b.WriteString(" context ")
+		b.WriteString(string(rune('A' + i)))
+		b.WriteByte('\n')
+	}
+	b.WriteString("+important new line\n")
+	for i := 15; i <= 20; i++ {
+		b.WriteString(" context tail\n")
+	}
+
+	got := formatDiffPreview(b.String(), 80, 6, true, testStyles)
+	stripped := stripANSI(got)
+	if !strings.Contains(stripped, "important new line") {
+		t.Fatalf("expected collapsed preview to include changed line: %q", stripped)
+	}
+	if !strings.Contains(stripped, "earlier lines") {
+		t.Fatalf("expected earlier-lines hint: %q", stripped)
+	}
+	if strings.Contains(stripped, "context B") {
+		t.Fatalf("expected initial context to be skipped: %q", stripped)
+	}
+}
+
 func TestFormatDiffPreviewWideUsesSplitLayout(t *testing.T) {
 	diff := "--- /tmp/a\n+++ /tmp/a\n@@ -1,2 +1,2 @@\n-old\n+new\n same"
 	got := formatDiffPreview(diff, 100, 20, false, testStyles)
