@@ -81,7 +81,7 @@ Rules:
 - Colors must be hex strings: `#RGB`, `#RGBA`, `#RRGGBB`, or `#RRGGBBAA`.
 - `name` and `description` are optional.
 - Every color key is optional.
-- Missing keys fall back to `crobot-dark`.
+- Missing keys fall back to the default value, which is transparent for `toolBg` or the `crobot-dark` value for all other colors.
 - Selecting a theme with `/theme` applies it immediately.
 - If you edit the config or theme file manually, restart Crobot to reload it.
 
@@ -95,7 +95,7 @@ Rules:
 | `yellow` | Warning/accent text |
 | `red` | Error/failure text |
 | `gray` | Gray metadata text |
-| `toolBg` | Tool and code block background |
+| `toolBg` | Tool and code block background (transparent by default) |
 | `toolTitle` | Tool name text |
 | `toolOutput` | Tool output text |
 | `toolMeta` | Tool status/duration text |

@@ -61,7 +61,9 @@ func LoadTheme(name string) (*Theme, error) {
 	def := DefaultTheme()
 	for _, sn := range allStyleNames() {
 		if _, ok := loaded.Colors[sn]; !ok {
-			loaded.Colors[sn] = def.Colors[sn]
+			if v, ok := def.Colors[sn]; ok {
+				loaded.Colors[sn] = v
+			}
 		}
 	}
 
@@ -161,7 +163,9 @@ func LoadThemeJSON(name, jsonData string) (*Theme, error) {
 	def := DefaultTheme()
 	for _, sn := range allStyleNames() {
 		if _, ok := loaded.Colors[sn]; !ok {
-			loaded.Colors[sn] = def.Colors[sn]
+			if v, ok := def.Colors[sn]; ok {
+				loaded.Colors[sn] = v
+			}
 		}
 	}
 	if loaded.Bold == nil {

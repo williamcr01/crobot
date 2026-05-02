@@ -13,7 +13,6 @@ func DefaultTheme() *Theme {
 			StyleYellow:       "#f59e0b",
 			StyleRed:          "#ef4444",
 			StyleGray:         "#9ca3af",
-			StyleToolBg:       "#222222",
 			StyleToolTitle:    "#ffffff",
 			StyleToolOutput:   "#9ca3af",
 			StyleToolMeta:     "#9ca3af",
