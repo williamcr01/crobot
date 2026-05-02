@@ -2880,7 +2880,7 @@ func formatToolCallLine(name string, args map[string]any) string {
 	switch name {
 	case "bash":
 		if cmd, ok := args["command"].(string); ok && cmd != "" {
-			return "$ " + cmd
+			return "$ " + shortenPathsInCommand(cmd)
 		}
 		return ""
 	case "file_read", "read":
@@ -2989,6 +2989,33 @@ func shortenDisplayPath(p string) string {
 		return p[len(cwd):]
 	}
 	return p
+}
+
+// shortenPathsInCommand replaces absolute file paths in a bash command string
+// with shortened versions using shortenDisplayPath. Only paths that exist under
+// or equal to the CWD are shortened.
+func shortenPathsInCommand(cmd string) string {
+	cwd := getCwd()
+	fields := strings.Fields(cmd)
+	for i, f := range fields {
+		// Strip common trailing punctuation that may be attached to a path.
+		cleaned := strings.TrimRight(f, ",.;:\"'})]>!")
+		if !strings.HasPrefix(cleaned, "/") {
+			continue
+		}
+		if strings.HasPrefix(cleaned, cwd) {
+			short := shortenDisplayPath(cleaned)
+			// Preserve any trailing punctuation
+			if short != cleaned {
+				fields[i] = short + f[len(cleaned):]
+			}
+			continue
+		}
+		// Check if the path starts with CWD but has non-CWD prefix like /home/user/...
+		// Actually we already check HasPrefix(cwd) above, so this covers all paths
+		// under CWD. Paths outside CWD are left as-is.
+	}
+	return strings.Join(fields, " ")
 }
 
 // wrapText word-wraps text to fit within the given width. It preserves existing

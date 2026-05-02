@@ -1341,6 +1341,50 @@ func TestFormatToolCallLine_BashNoCommand(t *testing.T) {
 	}
 }
 
+func TestFormatToolCallLine_BashWithShortenedPath(t *testing.T) {
+	orig := getCwd()
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+	_ = os.Chdir("/tmp")
+
+	got := formatToolCallLine("bash", map[string]any{"command": "cat /tmp/subdir/file.go"})
+	expected := "$ cat subdir/file.go"
+	if got != expected {
+		t.Fatalf("expected %q, got %q", expected, got)
+	}
+}
+
+func TestFormatToolCallLine_BashWithMultiplePaths(t *testing.T) {
+	orig := getCwd()
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+	_ = os.Chdir("/tmp")
+
+	got := formatToolCallLine("bash", map[string]any{"command": "diff /tmp/a/file.go /tmp/b/file.go"})
+	expected := "$ diff a/file.go b/file.go"
+	if got != expected {
+		t.Fatalf("expected %q, got %q", expected, got)
+	}
+}
+
+func TestFormatToolCallLine_BashWithPathOutsideCwd(t *testing.T) {
+	got := formatToolCallLine("bash", map[string]any{"command": "cat /etc/hosts"})
+	expected := "$ cat /etc/hosts"
+	if got != expected {
+		t.Fatalf("expected %q, got %q", expected, got)
+	}
+}
+
+func TestFormatToolCallLine_BashPathWithTrailingPunctuation(t *testing.T) {
+	orig := getCwd()
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+	_ = os.Chdir("/tmp")
+
+	got := formatToolCallLine("bash", map[string]any{"command": "cat /tmp/subdir/file.go,"})
+	expected := "$ cat subdir/file.go,"
+	if got != expected {
+		t.Fatalf("expected %q, got %q", expected, got)
+	}
+}
+
 func TestFormatToolCallLine_FileRead(t *testing.T) {
 	got := formatToolCallLine("read", map[string]any{"path": "/home/user/file.go", "offset": 10, "limit": 20})
 	if !strings.Contains(got, "file.go") || !strings.Contains(got, ":10-29") {
