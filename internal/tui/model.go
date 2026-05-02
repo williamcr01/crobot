@@ -247,15 +247,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.ready = true
 
-		footerHeight := 5
-		if m.pending {
-			footerHeight = 6
-		}
-		vpHeight := msg.Height - footerHeight
-		if vpHeight < 10 {
-			vpHeight = 10
-		}
-		m.viewport = viewport.New(msg.Width, vpHeight)
+		m.viewport = viewport.New(msg.Width, m.dynamicViewportHeight())
 		m.viewport.YPosition = 0
 		m.viewport.SetContent(m.renderViewportContent())
 
@@ -1119,7 +1111,6 @@ func (m *Model) attachUsageToLastAssistant(usage *provider.Usage) {
 		return
 	}
 	m.calculateUsageCost(usage)
-	m.messages[len(m.messages)-1].usage = fmt.Sprintf("  %d in / %d out", usage.InputTokens, usage.OutputTokens)
 	m.messages[len(m.messages)-1].usageData = usage
 }
 
@@ -2380,10 +2371,6 @@ func (m Model) renderMessages() string {
 				b.WriteString(RenderToolCall(tc, tcWidth, m.toolOutputExpanded, m.styles))
 				b.WriteString("\n")
 			}
-			if msg.usage != "" {
-				b.WriteString(m.styles.Gray.Render(msg.usage))
-				b.WriteString("\n")
-			}
 		case "system":
 			b.WriteString(m.styles.Dim.Render(wrapText(msg.content, wrapWidth)))
 			b.WriteString("\n\n")
@@ -2496,6 +2483,7 @@ func (m *Model) handleMouseSelection(msg tea.MouseMsg) bool {
 }
 
 func (m *Model) refreshViewport() {
+	m.viewport.Height = m.dynamicViewportHeight()
 	wasAtBottom := m.viewport.AtBottom()
 	content := m.renderViewportContent()
 	m.viewport.SetContent(content)

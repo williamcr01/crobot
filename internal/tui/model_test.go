@@ -1697,18 +1697,17 @@ func TestRenderMessages_System(t *testing.T) {
 	}
 }
 
-func TestRenderMessages_AssistantWithUsage(t *testing.T) {
+func TestRenderMessages_AssistantContent(t *testing.T) {
 	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.messages = append(m.messages, messageItem{
 		role:    "assistant",
 		content: "response",
-		usage:   "10 in / 20 out",
 	})
 
 	got := m.renderMessages()
 	stripped := stripANSI(got)
-	if !strings.Contains(stripped, "10 in / 20 out") {
-		t.Fatalf("expected usage in render: %q", stripped)
+	if !strings.Contains(stripped, "response") {
+		t.Fatalf("expected assistant content in render: %q", stripped)
 	}
 }
 
