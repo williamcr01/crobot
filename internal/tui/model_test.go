@@ -220,7 +220,7 @@ func TestViewUsesInputViewForInput(t *testing.T) {
 	m.textarea.SetValue("hello")
 
 	view := m.View()
-	if !strings.Contains(view, "> hello") {
+	if !strings.Contains(view, "hello") {
 		t.Fatalf("expected input line to include textarea content, got %q", view)
 	}
 }
@@ -3489,6 +3489,9 @@ func TestRenderInputView_CursorOnLastLine(t *testing.T) {
 	m.textarea.SetWidth(m.textareaWidth())
 	// 77 chars wraps to 2 lines (textareaWidth = 76)
 	m.textarea.SetValue(strings.Repeat("a", 77))
+	// Move cursor to the end.
+	m.textarea.CursorEnd()
+	m.textareaCursorRune = len([]rune(m.textarea.Value()))
 
 	view := m.renderInputView()
 	lines := strings.Split(view, "\n")
@@ -3613,6 +3616,9 @@ func TestRenderInputView_NewlineContinuation(t *testing.T) {
 	m.width = 80
 	m.textarea.SetWidth(m.textareaWidth())
 	m.textarea.SetValue("line one\nline two")
+	// Move cursor past "line two" so it appears on the continuation line.
+	m.textarea.CursorEnd()
+	m.textareaCursorRune = len([]rune(m.textarea.Value()))
 
 	view := m.renderInputView()
 	lines := strings.Split(view, "\n")

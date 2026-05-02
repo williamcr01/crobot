@@ -1138,9 +1138,8 @@ func (m *Model) resetTextarea() {
 
 // visualLineRange holds the rune offset range of one visual (wrapped) line.
 type visualLineRange struct {
-	startRune   int // rune offset of the first rune in this visual line
-	endRune     int // rune offset past the last rune in this visual line (exclusive)
-	isFirstLine bool // true if this is the first visual line of a logical line
+	startRune int // rune offset of the first rune in this visual line
+	endRune   int // rune offset past the last rune in this visual line (exclusive)
 }
 
 // buildVisualLines computes the visual line ranges for the given text.
@@ -1148,29 +1147,37 @@ type visualLineRange struct {
 // one or more visual lines. Empty logical lines produce one empty visual line.
 func buildVisualLines(runes []rune, width int) []visualLineRange {
 	if width <= 0 {
-		return []visualLineRange{{startRune: 0, endRune: len(runes), isFirstLine: true}}
+		return []visualLineRange{{startRune: 0, endRune: len(runes)}}
 	}
 
 	var lines []visualLineRange
-	// Split runes by newline to get logical lines.
-	logicalLines := splitRunesByNewline(runes)
-	runeOffset := 0
+	i := 0
+	for i < len(runes) {
+		start := i
+		// Advance to the end of this logical line (find \n or end).
+		for i < len(runes) && runes[i] != '\n' {
+			i++
+		}
+		logicalRunes := runes[start:i]
+		// Skip the \n if present.
+		if i < len(runes) && runes[i] == '\n' {
+			i++
+		}
 
-	for _, logicalRunes := range logicalLines {
 		if len(logicalRunes) == 0 {
 			// Empty logical line produces one empty visual line.
 			lines = append(lines, visualLineRange{
-				startRune:   runeOffset,
-				endRune:     runeOffset,
-				isFirstLine: true,
+				startRune: start,
+				endRune:   start,
 			})
 			continue
 		}
 
+		// Wrap the logical line at width boundaries.
 		remaining := logicalRunes
-		firstVis := true
+		runeOffset := start
 		for len(remaining) > 0 {
-			start := runeOffset
+			visStart := runeOffset
 			visWidth := 0
 			segLen := 0
 			for _, r := range remaining {
@@ -1183,35 +1190,14 @@ func buildVisualLines(runes []rune, width int) []visualLineRange {
 				segLen++
 			}
 			lines = append(lines, visualLineRange{
-				startRune:   start,
-				endRune:     runeOffset,
-				isFirstLine: firstVis,
+				startRune: visStart,
+				endRune:   runeOffset,
 			})
-			firstVis = false
 			remaining = remaining[segLen:]
-		}
-		// Advance runeOffset past the newline that this logical line ended with.
-		// If the original runes had a newline after this logical line, consume it.
-		if runeOffset < len(runes) && runes[runeOffset] == '\n' {
-			runeOffset++
 		}
 	}
 
 	return lines
-}
-
-// splitRunesByNewline splits runes into [][]rune separated by '\n'.
-func splitRunesByNewline(runes []rune) [][]rune {
-	var result [][]rune
-	start := 0
-	for i, r := range runes {
-		if r == '\n' {
-			result = append(result, runes[start:i])
-			start = i + 1
-		}
-	}
-	result = append(result, runes[start:])
-	return result
 }
 
 // cursorMoveUp returns the new cursor rune offset after moving up one visual line.
@@ -1294,94 +1280,38 @@ func (m Model) renderInputView() string {
 	}
 
 	cursorStr := m.styles.InputCursor.Render("█")
-
-	// Build visual layout: for each visual line, track the rune offset range
-	// it covers and the rendered text (without cursor marker).
-	type visLine struct {
-		startRune int // rune offset where this visual line starts
-		endRune   int // rune offset where this visual line ends (exclusive)
-		text      string
-	}
-	var visualLines []visLine
-
 	runes := []rune(value)
-	logicalLines := strings.Split(value, "\n")
-	runeOffset := 0
-	isFirstVisLine := true
 
-	for _, logical := range logicalLines {
-		logicalRunes := []rune(logical)
-
-		if len(logicalRunes) == 0 {
-			// Empty logical line produces one empty visual line (with indent
-			// if not the first visual line).
-			indent := ""
-			if !isFirstVisLine {
-				indent = "  "
-			}
-			visualLines = append(visualLines, visLine{
-				startRune: runeOffset,
-				endRune:   runeOffset,
-				text:      indent,
-			})
-			isFirstVisLine = false
-			continue
-		}
-
-		for len(logicalRunes) > 0 {
-			start := runeOffset
-			// Wrap at width boundary.
-			visWidth := 0
-			var seg []rune
-			for _, r := range logicalRunes {
-				rw := runeDisplayWidth(r)
-				if visWidth+rw > width && visWidth > 0 {
-					break
-				}
-				seg = append(seg, r)
-				visWidth += rw
-				runeOffset++
-			}
-
-			indent := ""
-			if !isFirstVisLine {
-				indent = "  "
-			}
-			visualLines = append(visualLines, visLine{
-				startRune: start,
-				endRune:   runeOffset,
-				text:      indent + string(seg),
-			})
-			isFirstVisLine = false
-			logicalRunes = logicalRunes[len(seg):]
-		}
+	if len(runes) == 0 {
+		return cursorStr
 	}
 
+	// Build visual layout using shared helper.
+	visualLines := buildVisualLines(runes, width)
 	if len(visualLines) == 0 {
 		return cursorStr
 	}
 
 	// Find the visual position of the cursor based on tracked rune offset.
 	cursorRune := m.textareaCursorRune
-	totalRunes := len(runes)
 	if cursorRune < 0 {
 		cursorRune = 0
 	}
-	if cursorRune > totalRunes {
-		cursorRune = totalRunes
+	if cursorRune > len(runes) {
+		cursorRune = len(runes)
 	}
 
-	cursorVisLine := len(visualLines) - 1
+	cursorVisIdx := len(visualLines) - 1
 	cursorVisCol := 0
 	for i, vl := range visualLines {
 		if cursorRune >= vl.startRune && cursorRune <= vl.endRune {
-			cursorVisLine = i
+			cursorVisIdx = i
 			// Calculate visual column: width of runes from startRune to cursorRune.
 			col := 0
-			for ri := vl.startRune; ri < cursorRune && ri < totalRunes; ri++ {
+			for ri := vl.startRune; ri < cursorRune && ri < len(runes); ri++ {
 				col += runeDisplayWidth(runes[ri])
 			}
-			// Account for "  " indent on continuation lines.
+			// Account for "  " indent on non-first visual lines.
 			if i > 0 {
 				col += 2
 			}
@@ -1390,31 +1320,39 @@ func (m Model) renderInputView() string {
 		}
 	}
 
+	// Build each visual line's text.
+	var lineTexts []string
+	for i, vl := range visualLines {
+		text := string(runes[vl.startRune:vl.endRune])
+		if i > 0 {
+			text = "  " + text
+		}
+		lineTexts = append(lineTexts, text)
+	}
+
 	// Build output with cursor inserted at correct position.
 	var out strings.Builder
-	for i, vl := range visualLines {
-		if i == cursorVisLine {
+	for i, text := range lineTexts {
+		if i == cursorVisIdx {
 			// Insert cursorStr at cursorVisCol within the plain text.
-			plainText := vl.text
 			col := 0
 			pos := 0
-			runes := []rune(plainText)
-			for _, r := range runes {
+			trunes := []rune(text)
+			for _, r := range trunes {
 				if col >= cursorVisCol {
 					break
 				}
 				col += runeDisplayWidth(r)
 				pos++
 			}
-			// Convert rune index pos to byte position.
-			bytePos := len(string(runes[:pos]))
-			out.WriteString(plainText[:bytePos])
+			bytePos := len(string(trunes[:pos]))
+			out.WriteString(text[:bytePos])
 			out.WriteString(cursorStr)
-			out.WriteString(plainText[bytePos:])
+			out.WriteString(text[bytePos:])
 		} else {
-			out.WriteString(vl.text)
+			out.WriteString(text)
 		}
-		if i < len(visualLines)-1 {
+		if i < len(lineTexts)-1 {
 			out.WriteByte('\n')
 		}
 	}
