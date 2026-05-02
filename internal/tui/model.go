@@ -1276,20 +1276,22 @@ func (m Model) renderInputView() string {
 
 	width := m.textareaWidth()
 	if width <= 0 {
-		return value + m.styles.InputCursor.Render("█")
+		return value
 	}
 
-	cursorStr := m.styles.InputCursor.Render("█")
 	runes := []rune(value)
 
 	if len(runes) == 0 {
-		return cursorStr
+		// Empty input — render the cursor block.
+		m.textarea.Cursor.SetChar(" ")
+		return m.textarea.Cursor.View()
 	}
 
 	// Build visual layout using shared helper.
 	visualLines := buildVisualLines(runes, width)
 	if len(visualLines) == 0 {
-		return cursorStr
+		m.textarea.Cursor.SetChar(" ")
+		return m.textarea.Cursor.View()
 	}
 
 	// Find the visual position of the cursor based on tracked rune offset.
@@ -1330,11 +1332,12 @@ func (m Model) renderInputView() string {
 		lineTexts = append(lineTexts, text)
 	}
 
-	// Build output with cursor inserted at correct position.
+	// Build output with cursor rendered as a block cursor on top of the
+	// character at the cursor position (or a space at the end of text).
 	var out strings.Builder
 	for i, text := range lineTexts {
 		if i == cursorVisIdx {
-			// Insert cursorStr at cursorVisCol within the plain text.
+			// Find the rune at the cursor visual column within this line.
 			col := 0
 			pos := 0
 			trunes := []rune(text)
@@ -1346,9 +1349,19 @@ func (m Model) renderInputView() string {
 				pos++
 			}
 			bytePos := len(string(trunes[:pos]))
-			out.WriteString(text[:bytePos])
-			out.WriteString(cursorStr)
-			out.WriteString(text[bytePos:])
+			// Determine the character at cursor position.
+			if pos < len(trunes) {
+				cursorChar := string(trunes[pos])
+				m.textarea.Cursor.SetChar(cursorChar)
+				out.WriteString(text[:bytePos])
+				out.WriteString(m.textarea.Cursor.View())
+				out.WriteString(text[bytePos+len(cursorChar):])
+			} else {
+				// Cursor past end of line — show block cursor.
+				m.textarea.Cursor.SetChar(" ")
+				out.WriteString(text)
+				out.WriteString(m.textarea.Cursor.View())
+			}
 		} else {
 			out.WriteString(text)
 		}

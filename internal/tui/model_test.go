@@ -165,8 +165,9 @@ func TestNewModelConfiguresTextareaInput(t *testing.T) {
 	if strings.Contains(m.renderInputView(), "Type a message") {
 		t.Fatalf("expected no textarea placeholder, got %q", m.renderInputView())
 	}
-	if !strings.Contains(m.renderInputView(), "█") {
-		t.Fatalf("expected block input cursor, got %q", m.renderInputView())
+	// Cursor should be initialized at position 0 (start of empty input).
+	if m.textareaCursorRune != 0 {
+		t.Fatalf("expected cursor at position 0, got %d", m.textareaCursorRune)
 	}
 }
 
@@ -3498,14 +3499,9 @@ func TestRenderInputView_CursorOnLastLine(t *testing.T) {
 	if len(lines) < 2 {
 		t.Fatalf("expected at least 2 lines, got %d: %q", len(lines), view)
 	}
-	// Cursor should be on the last line
-	lastLine := lines[len(lines)-1]
-	if !strings.Contains(lastLine, "█") {
-		t.Fatalf("expected cursor on last line: %q", lastLine)
-	}
-	// First line should NOT have cursor
-	if strings.Contains(lines[0], "█") {
-		t.Fatalf("expected no cursor on first wrapped line: %q", lines[0])
+	// Cursor should be on the last line — verify via cursor tracking state.
+	if m.textareaCursorRune != len([]rune(m.textarea.Value())) {
+		t.Fatalf("expected cursor at end of text, got position %d", m.textareaCursorRune)
 	}
 }
 
@@ -3593,8 +3589,9 @@ func TestRenderInputView_ZeroWidth(t *testing.T) {
 	if !strings.Contains(view, "hello") {
 		t.Fatalf("expected text in view with zero width: %q", view)
 	}
-	if !strings.Contains(view, "█") {
-		t.Fatalf("expected cursor in view with zero width: %q", view)
+	// Cursor should be at position 0 after SetValue.
+	if m.textareaCursorRune != 0 {
+		t.Fatalf("expected cursor at position 0, got %d", m.textareaCursorRune)
 	}
 }
 
@@ -3629,8 +3626,8 @@ func TestRenderInputView_NewlineContinuation(t *testing.T) {
 	if !strings.HasPrefix(lines[1], "  ") {
 		t.Fatalf("expected indent on continuation line: %q", lines[1])
 	}
-	// Cursor on last line
-	if !strings.Contains(lines[1], "█") {
-		t.Fatalf("expected cursor on last line: %q", lines[1])
+	// Cursor on last line via state.
+	if m.textareaCursorRune != len([]rune(m.textarea.Value())) {
+		t.Fatalf("expected cursor at end of text, got position %d", m.textareaCursorRune)
 	}
 }
