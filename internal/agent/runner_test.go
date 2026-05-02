@@ -194,6 +194,59 @@ func TestRun_ToolCall(t *testing.T) {
 	}
 }
 
+func TestRun_ToolCallEndWithoutStart(t *testing.T) {
+	echoTool := tools.Tool{
+		Name:        "echo",
+		Description: "Echoes input",
+		InputSchema: map[string]any{"type": "object"},
+		Execute: func(ctx context.Context, args map[string]any) (any, error) {
+			msg, _ := args["message"].(string)
+			return msg, nil
+		},
+	}
+
+	mock := &mockProvider{
+		name: "mock",
+		responses: []responseStep{
+			{text: "", usage: &provider.Usage{InputTokens: 1, OutputTokens: 1}},
+			{text: "Done!", usage: &provider.Usage{InputTokens: 2, OutputTokens: 1}},
+		},
+	}
+
+	toolReg := tools.NewRegistry()
+	toolReg.Register(echoTool)
+	r := &runner{prov: completeToolCallProvider{mock}, model: "mock-model", maxTurns: 50, toolReg: toolReg}
+
+	result, err := r.run(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Text != "Done!" {
+		t.Fatalf("expected final text, got %q", result.Text)
+	}
+	if len(mock.requests) != 2 {
+		t.Fatalf("expected tool call to trigger second request, got %d requests", len(mock.requests))
+	}
+}
+
+type completeToolCallProvider struct{ *mockProvider }
+
+func (p completeToolCallProvider) Stream(ctx context.Context, req provider.Request) (<-chan provider.StreamEvent, error) {
+	p.requests = append(p.requests, req)
+	ch := make(chan provider.StreamEvent, 2)
+	go func() {
+		defer close(ch)
+		if len(p.requests) == 1 {
+			ch <- provider.StreamEvent{ToolCallEnd: &provider.ToolCall{Name: "echo", ID: "call_1", Args: map[string]any{"message": "testing"}}}
+			ch <- provider.StreamEvent{Done: &provider.Usage{InputTokens: 1, OutputTokens: 1}}
+			return
+		}
+		ch <- provider.StreamEvent{TextDelta: "Done!"}
+		ch <- provider.StreamEvent{Done: &provider.Usage{InputTokens: 2, OutputTokens: 1}}
+	}()
+	return ch, nil
+}
+
 func TestRun_ProviderErrorEmitsTypedErrorEvent(t *testing.T) {
 	expectedErr := fmt.Errorf("provider failed")
 	mock := &mockProvider{

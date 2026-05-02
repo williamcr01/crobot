@@ -372,28 +372,28 @@ func (r *runner) processStream(ctx context.Context, evCh <-chan provider.StreamE
 
 		if event.ToolCallEnd != nil {
 			tc := event.ToolCallEnd
+			args := tc.Args
+			callID := tc.ID
 			if acc, ok := toolCallsPending[tc.ID]; ok {
-				var args map[string]any
-				if len(tc.Args) > 0 {
-					args = tc.Args
-				} else {
+				callID = acc.id
+				if len(args) == 0 {
 					args = parseArgs(acc.argsBuf.String())
 				}
-				toolCalls = append(toolCalls, provider.ToolCall{
-					Name: tc.Name,
-					ID:   acc.id,
-					Args: args,
-				})
 				delete(toolCallsPending, tc.ID)
-				r.emit(Event{
-					Type: "tool_call_end",
-					ToolCallEnd: &ToolCallEvent{
-						Name:   tc.Name,
-						CallID: acc.id,
-						Args:   args,
-					},
-				})
 			}
+			toolCalls = append(toolCalls, provider.ToolCall{
+				Name: tc.Name,
+				ID:   callID,
+				Args: args,
+			})
+			r.emit(Event{
+				Type: "tool_call_end",
+				ToolCallEnd: &ToolCallEvent{
+					Name:   tc.Name,
+					CallID: callID,
+					Args:   args,
+				},
+			})
 		}
 
 		if event.Done != nil {
