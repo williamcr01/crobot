@@ -250,6 +250,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.viewport = viewport.New(msg.Width, m.dynamicViewportHeight())
 		m.viewport.YPosition = 0
 		m.viewport.SetContent(m.renderViewportContent())
+		m.viewport.GotoBottom()
 
 		tw := m.textareaWidth()
 		m.textarea.SetWidth(tw)
