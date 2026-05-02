@@ -104,6 +104,52 @@ func TestMessagesToProvider_EmptyToolCallSkipped(t *testing.T) {
 	}
 }
 
+func TestMessagesToProvider_OmitsIncompleteToolCalls(t *testing.T) {
+	msgs := []Message{
+		{
+			Role:    RoleAssistant,
+			Content: "checking",
+			ToolCalls: []ToolResult{
+				{Name: "bash", CallID: "call_1", Args: map[string]any{"cmd": "sleep 10"}},
+			},
+		},
+	}
+
+	result := MessagesToProvider(msgs)
+	if len(result) != 1 {
+		t.Fatalf("expected only assistant content, got %d messages", len(result))
+	}
+	if result[0].Role != RoleAssistant || result[0].Content != "checking" {
+		t.Fatalf("unexpected assistant message: %#v", result[0])
+	}
+	if len(result[0].ToolCalls) != 0 {
+		t.Fatalf("expected no incomplete tool calls, got %#v", result[0].ToolCalls)
+	}
+}
+
+func TestMessagesToProvider_MixedCompleteAndIncompleteToolCalls(t *testing.T) {
+	msgs := []Message{
+		{
+			Role: RoleAssistant,
+			ToolCalls: []ToolResult{
+				{Name: "read", CallID: "complete", Args: map[string]any{"path": "a.go"}, Output: "package main"},
+				{Name: "bash", CallID: "incomplete", Args: map[string]any{"cmd": "sleep 10"}},
+			},
+		},
+	}
+
+	result := MessagesToProvider(msgs)
+	if len(result) != 2 {
+		t.Fatalf("expected assistant plus one tool result, got %d messages", len(result))
+	}
+	if len(result[0].ToolCalls) != 1 || result[0].ToolCalls[0].ID != "complete" {
+		t.Fatalf("expected only complete tool call, got %#v", result[0].ToolCalls)
+	}
+	if result[1].Role != RoleTool || result[1].ToolCallID != "complete" {
+		t.Fatalf("expected matching complete tool result, got %#v", result[1])
+	}
+}
+
 func TestMessagesToProvider_Mixed(t *testing.T) {
 	msgs := []Message{
 		{Role: RoleUser, Content: "hello"},

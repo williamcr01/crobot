@@ -104,7 +104,17 @@ func messageToProvider(msg Message) []provider.Message {
 		return []provider.Message{{Role: role, Content: msg.Content}}
 
 	case RoleAssistant:
-		if len(msg.ToolCalls) == 0 {
+		completeToolCalls := make([]ToolResult, 0, len(msg.ToolCalls))
+		for _, tc := range msg.ToolCalls {
+			// An assistant message with tool_calls must be followed by tool
+			// messages for every tool_call_id. If a stream was cancelled before a
+			// tool result arrived, omit that incomplete tool call from LLM history.
+			if tc.CallID != "" && tc.Output != "" {
+				completeToolCalls = append(completeToolCalls, tc)
+			}
+		}
+
+		if len(completeToolCalls) == 0 {
 			return []provider.Message{{
 				Role:             RoleAssistant,
 				Content:          msg.Content,
@@ -112,31 +122,27 @@ func messageToProvider(msg Message) []provider.Message {
 			}}
 		}
 
-		// Assistant message with tool calls: emit the assistant message
-		// followed by individual tool-result messages.
+		// Assistant message with completed tool calls: emit the assistant message
+		// followed by the matching tool-result messages.
 		llmMsg := provider.Message{
 			Role:             RoleAssistant,
 			Content:          msg.Content,
 			ReasoningContent: msg.Reasoning,
 		}
-		for _, tc := range msg.ToolCalls {
-			if tc.CallID != "" {
-				llmMsg.ToolCalls = append(llmMsg.ToolCalls, provider.ToolCall{
-					Name: tc.Name,
-					ID:   tc.CallID,
-					Args: tc.Args,
-				})
-			}
+		for _, tc := range completeToolCalls {
+			llmMsg.ToolCalls = append(llmMsg.ToolCalls, provider.ToolCall{
+				Name: tc.Name,
+				ID:   tc.CallID,
+				Args: tc.Args,
+			})
 		}
 		out := []provider.Message{llmMsg}
-		for _, tc := range msg.ToolCalls {
-			if tc.Output != "" {
-				out = append(out, provider.Message{
-					Role:       RoleTool,
-					ToolCallID: tc.CallID,
-					Content:    tc.Output,
-				})
-			}
+		for _, tc := range completeToolCalls {
+			out = append(out, provider.Message{
+				Role:       RoleTool,
+				ToolCallID: tc.CallID,
+				Content:    tc.Output,
+			})
 		}
 		return out
 

@@ -18,8 +18,8 @@ func TestDefaults(t *testing.T) {
 	if cfg.Thinking != "none" {
 		t.Errorf("expected thinking none, got %s", cfg.Thinking)
 	}
-	if cfg.MaxTurns != 50 {
-		t.Errorf("expected maxTurns 50, got %d", cfg.MaxTurns)
+	if cfg.MaxTurns != -1 {
+		t.Errorf("expected maxTurns -1, got %d", cfg.MaxTurns)
 	}
 	if cfg.SessionDir != "~/.crobot/sessions" {
 		t.Errorf("expected sessionDir ~/.crobot/sessions, got %s", cfg.SessionDir)
