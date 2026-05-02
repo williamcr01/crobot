@@ -17,6 +17,7 @@ import (
 	"crobot/internal/events"
 	"crobot/internal/prompt"
 	"crobot/internal/provider"
+	"crobot/internal/runtime"
 	"crobot/internal/session"
 	"crobot/internal/skills"
 	"crobot/internal/themes"
@@ -2798,31 +2799,24 @@ func (m *Model) startAgent(ctx context.Context, input string) {
 	ch := m.agentEvents
 	defer close(ch)
 
-	sysPrompt := prompt.Build(*m.config, getCwd(), m.skills)
-
-	// Build conversation history for the LLM from the canonical conversation format.
-	llmMsgs := conversation.MessagesToProvider(messagesToConversation(m.messages, false))
-
 	// The latest user message is already in m.messages.
-	// Run the agent loop.
-	_, _ = agent.RunWithThinking(
-		ctx,
-		m.provider,
-		m.config.Model,
-		m.config.Thinking,
-		m.config.MaxTurns,
-		sysPrompt,
-		llmMsgs,
-		m.toolReg,
-		m.plugins,
-		func(ev agent.Event) {
+	// Run the frontend-agnostic backend loop.
+	_, _ = runtime.RunAgent(ctx, runtime.AgentRequest{
+		Config:   m.config,
+		Provider: m.provider,
+		ToolReg:  m.toolReg,
+		Plugins:  m.plugins,
+		Skills:   m.skills,
+		CWD:      getCwd(),
+		Messages: messagesToConversation(m.messages, false),
+		OnEvent: func(ev agent.Event) {
 			select {
 			case ch <- ev:
 			case <-ctx.Done():
 				return
 			}
 		},
-	)
+	})
 }
 
 // --- Input preprocessors ---

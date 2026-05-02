@@ -7,14 +7,15 @@ import (
 
 	"crobot/internal/agent"
 	"crobot/internal/config"
-	"crobot/internal/prompt"
+	"crobot/internal/conversation"
 	"crobot/internal/provider"
+	"crobot/internal/runtime"
 	"crobot/internal/skills"
 	"crobot/internal/tools"
 )
 
 // runHeadless executes a single prompt and streams the response to stdout.
-// It bypasses the TUI entirely, calling the agent runner directly.
+// It bypasses the TUI and uses the frontend-agnostic runtime directly.
 func runHeadless(
 	cfg *config.AgentConfig,
 	prov provider.Provider,
@@ -24,16 +25,14 @@ func runHeadless(
 	promptText string,
 ) {
 	cwd, _ := os.Getwd()
-	sysPrompt := prompt.Build(*cfg, cwd, skillsList)
-
-	msgs := []provider.Message{
-		{Role: "user", Content: promptText},
+	msgs := []conversation.Message{
+		{Role: conversation.RoleUser, Content: promptText},
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	err := runHeadlessAgent(ctx, prov, cfg.Model, cfg.Thinking, cfg.MaxTurns, sysPrompt, msgs, toolReg, plugins)
+	err := runHeadlessAgent(ctx, cfg, prov, cwd, msgs, toolReg, plugins, skillsList)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "\nerror: %v\n", err)
 		os.Exit(1)
@@ -43,27 +42,24 @@ func runHeadless(
 // runHeadlessAgent runs the agent loop and writes text deltas to stdout.
 func runHeadlessAgent(
 	ctx context.Context,
+	cfg *config.AgentConfig,
 	prov provider.Provider,
-	model string,
-	thinking string,
-	maxTurns int,
-	systemPrompt string,
-	messages []provider.Message,
+	cwd string,
+	messages []conversation.Message,
 	toolReg *tools.Registry,
 	plugins agent.PluginManager,
+	skillsList []skills.Skill,
 ) error {
-	_, err := agent.RunWithThinking(
-		ctx,
-		prov,
-		model,
-		thinking,
-		maxTurns,
-		systemPrompt,
-		messages,
-		toolReg,
-		plugins,
-		headlessEventHandler,
-	)
+	_, err := runtime.RunAgent(ctx, runtime.AgentRequest{
+		Config:   cfg,
+		Provider: prov,
+		ToolReg:  toolReg,
+		Plugins:  plugins,
+		Skills:   skillsList,
+		CWD:      cwd,
+		Messages: messages,
+		OnEvent:  headlessEventHandler,
+	})
 	return err
 }
 
