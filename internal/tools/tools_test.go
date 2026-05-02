@@ -190,6 +190,13 @@ func TestFileWrite_Basic(t *testing.T) {
 		t.Errorf("expected 11 bytes, got %d", r["written"])
 	}
 
+	if diff, ok := r["diff"].(string); !ok || !strings.Contains(diff, "+hello world") {
+		t.Errorf("expected write diff, got %q", r["diff"])
+	}
+	if !r["created"].(bool) {
+		t.Error("expected created true")
+	}
+
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
@@ -229,6 +236,10 @@ func TestFileEdit_Basic(t *testing.T) {
 	}
 	if r["line"].(int) != 1 {
 		t.Errorf("expected line 1, got %d", r["line"])
+	}
+
+	if diff, ok := r["diff"].(string); !ok || !strings.Contains(diff, "-foo bar baz") || !strings.Contains(diff, "+foo qux baz") {
+		t.Errorf("expected edit diff, got %q", r["diff"])
 	}
 
 	data, _ := os.ReadFile(path)

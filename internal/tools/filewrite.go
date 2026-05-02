@@ -31,6 +31,16 @@ var FileWriteTool = Tool{
 			return nil, fmt.Errorf("path is required")
 		}
 
+		oldContent := ""
+		created := false
+		if data, err := os.ReadFile(path); err == nil {
+			oldContent = string(data)
+		} else if os.IsNotExist(err) {
+			created = true
+		} else {
+			return nil, fmt.Errorf("read existing file: %w", err)
+		}
+
 		dir := filepath.Dir(path)
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return nil, fmt.Errorf("create directory: %w", err)
@@ -40,10 +50,14 @@ var FileWriteTool = Tool{
 			return nil, fmt.Errorf("write file: %w", err)
 		}
 
+		diff := unifiedDiff(path, oldContent, content)
 		return map[string]any{
-			"path":    path,
-			"written": len(content),
-			"success": true,
+			"path":          path,
+			"written":       len(content),
+			"created":       created,
+			"diff":          diff.Text,
+			"diffTruncated": diff.Truncated,
+			"success":       true,
 		}, nil
 	},
 }

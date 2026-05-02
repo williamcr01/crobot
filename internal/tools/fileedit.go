@@ -60,6 +60,7 @@ var FileEditTool = Tool{
 		}
 
 		newContent := strings.Replace(content, oldText, newText, 1)
+		diff := unifiedDiff(path, content, newContent)
 		if err := os.WriteFile(path, []byte(newContent), 0o644); err != nil {
 			return nil, fmt.Errorf("write file: %w", err)
 		}
@@ -69,9 +70,11 @@ var FileEditTool = Tool{
 		line := strings.Count(content[:idx], "\n") + 1
 
 		return map[string]any{
-			"path":    path,
-			"line":    line,
-			"success": true,
+			"path":          path,
+			"line":          line,
+			"diff":          diff.Text,
+			"diffTruncated": diff.Truncated,
+			"success":       true,
 		}, nil
 	},
 }

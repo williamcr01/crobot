@@ -146,6 +146,8 @@ func RenderToolCall(tc toolRenderItem, width int, expanded bool, s Styles) strin
 	blockStyles.BashHeader = blockStyles.BashHeader.Background(bgColor)
 	blockStyles.Green = blockStyles.Green.Background(bgColor)
 	blockStyles.Red = blockStyles.Red.Background(bgColor)
+	blockStyles.Cyan = blockStyles.Cyan.Background(bgColor)
+	blockStyles.Dim = blockStyles.Dim.Background(bgColor)
 
 	statusIcon := "…"
 	statusColor := blockStyles.ToolMeta
@@ -184,7 +186,12 @@ func RenderToolCall(tc toolRenderItem, width int, expanded bool, s Styles) strin
 		if collapsed {
 			maxLines = collapsedPreviewLines
 		}
-		preview := formatOutputPreview(tc.output, inner-2, maxLines, collapsed, blockStyles)
+		var preview string
+		if isDiffOutput(tc.name, tc.output) {
+			preview = formatDiffPreview(tc.output, inner-2, maxLines, collapsed, blockStyles)
+		} else {
+			preview = formatOutputPreview(tc.output, inner-2, maxLines, collapsed, blockStyles)
+		}
 		content.WriteString(preview)
 	}
 
