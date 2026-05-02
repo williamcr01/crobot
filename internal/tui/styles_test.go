@@ -31,8 +31,8 @@ func TestRenderToolCall_Running(t *testing.T) {
 	}
 	got := RenderToolCall(tc, 80, false, testStyles)
 	stripped := stripANSI(got)
-	if !strings.Contains(stripped, "running") {
-		t.Fatalf("expected running status: %q", stripped)
+	if !strings.Contains(stripped, "read") {
+		t.Fatalf("expected tool name in running tool call: %q", stripped)
 	}
 }
 
@@ -51,8 +51,8 @@ func TestRenderToolCall_DoneSuccess(t *testing.T) {
 	if !strings.Contains(stripped, "hello") {
 		t.Fatalf("expected output in tool call: %q", stripped)
 	}
-	if !strings.Contains(stripped, "ok") {
-		t.Fatalf("expected ok status: %q", stripped)
+	if !strings.Contains(stripped, "✓") {
+		t.Fatalf("expected checkmark on success: %q", stripped)
 	}
 }
 
@@ -68,8 +68,8 @@ func TestRenderToolCall_DoneError(t *testing.T) {
 	}
 	got := RenderToolCall(tc, 80, false, testStyles)
 	stripped := stripANSI(got)
-	if !strings.Contains(stripped, "err") {
-		t.Fatalf("expected err status: %q", stripped)
+	if !strings.Contains(stripped, "✗") {
+		t.Fatalf("expected xmark on error: %q", stripped)
 	}
 }
 
@@ -205,42 +205,6 @@ func TestFormatOutputPreview_EmptyOutput(t *testing.T) {
 	}
 }
 
-func TestFormatDuration_Zero(t *testing.T) {
-	if got := formatDuration(0); got != "0ms" {
-		t.Fatalf("expected 0ms, got %q", got)
-	}
-}
-
-func TestFormatDuration_Milliseconds(t *testing.T) {
-	if got := formatDuration(450 * time.Millisecond); got != "450ms" {
-		t.Fatalf("expected 450ms, got %q", got)
-	}
-}
-
-func TestFormatDuration_Seconds(t *testing.T) {
-	if got := formatDuration(2300 * time.Millisecond); got != "2.3s" {
-		t.Fatalf("expected 2.3s, got %q", got)
-	}
-}
-
-func TestFormatDuration_ExactSecond(t *testing.T) {
-	if got := formatDuration(3000 * time.Millisecond); got != "3.0s" {
-		t.Fatalf("expected 3.0s, got %q", got)
-	}
-}
-
-func TestStatusLabel_Success(t *testing.T) {
-	if got := statusLabel(true); got != "ok" {
-		t.Fatalf("expected ok, got %q", got)
-	}
-}
-
-func TestStatusLabel_Error(t *testing.T) {
-	if got := statusLabel(false); got != "err" {
-		t.Fatalf("expected err, got %q", got)
-	}
-}
-
 func TestTruncateToWidth_ShortString(t *testing.T) {
 	if got := truncateToWidth("hello", 10); got != "hello" {
 		t.Fatalf("expected hello, got %q", got)
@@ -362,8 +326,8 @@ func TestRenderToolCall_StatusLineWithEmptyOutput(t *testing.T) {
 	}
 	got := RenderToolCall(tc, 80, false, testStyles)
 	stripped := stripANSI(got)
-	if !strings.Contains(stripped, "50ms") {
-		t.Fatalf("expected duration in status line: %q", stripped)
+	if !strings.Contains(stripped, "✓") {
+		t.Fatalf("expected checkmark in status line: %q", stripped)
 	}
 }
 

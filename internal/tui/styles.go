@@ -2,9 +2,7 @@ package tui
 
 import (
 	"fmt"
-	"math"
 	"strings"
-	"time"
 
 	"crobot/internal/themes"
 
@@ -170,8 +168,14 @@ func RenderToolCall(tc toolRenderItem, width int, expanded bool, s Styles) strin
 		Width(inner).
 		Padding(0, 1)
 
-	// Build the full tool block content: call line + optional output + status.
+	// Build the full tool block content: status icon + call line + optional output.
 	var content strings.Builder
+
+	// --- Status icon before call line (only shown on completion) ---
+	if tc.state == toolDone {
+		content.WriteString(statusColor.Render(statusIcon))
+		content.WriteString(" ")
+	}
 
 	// --- Call line ---
 	callLine := formatSingleToolCallLine(tc, blockStyles)
@@ -193,28 +197,6 @@ func RenderToolCall(tc toolRenderItem, width int, expanded bool, s Styles) strin
 			preview = formatOutputPreview(tc.output, inner-2, maxLines, collapsed, blockStyles)
 		}
 		content.WriteString(preview)
-	}
-
-	// --- Status line ---
-	var statusLine string
-	switch tc.state {
-	case toolRunning:
-		statusLine = blockStyles.ToolMeta.Render("running…")
-	case toolDone:
-		dur := formatDuration(tc.duration)
-		sep := blockStyles.ToolMeta.Render(" ")
-		statusLine = statusColor.Render(statusIcon) + sep +
-			blockStyles.ToolMeta.Render(dur) + sep +
-			statusColor.Render(statusLabel(tc.success))
-	default:
-		// pending — no status line yet.
-	}
-	if statusLine != "" {
-		content.WriteString("\n")
-		content.WriteString(statusLine)
-	} else if tc.state == toolDone && tc.output != "" {
-		content.WriteString("\n")
-		content.WriteString(statusColor.Render(statusIcon) + blockStyles.ToolMeta.Render(" ") + blockStyles.ToolMeta.Render(formatDuration(tc.duration)))
 	}
 
 	// Render the entire content as a single block for uniform background.
@@ -269,28 +251,6 @@ func formatOutputPreview(output string, width int, maxLines int, collapsed bool,
 	}
 
 	return b.String()
-}
-
-// formatDuration formats a duration in milliseconds for display, e.g. "1.2s" or "45ms".
-func formatDuration(d time.Duration) string {
-	ms := d.Milliseconds()
-	if ms == 0 {
-		return "0ms"
-	}
-	if ms < 1000 {
-		return fmt.Sprintf("%dms", ms)
-	}
-	sec := float64(ms) / 1000
-	// Round to one decimal place.
-	rounded := math.Round(sec*10) / 10
-	return fmt.Sprintf("%.1fs", rounded)
-}
-
-func statusLabel(success bool) string {
-	if success {
-		return "ok"
-	}
-	return "err"
 }
 
 // truncateToWidth truncates a string to fit within a given visible width, appending "…" if needed.
