@@ -121,6 +121,13 @@ const collapsedPreviewLines = 10
 // RenderToolCall renders a tool call as a background-colored block (pi-mono style).
 // No box borders. When expanded is false and output exceeds collapsedPreviewLines,
 // only a preview is shown with a "ctrl+o to expand" hint.
+// WebTools are tools whose output should be rendered as markdown.
+var WebTools = map[string]bool{
+	"web_search":          true,
+	"web_fetch":           true,
+	"get_search_content":  true,
+}
+
 // ReadOnlyTools are tools whose output is hidden from the user TUI display.
 // The call line (name + args) is still shown, but the result content is not rendered.
 var ReadOnlyTools = map[string]bool{
@@ -190,13 +197,23 @@ func RenderToolCall(tc toolRenderItem, width int, expanded bool, s Styles) strin
 		if collapsed {
 			maxLines = collapsedPreviewLines
 		}
-		var preview string
-		if isDiffOutput(tc.name, tc.output) {
-			preview = formatDiffPreview(tc.output, inner-2, maxLines, collapsed, blockStyles)
+
+		if WebTools[tc.name] {
+			// Render web tool output through the markdown renderer.
+			mdWidth := inner - 4
+			if mdWidth < 20 {
+				mdWidth = 20
+			}
+			md := RenderMarkdown(tc.output, mdWidth, s)
+			preview := formatOutputPreview(md, inner-2, maxLines, collapsed, blockStyles)
+			content.WriteString(preview)
+		} else if isDiffOutput(tc.name, tc.output) {
+			preview := formatDiffPreview(tc.output, inner-2, maxLines, collapsed, blockStyles)
+			content.WriteString(preview)
 		} else {
-			preview = formatOutputPreview(tc.output, inner-2, maxLines, collapsed, blockStyles)
+			preview := formatOutputPreview(tc.output, inner-2, maxLines, collapsed, blockStyles)
+			content.WriteString(preview)
 		}
-		content.WriteString(preview)
 	}
 
 	// Render the entire content as a single block for uniform background.

@@ -535,6 +535,23 @@ func formatMapToolOutput(v map[string]any) string {
 		}
 	}
 
+	// Web tool results (web_search, web_fetch, get_search_content) have an
+	// "output" field with markdown content + metadata keys. Extract the output
+	// and append a compact metadata line instead of dumping the full map as JSON.
+	if output, hasOutput := v["output"].(string); hasOutput && output != "" {
+		metaParts := make([]string, 0, len(v))
+		for key, val := range v {
+			if key == "output" {
+				continue
+			}
+			metaParts = append(metaParts, fmt.Sprintf("%s: %v", key, val))
+		}
+		if len(metaParts) > 0 {
+			return output + "\n\n---\n" + strings.Join(metaParts, "  |  ")
+		}
+		return output
+	}
+
 	if data, err := json.MarshalIndent(v, "", "  "); err == nil {
 		return string(data)
 	}
