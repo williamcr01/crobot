@@ -65,12 +65,45 @@ OAuth tokens, compatible with pi-ai/OpenAI Codex login output, use a separate pr
 
 OAuth access tokens are sent as bearer tokens. Crobot refreshes them using the stored refresh token when they are close to expiry. `/login` writes OpenAI OAuth credentials to `openai-codex`.
 
+### OpenAI Responses WebSocket
+
+The `openai-responses-ws` provider reuses the `openai` API key. No separate auth entry is needed. Select it in config:
+
+```json
+{
+  "provider": "openai-responses-ws",
+  "model": "gpt-4.1"
+}
+```
+
 Then select OpenAI in `~/.crobot/agent.config.json`:
 
 ```json
 {
   "provider": "openai",
   "model": "gpt-4.1"
+}
+```
+
+## Anthropic
+
+Add an Anthropic API key like this:
+
+```json
+{
+  "anthropic": {
+    "type": "apiKey",
+    "apiKey": "sk-ant-your-key-here"
+  }
+}
+```
+
+Then select Anthropic in `~/.crobot/agent.config.json` or via `/model`:
+
+```json
+{
+  "provider": "anthropic",
+  "model": "claude-sonnet-4-5-20250929"
 }
 ```
 
@@ -96,11 +129,6 @@ Then select DeepSeek in `~/.crobot/agent.config.json` or via `/model`:
 }
 ```
 
-Crobot lists two DeepSeek models:
-
-- `deepseek-v4-pro`
-- `deepseek-v4-flash`
-
 ## Gemini
 
 Add a Gemini API key like this:
@@ -124,6 +152,55 @@ Then select Gemini in `~/.crobot/agent.config.json` or via `/model`:
 ```
 
 Crobot lists models dynamically from the Gemini API.
+
+## Kimi
+
+Add a Kimi API key (Moonshot Developer Platform):
+
+```json
+{
+  "kimi": {
+    "type": "apiKey",
+    "apiKey": "sk-your-moonshot-key-here"
+  }
+}
+```
+
+Kimi's public Open Platform uses prepaid balance/recharge. Use `provider: "kimi"` in your config. Model IDs include `kimi-k2.6`, `kimi-k2.5`, `kimi-k2`, etc.
+
+## Kimi Code
+
+Kimi Code is a separate subscription coding plan with its own API key:
+
+```json
+{
+  "kimi-code": {
+    "type": "apiKey",
+    "apiKey": "sk-your-kimi-code-key-here"
+  }
+}
+```
+
+Select it with `provider: "kimi-code"`. Uses the endpoint `https://api.kimi.com/coding/v1`.
+
+## OpenCode
+
+OpenCode provides two services — Zen (free/rate-limited) and Go (paid):
+
+```json
+{
+  "opencode-zen": {
+    "type": "apiKey",
+    "apiKey": "sk-zen-your-key-here"
+  },
+  "opencode-go": {
+    "type": "apiKey",
+    "apiKey": "sk-go-your-key-here"
+  }
+}
+```
+
+Select with `provider: "opencode-zen"` or `provider: "opencode-go"`.
 
 ## File format
 
@@ -159,10 +236,10 @@ Currently supported:
 - `anthropic`
 - `gemini`
 - `deepseek`
-- `opencode zen`
-- `opencode go`
-- `kimi`
-- `kimi-code`
+- `kimi` (Moonshot Developer Platform)
+- `kimi-code` (subscription coding plan)
+- `opencode-zen` (free/rate-limited)
+- `opencode-go` (paid)
 
 ## Notes
 

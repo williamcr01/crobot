@@ -182,20 +182,102 @@ Receives stable event JSON:
 
 ## Host functions
 
-Imported from module `env`:
+Imported from module `env`. All functions returning data use the packed `i64` convention: `(ptr << 32) | len`. Returned data is UTF-8 JSON in guest memory.
 
-```text
-host_log
-host_config_get
-host_env_get
-host_file_read
-host_file_write
-host_tool_call
-host_send_message
-host_get_cwd
+### `host_log`
+
+```
+host_log(levelPtr: i32, levelLen: i32, msgPtr: i32, msgLen: i32)
 ```
 
-Restricted host functions require matching plugin permissions. `host_tool_call` does not allow recursive plugin tool calls.
+Logs a message to Crobot's event stream. `level` should be `"info"` or `"error"`.
+
+No permission required.
+
+### `host_config_get`
+
+```
+host_config_get(keyPtr: i32, keyLen: i32) -> i64
+```
+
+Reads a configuration value. Returns JSON `{"value": ...}` or `{"error": "..."}`.
+
+Supported keys: `plugins.enabled`, `plugins.directories`, `plugins.permissions`.
+
+Requires permission `config` or `config:<key>`.
+
+### `host_env_get`
+
+```
+host_env_get(keyPtr: i32, keyLen: i32) -> i64
+```
+
+Reads an environment variable. Returns JSON `{"value": "..."}` or `{"error": "..."}`.
+
+Requires permission `env:<key>`.
+
+### `host_file_read`
+
+```
+host_file_read(pathPtr: i32, pathLen: i32) -> i64
+```
+
+Reads a file at the given path. Returns JSON `{"value": "..."}`  or `{"error": "..."}`.
+
+Requires permission `file_read`.
+
+### `host_file_write`
+
+```
+host_file_write(pathPtr: i32, pathLen: i32, contentPtr: i32, contentLen: i32)
+```
+
+Writes content to a file at the given path. Silently fails if permission is denied.
+
+Requires permission `file_write`.
+
+### `host_tool_call`
+
+```
+host_tool_call(namePtr: i32, nameLen: i32, argsPtr: i32, argsLen: i32) -> i64
+```
+
+Calls a native tool by name with JSON arguments. Returns JSON `{"value": ...}` or `{"error": "..."}`.
+
+Requires permission `tool_call`. If the tool is `bash`, also requires `bash`. Plugin-to-plugin tool calls are not allowed. Maximum call depth is 3.
+
+### `host_send_message`
+
+```
+host_send_message(rolePtr: i32, roleLen: i32, contentPtr: i32, contentLen: i32)
+```
+
+Injects a message into the conversation as if sent by the user or system. Silently fails if permission is denied.
+
+Requires permission `send_message`.
+
+### `host_get_cwd`
+
+```
+host_get_cwd() -> i64
+```
+
+Returns the current working directory. Returns JSON `{"value": "/path/to/cwd"}`.
+
+No permission required.
+
+### Permission summary
+
+| Host function      | Required permission                             |
+|--------------------|-------------------------------------------------|
+| `host_log`         | (none)                                          |
+| `host_config_get`  | `config` or `config:<key>`                       |
+| `host_env_get`     | `env:<key>`                                      |
+| `host_file_read`   | `file_read`                                     |
+| `host_file_write`  | `file_write`                                    |
+| `host_tool_call`   | `tool_call` (plus `bash` for bash tool)          |
+| `host_send_message`| `send_message`                                  |
+| `host_get_cwd`     | (none)                                          |
 
 ## Safety model
 

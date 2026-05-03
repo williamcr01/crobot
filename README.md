@@ -7,8 +7,9 @@ Crobot is a minimal agentic assistant built in Go with Bubble Tea.
 ## Features
 
 - Terminal UI with streaming assistant responses
-- Provider support for OpenRouter, OpenAI, OpenAI Codex OAuth, DeepSeek, Gemini, Kimi, and Anthropic
-- Local tools for file read, file write, file edit, and bash commands
+- Provider support for OpenRouter, OpenAI, OpenAI Responses WebSocket, OpenAI Codex OAuth, Anthropic, DeepSeek, Gemini, Kimi, Kimi Code, OpenCode Zen, and OpenCode Go
+- Local tools for file read, file write, file edit, grep, find, ls, and bash commands
+- Agent Skills: load specialized instructions from SKILL.md files
 - Slash commands for model selection, login/logout, context management, sessions, and display settings
 - Configurable system prompt, reasoning level, compaction, and output alignment
 
@@ -68,6 +69,39 @@ Example OpenAI auth:
 }
 ```
 
+Example Anthropic auth:
+
+```json
+{
+  "anthropic": {
+    "type": "apiKey",
+    "apiKey": "sk-ant-your-key-here"
+  }
+}
+```
+
+Example DeepSeek auth:
+
+```json
+{
+  "deepseek": {
+    "type": "apiKey",
+    "apiKey": "sk-your-key-here"
+  }
+}
+```
+
+Example Gemini auth:
+
+```json
+{
+  "gemini": {
+    "type": "apiKey",
+    "apiKey": "your-gemini-api-key"
+  }
+}
+```
+
 Example Kimi auth (pay-per-token Moonshot Developer API):
 
 ```json
@@ -90,7 +124,24 @@ Example Kimi Code auth (subscription coding plan):
 }
 ```
 
+Example OpenCode auth:
+
+```json
+{
+  "opencode-zen": {
+    "type": "apiKey",
+    "apiKey": "sk-zen-your-key-here"
+  },
+  "opencode-go": {
+    "type": "apiKey",
+    "apiKey": "sk-go-your-key-here"
+  }
+}
+```
+
 Kimi's public Open Platform uses prepaid balance/recharge. Kimi Code is a separate subscription plan with its own API key and endpoint (`https://api.kimi.com/coding/v1`). Use `provider: "kimi"` with the Moonshot Developer API or `provider: "kimi-code"` for the Kimi Code plan. Model IDs include `kimi-k2.6`, `kimi-k2.5`, `kimi-k2`, etc.
+
+See [docs/auth.md](docs/auth.md) for full provider authentication details.
 
 ## Configuration
 
@@ -107,8 +158,8 @@ An empty config uses defaults. The full default config is:
   "provider": "",
   "model": "",
   "thinking": "none",
-  "maxTurns": 50,
-  "systemPrompt": "You are Crobot, a coding assistant. You have access to the following tools:\nfile read,\nfile write,\nfile edit,\nbash,\n\nCurrent working directory: {cwd}",
+  "maxTurns": -1,
+  "systemPrompt": "",
   "appendPrompt": "",
   "sessionDir": "~/.crobot/sessions",
   "sessions": {
@@ -133,9 +184,55 @@ An empty config uses defaults. The full default config is:
     "enabled": true,
     "directories": ["~/.crobot/plugins"],
     "permissions": ["file_read", "file_write", "bash", "tool_call", "send_message"]
+  },
+  "openrouter": {
+    "cache": false,
+    "cacheTTL": 0
   }
 }
 ```
+
+When `systemPrompt` is empty or omitted, Crobot uses the built-in prompt listing available tools and the current working directory.
+
+See [docs/config.md](docs/config.md) for full field descriptions and supported values.
+
+## Skills
+
+Crobot supports the Agent Skills specification. Skills are specialized instruction files (SKILL.md) loaded from:
+
+```text
+~/.agents/skills/         (shared across agents)
+~/.crobot/skills/         (crobot-specific)
+./.crobot/skills/         (project-local)
+```
+
+Skills can also be loaded explicitly at startup:
+
+```text
+--skill <path>    Load a skill from a directory or .md file (repeatable)
+```
+
+Loaded skills are listed in the system prompt with their name, description, and location. The model uses the `file read` tool to load a skill's full content when needed.
+
+Inside the TUI:
+
+```text
+/skills              List loaded skills
+/skill:name [args]   Inline-expand a skill's content
+```
+
+Each skill is a directory containing a `SKILL.md` file with YAML frontmatter:
+
+```yaml
+---
+name: my-skill
+description: Instructions for a specific task
+disable-model-invocation: false
+---
+# Skill body (Markdown)
+```
+
+If `disable-model-invocation` is true, the skill is hidden from the model's system prompt and can only be invoked manually with `/skill:name`.
 
 ## Themes
 
@@ -186,10 +283,12 @@ Startup flags:
 
 ```text
 -h, --help            Show help and exit
+-v, --version         Show version and exit
 -c, --continue        Continue the most recent session
     --session <path>  Open a specific session file
     --no-session      Run without saving a session
     --skill <path>    Load a skill from directory or .md file (repeatable)
+-p, --prompt <text>   Run in headless mode with a single prompt
 ```
 
 You can also run `crobot help` as a subcommand.
@@ -210,11 +309,24 @@ Inside the TUI:
 /session               Show session info
 /compact [instruction] Compact conversation context
 /export [path]         Export conversation as Markdown
-/alignment <value>     Set output alignment
+/alignment <value>     Set output alignment (left | centered)
+/skills                List loaded skills
+/plugins               List loaded plugins
+/reload                Reload all plugins
 /quit                  Quit Crobot
 ```
 
-You can also use `!` for shell shortcuts where supported by the input parser.
+The input parser also supports `!` prefix for running shell commands directly (e.g. `!git status`).
+
+## Headless mode
+
+Run a single prompt without the TUI:
+
+```sh
+crobot -p "explain this code"
+```
+
+The response is streamed to stdout. Tool calls run silently. Exit code is 0 on success, 1 on error.
 
 ## Development
 

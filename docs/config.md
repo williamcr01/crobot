@@ -49,17 +49,22 @@ Override the default system prompt entirely:
   "provider": "",
   "model": "",
   "thinking": "none",
-  "maxTurns": 50,
-  "systemPrompt": "You are Crobot, a coding assistant. You have access to the following tools:\nfile read,\nfile write\nfile edit\nbash\n\nCurrent working directory: {cwd}",
+  "maxTurns": -1,
+  "systemPrompt": "",
   "appendPrompt": "",
   "sessionDir": "~/.crobot/sessions",
+  "sessions": {
+    "retentionDays": 30,
+    "maxSessions": 50,
+    "keepNamed": true,
+    "pruneOnStartup": true,
+    "pruneEmptyAfterHours": 24
+  },
   "showBanner": true,
   "slashCommands": true,
-  "display": {
-    "toolDisplay": "grouped",
-    "reasoning": true,
-    "inputStyle": "block"
-  },
+  "reasoning": true,
+  "alignment": "left",
+  "theme": "",
   "compaction": {
     "enabled": true,
     "reserveTokens": 16384,
@@ -98,6 +103,8 @@ Supported values:
 - `"kimi"`
 - `"kimi-code"`
 - `"anthropic"`
+- `"opencode-zen"` — OpenCode Zen
+- `"opencode-go"` — OpenCode Go
 
 Credentials are not stored here. Put credentials in `~/.crobot/auth.json`.
 
@@ -132,7 +139,7 @@ Valid values:
 
 Maximum number of model turns in a single user request. A turn is one model response, including responses that request tool calls.
 
-Default: `-1`.
+Default: `-1` (unlimited).
 
 Set to `-1` to disable the limit and allow unlimited turns.
 
@@ -140,9 +147,9 @@ Set to `-1` to disable the limit and allow unlimited turns.
 
 Replaces the built-in system prompt when non-empty.
 
-Default: built-in Crobot prompt.
+Default: `""` (use built-in prompt).
 
-If this field is missing or set to `""`, Crobot uses the built-in prompt.
+If this field is missing or set to `""`, Crobot uses the built-in prompt that lists available tools and the current working directory.
 
 The placeholder `{cwd}` is replaced with the current working directory.
 
@@ -162,6 +169,40 @@ Directory where sessions are stored.
 
 Default: `"~/.crobot/sessions"`.
 
+### `sessions`
+
+Controls session persistence and retention.
+
+#### `sessions.retentionDays`
+
+Number of days to retain sessions before pruning.
+
+Default: `30`.
+
+#### `sessions.maxSessions`
+
+Maximum number of session files to keep.
+
+Default: `50`.
+
+#### `sessions.keepNamed`
+
+Keep sessions that have a custom title (not the auto-generated prompt-based title).
+
+Default: `true`.
+
+#### `sessions.pruneOnStartup`
+
+Prune old sessions at startup.
+
+Default: `true`.
+
+#### `sessions.pruneEmptyAfterHours`
+
+Prune sessions that have no sent messages after this many hours.
+
+Default: `24`.
+
 ### `showBanner`
 
 Shows or hides the startup banner.
@@ -174,36 +215,34 @@ Enables slash commands.
 
 Default: `true`.
 
-### `display.toolDisplay`
-
-Controls tool rendering style.
-
-Default: `"grouped"`.
-
-Valid values:
-
-- `"grouped"`
-- `"emoji"`
-- `"minimal"`
-- `"hidden"`
-
-### `display.reasoning`
+### `reasoning`
 
 Shows or hides streamed reasoning output.
 
 Default: `true`.
 
-### `display.inputStyle`
+### `alignment`
 
-Controls the input box style.
+Controls output text alignment.
 
-Default: `"block"`.
+Default: `"left"`.
 
 Valid values:
 
-- `"block"`
-- `"bordered"`
-- `"plain"`
+- `"left"`
+- `"centered"`
+
+Auto-saved when changed via `/alignment`.
+
+### `theme`
+
+Active theme name (without `.json`).
+
+Default: `""` (uses `crobot-dark`).
+
+Built-in themes are `crobot-dark`, `crobot-light`, and `crobot-monochrome`. Custom themes are loaded from `~/.crobot/themes/<name>.json`.
+
+Auto-saved when changed via `/theme`.
 
 ### `compaction.enabled`
 
@@ -230,6 +269,8 @@ Default: `20000`.
 Optional model override for summarization. When empty or unset, the current conversation model is used.
 
 Default: `""`.
+
+Auto-saved when changed via `/model` while in the compaction context.
 
 Example:
 
@@ -300,11 +341,12 @@ Valid values:
 
 ## Auto-saved settings
 
-When changed from inside the app, Crobot auto-saves only:
+When changed from inside the app, Crobot auto-saves only these fields to `~/.crobot/agent.config.json`:
 
 - `provider`
 - `model`
 - `thinking`
-- `compaction.model`
+- `alignment`
+- `theme`
 
-Other settings are preserved but not automatically added or changed.
+Other settings are read-only at runtime; edit the config file manually to change them.
