@@ -72,6 +72,12 @@ type Request struct {
 	Cache      bool
 	CacheTTL   int
 	CacheClear bool
+
+	// Optional metadata to include in API requests.
+	// Providers extract the fields they understand and ignore the rest.
+	// For example, Anthropic uses "user_id" for abuse tracking and rate limiting,
+	// and OpenRouter uses "title" and "referer" for app identification.
+	Metadata map[string]string
 }
 
 // Response is the result of a non-streaming provider call.

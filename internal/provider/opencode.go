@@ -564,6 +564,14 @@ func (p *OpenCodeProvider) toAnthropicParams(req Request) anthropic.MessageNewPa
 		params.Tools = opencodeAnthropicTools(req.Tools)
 	}
 
+	if req.Metadata != nil {
+		if userID, ok := req.Metadata["user_id"]; ok && userID != "" {
+			params.Metadata = anthropic.MetadataParam{
+				UserID: anthropic.String(userID),
+			}
+		}
+	}
+
 	return params
 }
 
@@ -743,6 +751,9 @@ func (p *OpenCodeProvider) streamResponsesRaw(ctx context.Context, req Request) 
 	httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Accept", "text/event-stream")
+	if userAgent := metadataUserAgent(req.Metadata); userAgent != "" {
+		httpReq.Header.Set("User-Agent", userAgent)
+	}
 
 	ch := make(chan StreamEvent, 16)
 	go func() {

@@ -208,6 +208,9 @@ func (r *runner) run(ctx context.Context) (*Result, error) {
 			Stream:       true,
 			Cache:        r.options.Cache,
 			CacheTTL:     r.options.CacheTTL,
+			Metadata: map[string]string{
+				"user_agent": "crobot",
+			},
 		}
 
 		// Emit turn start.

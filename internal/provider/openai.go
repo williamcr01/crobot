@@ -113,15 +113,26 @@ func (p *OpenAIProvider) Stream(ctx context.Context, req Request) (<-chan Stream
 
 // ListModels returns available model IDs.
 func (p *OpenAIProvider) requestOptions(req Request) []option.RequestOption {
-	if p.name != "openrouter" || !req.Cache {
+	if p.name != "openrouter" {
 		return nil
 	}
-	opts := []option.RequestOption{option.WithHeader("X-OpenRouter-Cache", "true")}
-	if req.CacheTTL > 0 {
-		opts = append(opts, option.WithHeader("X-OpenRouter-Cache-TTL", strconv.Itoa(req.CacheTTL)))
+	var opts []option.RequestOption
+	if req.Cache {
+		opts = append(opts, option.WithHeader("X-OpenRouter-Cache", "true"))
+		if req.CacheTTL > 0 {
+			opts = append(opts, option.WithHeader("X-OpenRouter-Cache-TTL", strconv.Itoa(req.CacheTTL)))
+		}
+		if req.CacheClear {
+			opts = append(opts, option.WithHeader("X-OpenRouter-Cache-Clear", "true"))
+		}
 	}
-	if req.CacheClear {
-		opts = append(opts, option.WithHeader("X-OpenRouter-Cache-Clear", "true"))
+	if req.Metadata != nil {
+		if title, ok := req.Metadata["title"]; ok && title != "" {
+			opts = append(opts, option.WithHeader("X-Title", title))
+		}
+		if referer, ok := req.Metadata["referer"]; ok && referer != "" {
+			opts = append(opts, option.WithHeader("HTTP-Referer", referer))
+		}
 	}
 	return opts
 }

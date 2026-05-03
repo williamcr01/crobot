@@ -78,7 +78,7 @@ func (p *OpenAICodexProvider) Stream(ctx context.Context, req Request) (<-chan S
 	if err != nil {
 		return nil, err
 	}
-	p.addHeaders(httpReq)
+	p.addHeaders(httpReq, req)
 
 	ch := make(chan StreamEvent, 16)
 	go func() {
@@ -99,14 +99,14 @@ func (p *OpenAICodexProvider) Stream(ctx context.Context, req Request) (<-chan S
 	return ch, nil
 }
 
-func (p *OpenAICodexProvider) addHeaders(req *http.Request) {
+func (p *OpenAICodexProvider) addHeaders(req *http.Request, r Request) {
 	req.Header.Set("Authorization", "Bearer "+p.accessToken)
 	req.Header.Set("chatgpt-account-id", p.accountID)
 	req.Header.Set("originator", "crobot")
 	req.Header.Set("OpenAI-Beta", "responses=experimental")
 	req.Header.Set("Accept", "text/event-stream")
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "crobot")
+	req.Header.Set("User-Agent", metadataUserAgent(r.Metadata))
 }
 
 func (p *OpenAICodexProvider) toResponsesBody(req Request) map[string]any {

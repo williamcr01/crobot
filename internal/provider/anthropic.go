@@ -103,6 +103,14 @@ func (p *AnthropicProvider) toMessageParams(req Request) anthropic.MessageNewPar
 		params.Thinking = *thinking
 	}
 
+	if req.Metadata != nil {
+		if userID, ok := req.Metadata["user_id"]; ok && userID != "" {
+			params.Metadata = anthropic.MetadataParam{
+				UserID: anthropic.String(userID),
+			}
+		}
+	}
+
 	return params
 }
 
