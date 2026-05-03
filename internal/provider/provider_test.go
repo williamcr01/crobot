@@ -29,6 +29,29 @@ func TestCreateOpenRouter(t *testing.T) {
 	}
 }
 
+func TestOpenRouterRequestOptionsEnableResponseCache(t *testing.T) {
+	p := &OpenAIProvider{name: "openrouter"}
+	opts := p.requestOptions(Request{Cache: true, CacheTTL: 300, CacheClear: true})
+	if len(opts) != 3 {
+		t.Fatalf("expected 3 request options, got %d", len(opts))
+	}
+}
+
+func TestOpenAIRequestOptionsDoNotEnableOpenRouterResponseCache(t *testing.T) {
+	p := &OpenAIProvider{name: "openai"}
+	if opts := p.requestOptions(Request{Cache: true, CacheTTL: 300}); len(opts) != 0 {
+		t.Fatalf("expected no request options, got %d", len(opts))
+	}
+}
+
+func TestCalculateCost_ResponseCacheHitZeroUsageIsFree(t *testing.T) {
+	usage := &Usage{}
+	CalculateCost(usage, Pricing{InputPerMTok: 3, OutputPerMTok: 15, CacheReadPerMTok: 1, CacheWritePerMTok: 2}, false)
+	if usage.Cost.Total != 0 {
+		t.Fatalf("expected zero cost for zero-usage response cache hit, got %f", usage.Cost.Total)
+	}
+}
+
 func TestCreateOpenAI(t *testing.T) {
 	prov, err := Create("openai", "sk-test")
 	if err != nil {

@@ -53,6 +53,32 @@ func TestDefaults(t *testing.T) {
 	}
 }
 
+func TestLoadConfig_OpenRouterResponseCache(t *testing.T) {
+	withTempHome(t)
+	writeUserConfig(t, `{"provider":"openrouter","openrouter":{"cache":true,"cacheTTL":300}}`)
+
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !cfg.OpenRouter.Cache {
+		t.Fatal("expected OpenRouter cache enabled")
+	}
+	if cfg.OpenRouter.CacheTTL != 300 {
+		t.Fatalf("expected cacheTTL 300, got %d", cfg.OpenRouter.CacheTTL)
+	}
+}
+
+func TestLoadConfig_OpenRouterResponseCacheRejectsInvalidTTL(t *testing.T) {
+	withTempHome(t)
+	writeUserConfig(t, `{"openrouter":{"cache":true,"cacheTTL":86401}}`)
+
+	_, err := LoadConfig()
+	if err == nil || !strings.Contains(err.Error(), "invalid openrouter.cacheTTL") {
+		t.Fatalf("expected invalid cacheTTL error, got %v", err)
+	}
+}
+
 func TestLoadConfig_BootstrapsUserConfigAndPlugins(t *testing.T) {
 	home := withTempHome(t)
 	os.Setenv("OPENROUTER_API_KEY", "sk-or-v1-testkey")

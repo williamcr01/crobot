@@ -70,6 +70,10 @@ Override the default system prompt entirely:
     "enabled": true,
     "directories": ["~/.crobot/plugins"],
     "permissions": ["file_read", "file_write", "bash", "tool_call", "send_message"]
+  },
+  "openrouter": {
+    "cache": false,
+    "cacheTTL": 0
   }
 }
 ```
@@ -255,6 +259,37 @@ Default:
 ```json
 ["file_read", "file_write", "bash", "tool_call", "send_message"]
 ```
+
+### `openrouter.cache`
+
+Enables OpenRouter response caching by sending `X-OpenRouter-Cache: true` on model requests.
+
+Default: `false`.
+
+On cache hits, OpenRouter returns zero billed usage, so Crobot's cost total remains unchanged for that request.
+
+Example:
+
+```json
+{
+  "provider": "openrouter",
+  "openrouter": {
+    "cache": true,
+    "cacheTTL": 300
+  }
+}
+```
+
+### `openrouter.cacheTTL`
+
+Optional response cache TTL in seconds.
+
+Default: `0`, which lets OpenRouter use its default TTL.
+
+Valid values:
+
+- `0`
+- `1` through `86400`
 
 ## Auto-saved settings
 

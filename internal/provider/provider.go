@@ -4,11 +4,11 @@ import "context"
 
 // Message is a chat message in the conversation.
 type Message struct {
-	Role             string     `json:"role"`                      // "system", "user", "assistant", "tool"
-	Content          string     `json:"content"`                   // Message text or tool result
+	Role             string     `json:"role"`                        // "system", "user", "assistant", "tool"
+	Content          string     `json:"content"`                     // Message text or tool result
 	ReasoningContent string     `json:"reasoning_content,omitempty"` // Model reasoning (e.g. DeepSeek thinking)
-	ToolCalls        []ToolCall `json:"tool_calls,omitempty"`      // Assistant tool calls
-	ToolCallID       string     `json:"tool_call_id,omitempty"`    // Tool result call ID
+	ToolCalls        []ToolCall `json:"tool_calls,omitempty"`        // Assistant tool calls
+	ToolCallID       string     `json:"tool_call_id,omitempty"`      // Tool result call ID
 }
 
 // ToolDefinition describes a tool available to the model.
@@ -66,6 +66,12 @@ type Request struct {
 	Messages     []Message
 	Tools        []ToolDefinition
 	Stream       bool
+
+	// OpenRouter response caching. Cache hits return zero billed tokens and are
+	// distinct from provider prompt-cache token accounting.
+	Cache      bool
+	CacheTTL   int
+	CacheClear bool
 }
 
 // Response is the result of a non-streaming provider call.

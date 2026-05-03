@@ -47,7 +47,7 @@ func RunAgent(ctx context.Context, req AgentRequest) (*agent.Result, error) {
 	sysPrompt := prompt.Build(*req.Config, cwd, req.Skills)
 	llmMsgs := conversation.MessagesToProvider(req.Messages)
 
-	return agent.RunWithThinking(
+	return agent.RunWithOptions(
 		ctx,
 		req.Provider,
 		req.Config.Model,
@@ -58,5 +58,9 @@ func RunAgent(ctx context.Context, req AgentRequest) (*agent.Result, error) {
 		req.ToolReg,
 		req.Plugins,
 		req.OnEvent,
+		agent.RunOptions{
+			Cache:    req.Config.Provider == "openrouter" && req.Config.OpenRouter.Cache,
+			CacheTTL: req.Config.OpenRouter.CacheTTL,
+		},
 	)
 }

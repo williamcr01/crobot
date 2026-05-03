@@ -111,6 +111,12 @@ func Run(
 	return RunWithThinking(ctx, prov, model, "none", 50, systemPrompt, messages, toolReg, plugins, onEvent)
 }
 
+// RunOptions controls provider request behavior for an agent run.
+type RunOptions struct {
+	Cache    bool
+	CacheTTL int
+}
+
 // RunWithThinking executes the agent loop with an explicit thinking effort.
 func RunWithThinking(
 	ctx context.Context,
@@ -124,6 +130,23 @@ func RunWithThinking(
 	plugins PluginManager,
 	onEvent func(Event),
 ) (*Result, error) {
+	return RunWithOptions(ctx, prov, model, thinking, maxTurns, systemPrompt, messages, toolReg, plugins, onEvent, RunOptions{})
+}
+
+// RunWithOptions executes the agent loop with explicit run options.
+func RunWithOptions(
+	ctx context.Context,
+	prov provider.Provider,
+	model string,
+	thinking string,
+	maxTurns int,
+	systemPrompt string,
+	messages []provider.Message,
+	toolReg *tools.Registry,
+	plugins PluginManager,
+	onEvent func(Event),
+	options RunOptions,
+) (*Result, error) {
 	r := &runner{
 		prov:         prov,
 		model:        model,
@@ -134,6 +157,7 @@ func RunWithThinking(
 		plugins:      plugins,
 		onEvent:      onEvent,
 		messages:     make([]provider.Message, len(messages)),
+		options:      options,
 	}
 	copy(r.messages, messages)
 	return r.run(ctx)
@@ -148,6 +172,7 @@ type runner struct {
 	toolReg      *tools.Registry
 	plugins      PluginManager
 	onEvent      func(Event)
+	options      RunOptions
 
 	messages []provider.Message
 }
@@ -181,6 +206,8 @@ func (r *runner) run(ctx context.Context) (*Result, error) {
 			Messages:     msgs,
 			Tools:        r.toolReg.ToProviderTools(),
 			Stream:       true,
+			Cache:        r.options.Cache,
+			CacheTTL:     r.options.CacheTTL,
 		}
 
 		// Emit turn start.

@@ -52,10 +52,10 @@ type AgentConfig struct {
 	Reasoning     bool             `json:"reasoning"`
 	Alignment     string           `json:"alignment"`
 	Theme         string           `json:"theme"`
-	Compaction    CompactionConfig  `json:"compaction"`
-	Sessions      SessionsConfig    `json:"sessions"`
-	Plugins       PluginConfig      `json:"plugins"`
-	OpenRouter    OpenRouterConfig  `json:"openrouter"`
+	Compaction    CompactionConfig `json:"compaction"`
+	Sessions      SessionsConfig   `json:"sessions"`
+	Plugins       PluginConfig     `json:"plugins"`
+	OpenRouter    OpenRouterConfig `json:"openrouter"`
 
 	HasAuthorizedProvider bool `json:"-"`
 }
@@ -102,6 +102,8 @@ var DEFAULTS = AgentConfig{
 // LoadConfig loads configuration from defaults, ~/.crobot/agent.config.json, and environment variables.
 func LoadConfig() (*AgentConfig, error) {
 	cfg := DEFAULTS
+	cfg.Plugins.Directories = append([]string(nil), DEFAULTS.Plugins.Directories...)
+	cfg.Plugins.Permissions = append([]string(nil), DEFAULTS.Plugins.Permissions...)
 	configPath, err := ConfigPath()
 	if err != nil {
 		return nil, err
