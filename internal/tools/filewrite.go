@@ -37,16 +37,24 @@ var FileWriteTool = Tool{
 			oldContent = string(data)
 		} else if os.IsNotExist(err) {
 			created = true
+		} else if os.IsPermission(err) {
+			return map[string]any{"error": fmt.Sprintf("Permission denied: %s", path)}, nil
 		} else {
 			return nil, fmt.Errorf("read existing file: %w", err)
 		}
 
 		dir := filepath.Dir(path)
 		if err := os.MkdirAll(dir, 0o755); err != nil {
+			if os.IsPermission(err) {
+				return map[string]any{"error": fmt.Sprintf("Permission denied creating directory %s", dir)}, nil
+			}
 			return nil, fmt.Errorf("create directory: %w", err)
 		}
 
 		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			if os.IsPermission(err) {
+				return map[string]any{"error": fmt.Sprintf("Permission denied: %s", path)}, nil
+			}
 			return nil, fmt.Errorf("write file: %w", err)
 		}
 

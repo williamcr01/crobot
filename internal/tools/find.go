@@ -18,7 +18,7 @@ var FindTool = Tool{
 		"properties": map[string]any{
 			"pattern": map[string]any{
 				"type":        "string",
-				"description": "Glob pattern to match files, e.g. '*.go', '**/*_test.go'",
+				"description": "Glob pattern to match files, e.g. '*.go', '*_test.go'",
 			},
 			"path": map[string]any{
 				"type":        "string",
