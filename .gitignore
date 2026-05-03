@@ -34,3 +34,6 @@ go.work.sum
 # AI
 .pi/
 .sessions/
+
+# Local-only
+TODO.md
