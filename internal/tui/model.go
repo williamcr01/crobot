@@ -2246,7 +2246,7 @@ func (m *Model) reloadAuthorizedProviders() error {
 		return err
 	}
 	m.provider = nil
-	for _, providerName := range []string{"openrouter", "openai", "openai-responses-ws", "openai-codex", "deepseek", "anthropic"} {
+	for _, providerName := range []string{"openrouter", "openai", "openai-responses-ws", "openai-codex", "deepseek", "anthropic", "opencode-zen", "opencode-go"} {
 		apiKey := auth.APIKey(providerName)
 		if apiKey == "" {
 			continue

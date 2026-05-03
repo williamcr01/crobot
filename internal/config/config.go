@@ -241,9 +241,9 @@ func LoadConfig() (*AgentConfig, error) {
 	}
 
 	// Validate provider.
-	validProviders := map[string]bool{"": true, "openrouter": true, "openai": true, "openai-responses-ws": true, "openai-codex": true, "deepseek": true, "anthropic": true}
+	validProviders := map[string]bool{"": true, "openrouter": true, "openai": true, "openai-responses-ws": true, "openai-codex": true, "deepseek": true, "anthropic": true, "opencode-zen": true, "opencode-go": true}
 	if !validProviders[cfg.Provider] {
-		return nil, fmt.Errorf("unsupported provider: %q (supported: openrouter, openai, openai-responses-ws, openai-codex, deepseek, anthropic)", cfg.Provider)
+		return nil, fmt.Errorf("unsupported provider: %q (supported: openrouter, openai, openai-responses-ws, openai-codex, deepseek, anthropic, opencode-zen, opencode-go)", cfg.Provider)
 	}
 
 	validThinking := map[string]bool{"none": true, "minimal": true, "low": true, "medium": true, "high": true, "xhigh": true}
