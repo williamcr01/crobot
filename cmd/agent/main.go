@@ -17,6 +17,7 @@ import (
 	"crobot/internal/themes"
 	"crobot/internal/tools"
 	"crobot/internal/tui"
+	"crobot/internal/web"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -110,6 +111,17 @@ func main() {
 	toolReg.Register(tools.GrepTool)
 	toolReg.Register(tools.FindTool)
 	toolReg.Register(tools.LsTool)
+
+	// Load web search config and register web tools.
+	webCfg, webCfgErr := web.LoadConfig()
+	if webCfgErr != nil {
+		fmt.Fprintf(os.Stderr, "warning: web search config: %v\n", webCfgErr)
+		webCfg = &web.Config{}
+	}
+	webStorage := web.NewStorage()
+	toolReg.Register(tools.WebSearchTool(webCfg, webStorage))
+	toolReg.Register(tools.FetchContentTool(webCfg, webStorage))
+	toolReg.Register(tools.GetSearchContentTool(webStorage))
 
 	// Register native commands.
 	registerCommands(cmdReg, cfg)
