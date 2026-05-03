@@ -129,7 +129,8 @@ Each API-key provider entry supports:
 Currently supported:
 
 - `openrouter`
-- `openai` (API key)
+- `openai` (API key, Chat Completions)
+- `openai-responses-ws` (API key, Responses API WebSocket; reuses the `openai` auth entry)
 - `openai-codex` (ChatGPT/Codex OAuth)
 - `deepseek`
 

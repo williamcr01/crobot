@@ -78,6 +78,9 @@ func LoadAuth() (AuthConfig, error) {
 
 // APIKey returns an API key for provider, if present.
 func (a AuthConfig) APIKey(provider string) string {
+	if provider == "openai-responses-ws" {
+		provider = "openai"
+	}
 	if provider == "openai-codex" {
 		if entry, ok := a["openai-codex"]; ok && entry.Type == "oauth" {
 			return entry.Access

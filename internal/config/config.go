@@ -23,6 +23,12 @@ type PluginConfig struct {
 	Permissions []string `json:"permissions"`
 }
 
+// OpenRouterConfig controls OpenRouter-specific request behavior.
+type OpenRouterConfig struct {
+	Cache    bool `json:"cache"`
+	CacheTTL int  `json:"cacheTTL,omitempty"`
+}
+
 // SessionsConfig controls session persistence and retention.
 type SessionsConfig struct {
 	RetentionDays        int  `json:"retentionDays"`
@@ -46,9 +52,10 @@ type AgentConfig struct {
 	Reasoning     bool             `json:"reasoning"`
 	Alignment     string           `json:"alignment"`
 	Theme         string           `json:"theme"`
-	Compaction    CompactionConfig `json:"compaction"`
-	Sessions      SessionsConfig   `json:"sessions"`
-	Plugins       PluginConfig     `json:"plugins"`
+	Compaction    CompactionConfig  `json:"compaction"`
+	Sessions      SessionsConfig    `json:"sessions"`
+	Plugins       PluginConfig      `json:"plugins"`
+	OpenRouter    OpenRouterConfig  `json:"openrouter"`
 
 	HasAuthorizedProvider bool `json:"-"`
 }
@@ -201,6 +208,14 @@ func LoadConfig() (*AgentConfig, error) {
 		if len(file.Plugins.Permissions) > 0 {
 			cfg.Plugins.Permissions = file.Plugins.Permissions
 		}
+
+		// OpenRouter nested merge.
+		if hasNestedKey(raw, "openrouter", "cache") {
+			cfg.OpenRouter.Cache = file.OpenRouter.Cache
+		}
+		if hasNestedKey(raw, "openrouter", "cacheTTL") {
+			cfg.OpenRouter.CacheTTL = file.OpenRouter.CacheTTL
+		}
 	}
 
 	// Load .env file if present.
@@ -224,9 +239,9 @@ func LoadConfig() (*AgentConfig, error) {
 	}
 
 	// Validate provider.
-	validProviders := map[string]bool{"": true, "openrouter": true, "openai": true, "openai-codex": true, "deepseek": true, "anthropic": true}
+	validProviders := map[string]bool{"": true, "openrouter": true, "openai": true, "openai-responses-ws": true, "openai-codex": true, "deepseek": true, "anthropic": true}
 	if !validProviders[cfg.Provider] {
-		return nil, fmt.Errorf("unsupported provider: %q (supported: openrouter, openai, openai-codex, deepseek, anthropic)", cfg.Provider)
+		return nil, fmt.Errorf("unsupported provider: %q (supported: openrouter, openai, openai-responses-ws, openai-codex, deepseek, anthropic)", cfg.Provider)
 	}
 
 	validThinking := map[string]bool{"none": true, "minimal": true, "low": true, "medium": true, "high": true, "xhigh": true}
@@ -248,6 +263,9 @@ func LoadConfig() (*AgentConfig, error) {
 	}
 	if cfg.Sessions.PruneEmptyAfterHours < 0 {
 		return nil, fmt.Errorf("invalid sessions.pruneEmptyAfterHours: %d (must be >= 0)", cfg.Sessions.PruneEmptyAfterHours)
+	}
+	if cfg.OpenRouter.CacheTTL < 0 || cfg.OpenRouter.CacheTTL > 86400 {
+		return nil, fmt.Errorf("invalid openrouter.cacheTTL: %d (must be 0 or 1..86400)", cfg.OpenRouter.CacheTTL)
 	}
 
 	if cfg.SessionDir, err = expandHome(cfg.SessionDir); err != nil {

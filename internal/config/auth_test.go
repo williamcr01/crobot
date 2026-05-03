@@ -111,6 +111,9 @@ func TestLoadAuthOpenAIApiKeyAndOAuthCanCoexist(t *testing.T) {
 	if got := auth.APIKey("openai"); got != "sk-test" {
 		t.Fatalf("expected openai API key, got %q", got)
 	}
+	if got := auth.APIKey("openai-responses-ws"); got != "sk-test" {
+		t.Fatalf("expected websocket provider to reuse openai API key, got %q", got)
+	}
 	if got := auth.APIKey("openai-codex"); got != "oauth-access" {
 		t.Fatalf("expected openai oauth token, got %q", got)
 	}

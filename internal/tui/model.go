@@ -392,8 +392,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.selection.clear()
 				m.refreshViewport()
 				if text != "" {
-				m.refreshViewport()
-				return m, copyToClipboardCmd(text)
+					m.refreshViewport()
+					return m, copyToClipboardCmd(text)
 				}
 				return m, nil
 			}
@@ -2246,7 +2246,7 @@ func (m *Model) reloadAuthorizedProviders() error {
 		return err
 	}
 	m.provider = nil
-	for _, providerName := range []string{"openrouter", "openai", "openai-codex", "deepseek", "anthropic"} {
+	for _, providerName := range []string{"openrouter", "openai", "openai-responses-ws", "openai-codex", "deepseek", "anthropic"} {
 		apiKey := auth.APIKey(providerName)
 		if apiKey == "" {
 			continue
@@ -3191,9 +3191,9 @@ func messagesToConversation(msgs []messageItem, includeEphemeral bool) []convers
 	result := make([]conversation.Message, 0, len(msgs))
 	for _, msg := range msgs {
 		// Skip ephemeral messages and non-conversation roles (error, system) when building
-	// the LLM-facing conversation history. Only user and assistant messages represent
-	// actual dialogue. Error and system messages are UI-only annotations.
-	if !includeEphemeral && (msg.ephemeral || msg.role == "error" || msg.role == "system") {
+		// the LLM-facing conversation history. Only user and assistant messages represent
+		// actual dialogue. Error and system messages are UI-only annotations.
+		if !includeEphemeral && (msg.ephemeral || msg.role == "error" || msg.role == "system") {
 			continue
 		}
 		result = append(result, messageToConversation(msg))

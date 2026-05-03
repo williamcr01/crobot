@@ -86,6 +86,11 @@ Supported values:
 
 - `""` — no provider selected
 - `"openrouter"`
+- `"openai"`
+- `"openai-responses-ws"` — OpenAI Responses API over WebSocket, using the `openai` API key
+- `"openai-codex"`
+- `"deepseek"`
+- `"anthropic"`
 
 Credentials are not stored here. Put credentials in `~/.crobot/auth.json`.
 

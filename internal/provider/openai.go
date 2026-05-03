@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 
 	openai "github.com/openai/openai-go/v3"
@@ -14,6 +15,7 @@ import (
 
 func init() {
 	Register("openai", NewOpenAI)
+	Register("openai-responses-ws", NewOpenAIResponsesWS)
 	Register("openai-codex", NewOpenAICodex)
 	Register("deepseek", NewDeepSeek)
 }
@@ -61,7 +63,7 @@ func (p *OpenAIProvider) Name() string { return p.name }
 // Send performs a non-streaming chat completion.
 func (p *OpenAIProvider) Send(ctx context.Context, req Request) (*Response, error) {
 	params := p.toChatParams(req, false)
-	result, err := p.client.Chat.Completions.New(ctx, params)
+	result, err := p.client.Chat.Completions.New(ctx, params, p.requestOptions(req)...)
 	if err != nil {
 		return nil, fmt.Errorf("%s send: %w", p.name, err)
 	}
@@ -71,13 +73,27 @@ func (p *OpenAIProvider) Send(ctx context.Context, req Request) (*Response, erro
 // Stream performs a streaming chat completion.
 func (p *OpenAIProvider) Stream(ctx context.Context, req Request) (<-chan StreamEvent, error) {
 	params := p.toChatParams(req, true)
-	stream := p.client.Chat.Completions.NewStreaming(ctx, params)
+	stream := p.client.Chat.Completions.NewStreaming(ctx, params, p.requestOptions(req)...)
 	ch := make(chan StreamEvent, 16)
 	go p.streamLoop(ctx, stream, ch)
 	return ch, nil
 }
 
 // ListModels returns available model IDs.
+func (p *OpenAIProvider) requestOptions(req Request) []option.RequestOption {
+	if p.name != "openrouter" || !req.Cache {
+		return nil
+	}
+	opts := []option.RequestOption{option.WithHeader("X-OpenRouter-Cache", "true")}
+	if req.CacheTTL > 0 {
+		opts = append(opts, option.WithHeader("X-OpenRouter-Cache-TTL", strconv.Itoa(req.CacheTTL)))
+	}
+	if req.CacheClear {
+		opts = append(opts, option.WithHeader("X-OpenRouter-Cache-Clear", "true"))
+	}
+	return opts
+}
+
 func (p *OpenAIProvider) ListModels(ctx context.Context) ([]string, error) {
 	if p.name == "deepseek" {
 		return []string{"deepseek-v4-pro", "deepseek-v4-flash"}, nil
