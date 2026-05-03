@@ -225,11 +225,4 @@ func extractFirstHeading(content, fallbackURL string) string {
 	return fallbackURL
 }
 
-// Stub implementations for GitHub and YouTube (implemented later).
-func extractGitHub(ctx context.Context, url string, forceClone bool) (*ExtractedContent, error) {
-	return nil, fmt.Errorf("github extraction not yet implemented")
-}
 
-func extractYouTube(ctx context.Context, url string, cfg *Config, opts ExtractOptions) (*ExtractedContent, error) {
-	return nil, fmt.Errorf("youtube extraction not yet implemented")
-}

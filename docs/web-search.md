@@ -133,10 +133,13 @@ The first available provider is used for all searches in the session. If a provi
 | Tool | With no API keys |
 |---|---|
 | `web_search` | Returns a helpful error listing which provider keys to add |
-| `fetch_content` | Works for standard web pages using HTTP fetch + Readability + Jina Reader fallback |
+| `fetch_content` | Works for standard web pages, GitHub repos, and YouTube page metadata using HTTP fetch + Readability + GitHub API + Jina Reader |
 | `get_search_content` | Works -- retrieves stored fetch results |
 
-`fetch_content` uses Mozilla Readability to extract clean article content from HTML pages, with Jina Reader (`r.jina.ai`) as a free fallback. No API key needed for web page extraction.
+`fetch_content` uses:
+- **Web pages**: Mozilla Readability to extract clean article content from HTML, with Jina Reader (`r.jina.ai`) as a free fallback. No API key needed.
+- **GitHub repos**: Uses the public GitHub API to list repo trees, fetch file contents, and retrieve READMEs. No API key needed for public repos.
+- **YouTube videos**: Falls back to scraping page metadata (title + description) without an API key. For full video understanding (transcript, visual analysis, answering questions about the video), a Gemini API key is required.
 
 ## Web search tool
 
@@ -179,10 +182,21 @@ The `fetch_content` tool extracts readable content from web pages, GitHub reposi
 ```
 
 - `url` / `urls` -- Single URL or multiple URLs
-- `prompt` -- Question to ask about a YouTube video
+- `prompt` -- Question to ask about a YouTube video (requires Gemini API key)
 - `timestamp` -- Extract video frames at a timestamp or range (`"23:41"`, `"23:41-25:00"`, `"85"`)
 - `frames` -- Number of frames to extract (max 12)
 - `forceClone` -- Force clone large GitHub repos exceeding the size threshold
+
+**GitHub URLs** (`github.com/{owner}/{repo}`) are handled via the GitHub API:
+- Root URLs return repo description, file tree, and README
+- `/blob/` paths return file contents
+- `/tree/` paths return directory listing
+- `/commit/` paths return commit message
+- No authentication required for public repos
+
+**YouTube URLs** are handled in two tiers:
+- **With Gemini API key**: Full video understanding via Gemini (transcript, visual analysis, answers with `prompt` parameter)
+- **Without key**: Falls back to scraping page metadata (title + description only)
 
 Content over 30,000 characters is truncated in-line but stored in full for retrieval via `get_search_content`.
 
