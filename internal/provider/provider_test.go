@@ -11,6 +11,7 @@ import (
 
 	"github.com/anthropics/anthropic-sdk-go"
 	openai "github.com/openai/openai-go/v3"
+	"google.golang.org/genai"
 )
 
 func TestCreateOpenRouter(t *testing.T) {
@@ -607,6 +608,307 @@ func TestParseToolArgs(t *testing.T) {
 	parsed := parseToolArgs("not json")
 	if parsed["raw"] != "not json" {
 		t.Errorf("expected raw fallback, got %v", parsed)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Gemini provider tests
+// ---------------------------------------------------------------------------
+
+func TestCreateGemini(t *testing.T) {
+	prov, err := Create("gemini", "AIzaSy-test-key")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if prov == nil {
+		t.Fatal("expected non-nil provider")
+	}
+	if prov.Name() != "gemini" {
+		t.Errorf("expected name gemini, got %s", prov.Name())
+	}
+	if _, ok := prov.(*GeminiProvider); !ok {
+		t.Fatalf("expected GeminiProvider, got %T", prov)
+	}
+}
+
+func TestCreateGemini_MissingKey(t *testing.T) {
+	prov, err := NewGemini("")
+	if err == nil {
+		t.Fatal("expected error for empty API key")
+	}
+	if prov != nil {
+		t.Errorf("expected nil provider, got %v", prov)
+	}
+}
+
+func TestGeminiBuildThinking(t *testing.T) {
+	prov := &GeminiProvider{}
+
+	tests := []struct {
+		thinking   string
+		wantNil    bool
+		wantLevel  genai.ThinkingLevel
+		wantBudget int32
+	}{
+		{thinking: "none", wantNil: true},
+		{thinking: "", wantNil: true},
+		{thinking: "minimal", wantLevel: genai.ThinkingLevelMinimal, wantBudget: 512},
+		{thinking: "low", wantLevel: genai.ThinkingLevelLow, wantBudget: 1024},
+		{thinking: "medium", wantLevel: genai.ThinkingLevelMedium, wantBudget: 4096},
+		{thinking: "high", wantLevel: genai.ThinkingLevelHigh, wantBudget: 16384},
+		{thinking: "xhigh", wantLevel: genai.ThinkingLevelHigh, wantBudget: 32768},
+	}
+	for _, tt := range tests {
+		t.Run(tt.thinking, func(t *testing.T) {
+			got := prov.buildThinking(Request{Thinking: tt.thinking})
+			if tt.wantNil {
+				if got != nil {
+					t.Fatalf("expected nil, got %#v", got)
+				}
+				return
+			}
+			if got == nil {
+				t.Fatal("expected non-nil ThinkingConfig")
+			}
+			if got.ThinkingLevel != tt.wantLevel {
+				t.Errorf("expected level %s, got %s", tt.wantLevel, got.ThinkingLevel)
+			}
+			if got.ThinkingBudget == nil || *got.ThinkingBudget != tt.wantBudget {
+				if got.ThinkingBudget == nil {
+					t.Errorf("expected budget %d, got nil", tt.wantBudget)
+				} else {
+					t.Errorf("expected budget %d, got %d", tt.wantBudget, *got.ThinkingBudget)
+				}
+			}
+			if !got.IncludeThoughts {
+				t.Error("expected IncludeThoughts=true")
+			}
+		})
+	}
+}
+
+func TestGeminiToolCallID(t *testing.T) {
+	prov := &GeminiProvider{}
+	tests := []struct {
+		name string
+		id   string
+		fc   genai.FunctionCall
+		want string
+	}{
+		{name: "has both", fc: genai.FunctionCall{ID: "call_abc", Name: "search"}, want: "call_abc"},
+		{name: "name only", fc: genai.FunctionCall{Name: "search"}, want: "gemini_search"},
+		{name: "neither", fc: genai.FunctionCall{}, want: "gemini_call_0"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := prov.toolCallID(&tt.fc); got != tt.want {
+				t.Errorf("expected %q, got %q", tt.want, got)
+			}
+		})
+	}
+}
+
+func TestGeminiSupportsGenerateContent(t *testing.T) {
+	tests := []struct {
+		name string
+		model genai.Model
+		want bool
+	}{
+		{
+			name:  "standard gemini model",
+			model: genai.Model{Name: "models/gemini-2.5-pro"},
+			want:  true,
+		},
+		{
+			name:  "model with explicit action",
+			model: genai.Model{Name: "models/gemini-2.0-flash", SupportedActions: []string{"generateContent"}},
+			want:  true,
+		},
+		{
+			name:  "model with non-content actions",
+			model: genai.Model{Name: "models/embedding-001", SupportedActions: []string{"embedContent"}},
+			want:  false,
+		},
+		{
+			name:  "nil model",
+			model: genai.Model{},
+			want:  false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := supportsGenerateContent(&tt.model)
+			if got != tt.want {
+				t.Errorf("supportsGenerateContent(%q) = %v, want %v", tt.model.Name, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestGeminiBuildTools(t *testing.T) {
+	prov := &GeminiProvider{}
+	tools := prov.buildTools([]ToolDefinition{
+		{
+			Name:        "search",
+			Description: "Search for documents",
+			InputSchema: map[string]any{
+				"type":       "object",
+				"properties": map[string]any{"query": map[string]any{"type": "string"}},
+				"required":   []any{"query"},
+			},
+		},
+		{
+			Name:        "echo",
+			Description: "Echo back input",
+		},
+	})
+	if len(tools) != 1 {
+		t.Fatalf("expected 1 Tool, got %d", len(tools))
+	}
+	decls := tools[0].FunctionDeclarations
+	if len(decls) != 2 {
+		t.Fatalf("expected 2 function declarations, got %d", len(decls))
+	}
+	if decls[0].Name != "search" || decls[0].Description != "Search for documents" {
+		t.Errorf("unexpected first decl: %#v", decls[0])
+	}
+	if decls[0].ParametersJsonSchema == nil {
+		t.Error("expected ParametersJsonSchema for search tool")
+	}
+	if decls[1].Name != "echo" || decls[1].Description != "Echo back input" {
+		t.Errorf("unexpected second decl: %#v", decls[1])
+	}
+	if decls[1].ParametersJsonSchema != nil {
+		t.Error("expected no ParametersJsonSchema for echo tool")
+	}
+}
+
+func TestGeminiBuildRequest(t *testing.T) {
+	prov := &GeminiProvider{}
+	req := Request{
+		Model:        "gemini-2.5-pro",
+		SystemPrompt: "system instruction",
+		Thinking:     "medium",
+		Messages: []Message{
+			{Role: "user", Content: "hello"},
+			{Role: "assistant", Content: "I'll call a tool", ToolCalls: []ToolCall{{Name: "echo", ID: "call_1", Args: map[string]any{"msg": "hi"}}}},
+			{Role: "tool", ToolCallID: "call_1", Content: "echo: hi"},
+			{Role: "assistant", Content: "done", ReasoningContent: "I think..."},
+		},
+		Tools: []ToolDefinition{{Name: "echo", Description: "Echo"}},
+	}
+
+	contents, config := prov.buildRequest(req)
+
+	// System instruction.
+	if config.SystemInstruction == nil {
+		t.Fatal("expected SystemInstruction")
+	}
+	if len(config.SystemInstruction.Parts) != 1 || config.SystemInstruction.Parts[0].Text != "system instruction" {
+		t.Errorf("unexpected system instruction: %#v", config.SystemInstruction)
+	}
+
+	// Thinking.
+	if config.ThinkingConfig == nil {
+		t.Fatal("expected ThinkingConfig")
+	}
+	if config.ThinkingConfig.ThinkingLevel != genai.ThinkingLevelMedium {
+		t.Errorf("expected medium thinking level, got %s", config.ThinkingConfig.ThinkingLevel)
+	}
+
+	// Tools.
+	if len(config.Tools) != 1 || len(config.Tools[0].FunctionDeclarations) != 1 {
+		t.Errorf("expected 1 tool, got %d", len(config.Tools))
+	}
+
+	// Messages.
+	if len(contents) != 4 {
+		t.Fatalf("expected 4 contents, got %d: %#v", len(contents), contents)
+	}
+
+	// user
+	if contents[0].Role != "user" || len(contents[0].Parts) != 1 || contents[0].Parts[0].Text != "hello" {
+		t.Errorf("unexpected first content: %#v", contents[0])
+	}
+
+	// assistant (text + tool call)
+	if contents[1].Role != "model" || len(contents[1].Parts) != 2 {
+		t.Fatalf("expected 2 parts in assistant message, got %d", len(contents[1].Parts))
+	}
+	if contents[1].Parts[0].Text != "I'll call a tool" {
+		t.Errorf("expected assistant text, got %#v", contents[1].Parts[0])
+	}
+	if contents[1].Parts[1].FunctionCall == nil || contents[1].Parts[1].FunctionCall.Name != "echo" {
+		t.Errorf("expected function call echo, got %#v", contents[1].Parts[1])
+	}
+
+	// tool result
+	if contents[2].Role != "user" || len(contents[2].Parts) != 1 || contents[2].Parts[0].FunctionResponse == nil {
+		t.Fatalf("expected tool result content, got %#v", contents[2])
+	}
+	fr := contents[2].Parts[0].FunctionResponse
+	if fr.ID != "call_1" || fr.Name != "echo" {
+		t.Errorf("expected function response id=call_1 name=echo, got id=%s name=%s", fr.ID, fr.Name)
+	}
+
+	// assistant with thinking
+	if contents[3].Role != "model" || len(contents[3].Parts) != 2 {
+		t.Fatalf("expected 2 parts in second assistant, got %d", len(contents[3].Parts))
+	}
+	if contents[3].Parts[0].Text != "done" {
+		t.Errorf("expected done text, got %#v", contents[3].Parts[0])
+	}
+	if !contents[3].Parts[1].Thought || contents[3].Parts[1].Text != "I think..." {
+		t.Errorf("expected thought part, got %#v", contents[3].Parts[1])
+	}
+}
+
+func TestGeminiMapResponse(t *testing.T) {
+	prov := &GeminiProvider{}
+
+	// Build a minimal response.
+	resp := &genai.GenerateContentResponse{
+		Candidates: []*genai.Candidate{
+			{
+				Content: &genai.Content{
+					Parts: []*genai.Part{
+						{Text: "hello"},
+						{Text: " world"},
+						{Thought: true, Text: "thinking..."},
+						{
+							FunctionCall: &genai.FunctionCall{
+								ID: "call_1", Name: "search", Args: map[string]any{"q": "test"},
+							},
+						},
+					},
+				},
+			},
+		},
+		UsageMetadata: &genai.GenerateContentResponseUsageMetadata{
+			PromptTokenCount:     10,
+			CandidatesTokenCount: 20,
+			CachedContentTokenCount: 5,
+		},
+	}
+
+	got := prov.mapResponse(resp)
+	if got.Text != "hello world" {
+		t.Errorf("expected text 'hello world', got %q", got.Text)
+	}
+	if got.ReasoningContent != "thinking..." {
+		t.Errorf("expected reasoning 'thinking...', got %q", got.ReasoningContent)
+	}
+	if len(got.ToolCalls) != 1 {
+		t.Fatalf("expected 1 tool call, got %d", len(got.ToolCalls))
+	}
+	if got.ToolCalls[0].ID != "call_1" || got.ToolCalls[0].Name != "search" {
+		t.Errorf("unexpected tool call: %#v", got.ToolCalls[0])
+	}
+	if got.Usage == nil {
+		t.Fatal("expected usage")
+	}
+	if got.Usage.InputTokens != 10 || got.Usage.OutputTokens != 20 || got.Usage.CacheReadTokens != 5 {
+		t.Errorf("unexpected usage: %#v", got.Usage)
 	}
 }
 

@@ -101,6 +101,30 @@ Crobot lists two DeepSeek models:
 - `deepseek-v4-pro`
 - `deepseek-v4-flash`
 
+## Gemini
+
+Add a Gemini API key like this:
+
+```json
+{
+  "gemini": {
+    "type": "apiKey",
+    "apiKey": "your-gemini-api-key"
+  }
+}
+```
+
+Then select Gemini in `~/.crobot/agent.config.json` or via `/model`:
+
+```json
+{
+  "provider": "gemini",
+  "model": "gemini-2.5-pro"
+}
+```
+
+Crobot lists models dynamically from the Gemini API.
+
 ## File format
 
 `auth.json` is a JSON object keyed by provider ID.

@@ -7,7 +7,7 @@ Crobot is a minimal agentic assistant built in Go with Bubble Tea.
 ## Features
 
 - Terminal UI with streaming assistant responses
-- Provider support for OpenRouter, OpenAI, OpenAI Codex OAuth, DeepSeek, Kimi, and Anthropic
+- Provider support for OpenRouter, OpenAI, OpenAI Codex OAuth, DeepSeek, Gemini, Kimi, and Anthropic
 - Local tools for file read, file write, file edit, and bash commands
 - Slash commands for model selection, login/logout, context management, sessions, and display settings
 - Configurable system prompt, reasoning level, compaction, and output alignment
