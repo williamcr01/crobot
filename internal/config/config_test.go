@@ -328,6 +328,32 @@ func TestLoadConfig_UnsupportedProvider(t *testing.T) {
 	}
 }
 
+func TestLoadConfig_KimiProvider(t *testing.T) {
+	withTempHome(t)
+	writeUserConfig(t, `{"provider": "kimi", "model": "kimi-k2.6"}`)
+
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Provider != "kimi" || cfg.Model != "kimi-k2.6" {
+		t.Fatalf("unexpected provider/model: %s/%s", cfg.Provider, cfg.Model)
+	}
+}
+
+func TestLoadConfig_KimiCodeProvider(t *testing.T) {
+	withTempHome(t)
+	writeUserConfig(t, `{"provider": "kimi-code", "model": "kimi-k2.6"}`)
+
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Provider != "kimi-code" || cfg.Model != "kimi-k2.6" {
+		t.Fatalf("unexpected provider/model: %s/%s", cfg.Provider, cfg.Model)
+	}
+}
+
 func TestSaveConfig_WritesOnlyRuntimeFieldsWhenCreatingFile(t *testing.T) {
 	home := withTempHome(t)
 

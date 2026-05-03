@@ -18,10 +18,14 @@ func init() {
 	Register("openai-responses-ws", NewOpenAIResponsesWS)
 	Register("openai-codex", NewOpenAICodex)
 	Register("deepseek", NewDeepSeek)
+	Register("kimi", NewKimi)
+	Register("kimi-code", NewKimiCode)
 }
 
 const openAIBaseURL = "https://api.openai.com/v1"
 const deepSeekBaseURL = "https://api.deepseek.com"
+const kimiBaseURL = "https://api.moonshot.ai/v1"
+const kimiCodeBaseURL = "https://api.kimi.com/coding/v1"
 
 // OpenAIProvider implements Provider using the official openai-go SDK.
 type OpenAIProvider struct {
@@ -54,6 +58,34 @@ func NewDeepSeek(apiKey string) (Provider, error) {
 		client: openai.NewClient(
 			option.WithAPIKey(apiKey),
 			option.WithBaseURL(deepSeekBaseURL),
+		),
+	}, nil
+}
+
+func NewKimi(apiKey string) (Provider, error) {
+	if strings.TrimSpace(apiKey) == "" {
+		return nil, fmt.Errorf("kimi: missing API key")
+	}
+	return &OpenAIProvider{
+		name:   "kimi",
+		apiKey: apiKey,
+		client: openai.NewClient(
+			option.WithAPIKey(apiKey),
+			option.WithBaseURL(kimiBaseURL),
+		),
+	}, nil
+}
+
+func NewKimiCode(apiKey string) (Provider, error) {
+	if strings.TrimSpace(apiKey) == "" {
+		return nil, fmt.Errorf("kimi-code: missing API key")
+	}
+	return &OpenAIProvider{
+		name:   "kimi-code",
+		apiKey: apiKey,
+		client: openai.NewClient(
+			option.WithAPIKey(apiKey),
+			option.WithBaseURL(kimiCodeBaseURL),
 		),
 	}, nil
 }

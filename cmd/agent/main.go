@@ -70,7 +70,7 @@ func main() {
 
 	// Create model registry and load models for every authorized provider.
 	modelReg := provider.NewModelRegistry()
-	for _, providerName := range []string{"openrouter", "openai", "openai-responses-ws", "openai-codex", "deepseek", "anthropic", "opencode-zen", "opencode-go"} {
+	for _, providerName := range []string{"openrouter", "openai", "openai-responses-ws", "openai-codex", "deepseek", "kimi", "kimi-code", "anthropic", "opencode-zen", "opencode-go"} {
 		apiKey := auth.APIKey(providerName)
 		if apiKey == "" {
 			continue

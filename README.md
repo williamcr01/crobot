@@ -7,7 +7,7 @@ Crobot is a minimal agentic assistant built in Go with Bubble Tea.
 ## Features
 
 - Terminal UI with streaming assistant responses
-- Provider support for OpenRouter, OpenAI, OpenAI Codex OAuth, DeepSeek, and Anthropic
+- Provider support for OpenRouter, OpenAI, OpenAI Codex OAuth, DeepSeek, Kimi, and Anthropic
 - Local tools for file read, file write, file edit, and bash commands
 - Slash commands for model selection, login/logout, context management, sessions, and display settings
 - Configurable system prompt, reasoning level, compaction, and output alignment
@@ -67,6 +67,30 @@ Example OpenAI auth:
   }
 }
 ```
+
+Example Kimi auth (pay-per-token Moonshot Developer API):
+
+```json
+{
+  "kimi": {
+    "type": "apiKey",
+    "apiKey": "sk-your-moonshot-key-here"
+  }
+}
+```
+
+Example Kimi Code auth (subscription coding plan):
+
+```json
+{
+  "kimi-code": {
+    "type": "apiKey",
+    "apiKey": "sk-your-kimi-code-key-here"
+  }
+}
+```
+
+Kimi's public Open Platform uses prepaid balance/recharge. Kimi Code is a separate subscription plan with its own API key and endpoint (`https://api.kimi.com/coding/v1`). Use `provider: "kimi"` with the Moonshot Developer API or `provider: "kimi-code"` for the Kimi Code plan. Model IDs include `kimi-k2.6`, `kimi-k2.5`, `kimi-k2`, etc.
 
 ## Configuration
 

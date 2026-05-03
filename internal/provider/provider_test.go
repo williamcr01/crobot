@@ -78,6 +78,38 @@ func TestCreateDeepSeek(t *testing.T) {
 	}
 }
 
+func TestCreateKimi(t *testing.T) {
+	prov, err := Create("kimi", "sk-test")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if prov == nil {
+		t.Fatal("expected non-nil provider")
+	}
+	if prov.Name() != "kimi" {
+		t.Errorf("expected name kimi, got %s", prov.Name())
+	}
+	if _, ok := prov.(*OpenAIProvider); !ok {
+		t.Fatalf("expected Kimi to use OpenAI-compatible provider, got %T", prov)
+	}
+}
+
+func TestCreateKimiCode(t *testing.T) {
+	prov, err := Create("kimi-code", "sk-test")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if prov == nil {
+		t.Fatal("expected non-nil provider")
+	}
+	if prov.Name() != "kimi-code" {
+		t.Errorf("expected name kimi-code, got %s", prov.Name())
+	}
+	if _, ok := prov.(*OpenAIProvider); !ok {
+		t.Fatalf("expected Kimi Code to use OpenAI-compatible provider, got %T", prov)
+	}
+}
+
 func TestCreateAnthropic(t *testing.T) {
 	prov, err := Create("anthropic", "sk-ant-test")
 	if err != nil {

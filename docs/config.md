@@ -94,9 +94,13 @@ Supported values:
 - `"openai-responses-ws"` — OpenAI Responses API over WebSocket, using the `openai` API key
 - `"openai-codex"`
 - `"deepseek"`
+- `"kimi"`
+- `"kimi-code"`
 - `"anthropic"`
 
 Credentials are not stored here. Put credentials in `~/.crobot/auth.json`.
+
+Kimi uses Moonshot/Kimi Open Platform API keys under the `kimi` auth entry (pay-per-token). Kimi Code is a separate subscription plan with its own API key under the `kimi-code` auth entry, using the endpoint `https://api.kimi.com/coding/v1`.
 
 ### `model`
 
