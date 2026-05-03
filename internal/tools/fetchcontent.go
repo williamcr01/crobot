@@ -9,10 +9,10 @@ import (
 	"crobot/internal/web"
 )
 
-// FetchContentTool creates the fetch_content tool.
+// FetchContentTool creates the web_fetch tool.
 func FetchContentTool(cfg *web.Config, storage *web.Storage) Tool {
 	return Tool{
-		Name:        "fetch_content",
+		Name:        "web_fetch",
 		Description: "Fetch URL(s) and extract readable content as markdown. Supports YouTube video transcripts (with thumbnail), GitHub repository contents, and local video files (with frame thumbnail). Uses Gemini for video analysis. Falls back to Jina Reader when pages block bots.",
 		InputSchema: map[string]any{
 			"type": "object",
@@ -122,25 +122,32 @@ func formatFetchOutput(urls []string, contents []web.ExtractedContent, id string
 		}
 	}
 
-	b.WriteString(fmt.Sprintf("Fetched %d/%d URLs [%s]\n\n", ok, len(urls), id))
+	b.WriteString(fmt.Sprintf("## Fetched Content\n\n"))
+	b.WriteString(fmt.Sprintf("**%d/%d URL(s) retrieved** (`fetchId: %s`)\n\n", ok, len(urls), id))
 
-	for _, c := range contents {
+	for i, c := range contents {
 		label := c.URL
 		if c.Title != "" {
 			label = fmt.Sprintf("%s — %s", c.Title, c.URL)
 		}
 
+		b.WriteString(fmt.Sprintf("---\n\n### %d. %s\n\n", i+1, label))
+
 		if c.Error != "" {
-			b.WriteString(fmt.Sprintf("### %s\nError: %s\n\n", label, c.Error))
+			b.WriteString(fmt.Sprintf("> Error: %s\n\n", c.Error))
 			continue
 		}
 
 		content := c.Content
-		if len(content) > maxInlineContent {
-			content = content[:maxInlineContent] + fmt.Sprintf("\n\n[Truncated at %d chars. Use get_search_content with fetchId %q and url %q for full content.]", maxInlineContent, id, c.URL)
+		maxLen := maxInlineContent
+		if len(content) > maxLen {
+			content = content[:maxLen]
+			b.WriteString(content)
+			b.WriteString(fmt.Sprintf("\n\n> Content truncated at %d characters. Use `get_search_content` with `fetchId: %s` and `url: %q` for full content.\n\n", maxLen, id, c.URL))
+		} else {
+			b.WriteString(content)
+			b.WriteString("\n\n")
 		}
-
-		b.WriteString(fmt.Sprintf("### %s\n\n%s\n\n", label, content))
 	}
 
 	return strings.TrimSpace(b.String())

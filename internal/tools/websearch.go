@@ -158,41 +158,66 @@ func formatSearchOutput(queryList []string, results []web.QueryResultData, urls 
 		}
 	}
 
-	b.WriteString(fmt.Sprintf("Search: %d/%d queries succeeded, %d results\n\n", sc, len(queryList), tr))
+	// Summary header.
+	b.WriteString(fmt.Sprintf("## Web Search Results\n\n"))
+	if len(queryList) == 1 {
+		b.WriteString(fmt.Sprintf("**Query:** %s", queryList[0]))
+	} else {
+		b.WriteString(fmt.Sprintf("**Queries (%d):** %s", len(queryList), strings.Join(queryList, ", ")))
+	}
+	if sc > 0 {
+		b.WriteString(fmt.Sprintf(" — %d source(s) found", tr))
+	}
+	b.WriteString("\n\n")
 
 	for _, r := range results {
-		if len(queryList) > 1 {
-			provider := ""
-			if r.Provider != "" && r.Provider != "auto" {
-				provider = fmt.Sprintf(" (%s)", r.Provider)
-			}
-			b.WriteString(fmt.Sprintf("## Query: \"%s\"%s\n\n", r.Query, provider))
-		}
-
 		if r.Error != "" {
-			b.WriteString(fmt.Sprintf("Error: %s\n\n", r.Error))
+			b.WriteString(fmt.Sprintf("> **Error:** %s\n\n", r.Error))
 			continue
 		}
 
+		// Query header with provider badge.
+		providerBadge := ""
+		if r.Provider != "" && r.Provider != "auto" {
+			providerBadge = fmt.Sprintf(" `[%s]`", r.Provider)
+		}
+		if len(queryList) > 1 {
+			b.WriteString(fmt.Sprintf("### `%s`%s\n\n", r.Query, providerBadge))
+		} else if providerBadge != "" {
+			b.WriteString(fmt.Sprintf("`[%s]`\n\n", r.Provider))
+		}
+
+		// Answer.
 		if r.Answer != "" {
 			b.WriteString(r.Answer)
-			b.WriteString("\n\n---\n\n")
+			b.WriteString("\n\n")
 		}
 
-		if len(r.Results) == 0 {
-			b.WriteString("No results found.\n\n")
-			continue
-		}
-
-		b.WriteString("**Sources:**\n")
-		for i, src := range r.Results {
-			title := src.Title
-			if title == "" {
-				title = src.URL
+		// Sources.
+		if len(r.Results) > 0 {
+			b.WriteString("**Sources:**\n\n")
+			for i, src := range r.Results {
+				title := src.Title
+				if title == "" {
+					title = src.URL
+				}
+				b.WriteString(fmt.Sprintf("%d. [%s](%s)", i+1, title, src.URL))
+				if src.Snippet != "" {
+					// Truncate long snippets.
+					snippet := src.Snippet
+					if len(snippet) > 200 {
+						snippet = snippet[:200] + "..."
+					}
+					b.WriteString(fmt.Sprintf("\n   %s", snippet))
+				}
+				b.WriteString("\n")
 			}
-			b.WriteString(fmt.Sprintf("%d. %s\n   %s\n", i+1, title, src.URL))
+			b.WriteString("\n")
 		}
-		b.WriteString("\n")
+
+		if len(r.Results) == 0 && r.Error == "" {
+			b.WriteString("_No results found._\n\n")
+		}
 	}
 
 	return strings.TrimSpace(b.String())
