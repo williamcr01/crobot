@@ -8,7 +8,7 @@ Crobot is a minimal agentic assistant built in Go with Bubble Tea.
 
 - Terminal UI with streaming assistant responses
 - Provider support for OpenRouter, OpenAI, OpenAI Responses WebSocket, OpenAI Codex OAuth, Anthropic, DeepSeek, Gemini, Kimi, Kimi Code, OpenCode Zen, and OpenCode Go
-- Local tools for file read, file write, file edit, grep, find, ls, and bash commands
+- Local tools for file read, file write, file edit, grep, find, ls, bash, web search, and content fetch
 - Agent Skills: load specialized instructions from SKILL.md files
 - WASM plugin system: add custom tools, middleware hooks, and slash commands via WebAssembly modules
 - Slash commands for model selection, login/logout, context management, sessions, and display settings
@@ -275,6 +275,18 @@ Useful commands:
 ```
 
 See [docs/plugins.md](docs/plugins.md) for the ABI, manifest format, permissions, and authoring details.
+
+## Web Search
+
+Crobot can search the web and fetch page content using configurable search providers. Three native tools are available:
+
+- `web_search` -- Multi-provider web search with AI-synthesized answers
+- `fetch_content` -- URL content extraction (web pages, PDFs, GitHub repos, YouTube)
+- `get_search_content` -- Retrieve full stored content from previous searches
+
+At least one API key is required for `web_search`. `fetch_content` works for web pages without any configuration.
+
+See [docs/web-search.md](docs/web-search.md) for provider setup, API key configuration, and tool documentation.
 
 ## Sessions
 
