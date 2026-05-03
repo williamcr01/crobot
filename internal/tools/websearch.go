@@ -15,7 +15,7 @@ const maxInlineContent = 30000
 func WebSearchTool(cfg *web.Config, storage *web.Storage) Tool {
 	return Tool{
 		Name:        "web_search",
-		Description: "Search the web using Perplexity AI, Exa, or Gemini. Returns an AI-synthesized answer with source citations. For comprehensive research, prefer queries (plural) with 2-4 varied angles over a single query — each query gets its own synthesized answer, so varying phrasing and scope gives much broader coverage. When includeContent is true, full page content is fetched in the background. Provider auto-selects: Exa (direct API), then Perplexity, then Gemini API, then Brave, then Tavily, then Serper.",
+		Description: "Search the web with AI-synthesized answers and source citations. Supports multiple queries, provider auto-selection, and optional full-page content fetching.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
