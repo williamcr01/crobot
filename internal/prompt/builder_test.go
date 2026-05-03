@@ -68,7 +68,7 @@ func TestBuild_EmptyPrompt(t *testing.T) {
 		Reasoning:    config.DEFAULTS.Reasoning,
 	}
 	result := Build(cfg, "/tmp")
-	if !strings.Contains(result, "coding assistant") {
+	if !strings.Contains(result, "You are Crobot") {
 		t.Error("empty prompt should use default")
 	}
 }
@@ -78,7 +78,7 @@ func TestBuild_AppendPrompt(t *testing.T) {
 	cfg.AppendPrompt = "Extra instructions for {cwd}"
 	result := Build(cfg, "/my/dir")
 
-	if !strings.Contains(result, "coding assistant") {
+	if !strings.Contains(result, "You are Crobot") {
 		t.Error("appendPrompt should keep the base prompt")
 	}
 	if !strings.Contains(result, "Extra instructions for /my/dir") {
