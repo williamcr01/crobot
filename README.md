@@ -1,6 +1,6 @@
 # Crobot
 
-![Crobot app screenshot](assets/crobot.png)
+![Crobot app screenshot](assets/crobot-new-look.png)
 
 Crobot is a minimal agentic assistant built in Go with Bubble Tea.
 
