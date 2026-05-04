@@ -2452,23 +2452,6 @@ func TestCtrlOCyclesToolExpanded(t *testing.T) {
 	}
 }
 
-func TestUpdateScrollsToBottomWhenNewContentAppears(t *testing.T) {
-	m := NewModel(&config.AgentConfig{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
-	m.ready = true
-	m.width = 80
-	m.height = 24
-
-	// Set up viewport with some content
-	m.refreshViewport()
-
-	// Add a message and refresh - should scroll to bottom
-	before := m.viewport.YOffset
-	m.messages = append(m.messages, messageItem{role: "user", content: "new message"})
-	m.refreshViewport()
-
-	_ = before
-}
-
 // --- Tool expand with non-standard result tests ---
 
 func TestExpandShellShortcut_NonMapResult(t *testing.T) {
