@@ -256,6 +256,75 @@ func TestStyleLineForSelection_Partial(t *testing.T) {
 	}
 }
 
+func TestFixSGRResets_NoEscapes(t *testing.T) {
+	got := fixSGRResets("hello world")
+	if got != "hello world" {
+		t.Fatalf("expected unchanged, got %q", got)
+	}
+}
+
+func TestFixSGRResets_Empty(t *testing.T) {
+	got := fixSGRResets("")
+	if got != "" {
+		t.Fatalf("expected empty, got %q", got)
+	}
+}
+
+func TestFixSGRResets_ResetZeroM(t *testing.T) {
+	// \x1b[0m should get \x1b[7m inserted after it.
+	input := "\x1b[0mplain"
+	got := fixSGRResets(input)
+	want := "\x1b[0m\x1b[7mplain"
+	if got != want {
+		t.Fatalf("expected %q, got %q", want, got)
+	}
+}
+
+func TestFixSGRResets_ResetBareM(t *testing.T) {
+	// \x1b[m (no params) is also a reset.
+	input := "\x1b[mtext"
+	got := fixSGRResets(input)
+	want := "\x1b[m\x1b[7mtext"
+	if got != want {
+		t.Fatalf("expected %q, got %q", want, got)
+	}
+}
+
+func TestFixSGRResets_NoResetCSI(t *testing.T) {
+	// \x1b[1m is bold, not a reset — should be left alone.
+	input := "\x1b[1mbold\x1b[35mpurple"
+	got := fixSGRResets(input)
+	want := "\x1b[1mbold\x1b[35mpurple"
+	if got != want {
+		t.Fatalf("expected %q, got %q", want, got)
+	}
+}
+
+func TestFixSGRResets_MultipleResets(t *testing.T) {
+	// Multiple SGR resets in a row.
+	input := "\x1b[1mbold\x1b[0m normal \x1b[35mpurple\x1b[0m end"
+	got := fixSGRResets(input)
+	want := "\x1b[1mbold\x1b[0m\x1b[7m normal \x1b[35mpurple\x1b[0m\x1b[7m end"
+	if got != want {
+		t.Fatalf("expected %q, got %q", want, got)
+	}
+}
+
+func TestStyleLineForSelection_WithANSIResets(t *testing.T) {
+	// Simulate a styled markdown line: "\x1b[35mpurple text\x1b[0m plain text"
+	// Selection from plain offset 5 to 16: "e text plai"
+	styled := "\x1b[35mpurple text\x1b[0m plain text"
+	got := styleLineForSelection(styled, 5, 16)
+	if !strings.Contains(got, "\x1b[7m") || !strings.Contains(got, "\x1b[27m") {
+		t.Fatalf("expected reverse video in output, got %q", got)
+	}
+	// The \x1b[0m at position 15-18 in the styled string should NOT kill
+	// the reverse video — there should be a \x1b[7m after it.
+	if !strings.Contains(got, "\x1b[0m\x1b[7m") {
+		t.Fatalf("expected \\x1b[7m after \\x1b[0m inside selection, got %q", got)
+	}
+}
+
 func TestSelectionState_Clear(t *testing.T) {
 	sel := selectionState{
 		active: true, finished: true,
@@ -284,7 +353,7 @@ func TestHandleMouseSelection_ViewportBoundary(t *testing.T) {
 		Button: tea.MouseButtonLeft,
 		Action: tea.MouseActionPress,
 	}
-	consumed := m.handleMouseSelection(msg)
+	consumed, _ := m.handleMouseSelection(msg)
 	if !consumed {
 		t.Fatal("expected click inside viewport to be consumed")
 	}
@@ -295,7 +364,7 @@ func TestHandleMouseSelection_ViewportBoundary(t *testing.T) {
 	// Clear and try a click at Y=20, which is outside the viewport (20 >= 15).
 	m.selection.clear()
 	msg.Y = 20
-	consumed = m.handleMouseSelection(msg)
+	consumed, _ = m.handleMouseSelection(msg)
 	if consumed {
 		t.Fatal("expected click outside viewport to not be consumed")
 	}
@@ -327,7 +396,7 @@ func TestHandleMouseSelection_DynamicViewportHeight(t *testing.T) {
 		Button: tea.MouseButtonLeft,
 		Action: tea.MouseActionPress,
 	}
-	consumed := m.handleMouseSelection(msg)
+	consumed, _ := m.handleMouseSelection(msg)
 	if !consumed {
 		t.Fatalf("expected click at Y=17 to be consumed when dynamic height is %d (stored height: %d)", dynamicHeight, m.viewport.Height)
 	}
@@ -356,7 +425,7 @@ func TestHandleMouseSelection_OutsideClearsExistingSelection(t *testing.T) {
 		Button: tea.MouseButtonLeft,
 		Action: tea.MouseActionPress,
 	}
-	consumed := m.handleMouseSelection(msg)
+	consumed, _ := m.handleMouseSelection(msg)
 	if !consumed {
 		t.Fatal("expected click outside to clear selection (consumed)")
 	}

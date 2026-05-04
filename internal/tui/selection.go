@@ -132,9 +132,62 @@ func styleLineForSelection(styledLine string, selStart, selEnd int) string {
 	var b strings.Builder
 	b.WriteString(styledLine[:styledStart])
 	b.WriteString("\x1b[7m") // reverse video
-	b.WriteString(styledLine[styledStart:styledEnd])
+	// Post-process the selected portion: after every SGR reset (ESC[0m, ESC[m),
+	// re-assert reverse video so that \x1b[0m from markdown styling doesn't
+	// kill the selection highlight.
+	b.WriteString(fixSGRResets(styledLine[styledStart:styledEnd]))
 	b.WriteString("\x1b[27m") // reverse video off
 	b.WriteString(styledLine[styledEnd:])
+	return b.String()
+}
+
+// fixSGRResets inserts \x1b[7m after every SGR reset sequence within s.
+// SGR reset sequences are ESC[0m and ESC[m, which lipgloss emits at the end
+// of styled spans. Without this fix, \x1b[0m inside a selected region would
+// kill the reverse-video highlight, making the selection invisible.
+func fixSGRResets(s string) string {
+	if len(s) == 0 {
+		return s
+	}
+	// Fast path: no escape characters means no resets to fix.
+	if !strings.Contains(s, "\x1b") {
+		return s
+	}
+	var b strings.Builder
+	i := 0
+	for i < len(s) {
+		if s[i] == 0x1b && i+1 < len(s) && s[i+1] == '[' {
+			// Found CSI. Check if it's a bare SGR reset: ESC[m or ESC[0m.
+			csiEnd := i + 2 // points past ESC[
+			isReset := false
+			end := i + 2
+			if csiEnd < len(s) && s[csiEnd] == 'm' {
+				// ESC[m — bare reset (3 chars total)
+				isReset = true
+				end = i + 3
+			} else if csiEnd < len(s) && s[csiEnd] == '0' {
+				// Check for ESC[0m or ESC[0;...m
+				j := csiEnd + 1
+				for j < len(s) && s[j] != 'm' && s[j] >= 0x30 && s[j] <= 0x3f {
+					j++
+				}
+				if j < len(s) && s[j] == 'm' {
+					// First param is 0 (or 0X, 00, etc.) — this is a reset.
+					isReset = true
+					end = j + 1
+				}
+			}
+			if isReset {
+				// Write the reset sequence, then re-enable reverse video.
+				b.WriteString(s[i:end])
+				b.WriteString("\x1b[7m")
+				i = end
+				continue
+			}
+		}
+		b.WriteByte(s[i])
+		i++
+	}
 	return b.String()
 }
 

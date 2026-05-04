@@ -167,6 +167,12 @@ type Model struct {
 	selection  selectionState
 	plainLines []string // unstyled viewport content lines, 1:1 with styled lines
 
+	// cachedMessagesContent stores the last rendered messages output
+	// (from renderMessages, before centering and selection overlay).
+	// It is used to avoid re-rendering all messages on every mouse-move
+	// event during text selection drag.
+	cachedMessagesContent string
+
 	// textareaCursorRune tracks the cursor position as a rune offset into the
 	// textarea value. This is needed because the textarea's cursor row/col
 	// are private fields, and we need the position to render the cursor at
@@ -695,8 +701,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case tea.MouseMsg:
-		if m.handleMouseSelection(msg) {
-			m.refreshViewport()
+		consumed, needsFullRefresh := m.handleMouseSelection(msg)
+		if consumed {
+			if needsFullRefresh {
+				m.refreshViewport()
+			}
 			return m, nil
 		}
 		var cmd tea.Cmd
@@ -2900,7 +2909,7 @@ func (m Model) shouldHandleViewportKey(msg tea.KeyMsg) bool {
 
 // handleMouseSelection processes mouse events for text selection in the viewport.
 // Returns true if the event was consumed (selection-related).
-func (m *Model) handleMouseSelection(msg tea.MouseMsg) bool {
+func (m *Model) handleMouseSelection(msg tea.MouseMsg) (consumed bool, needsFullRefresh bool) {
 	// Only handle in the viewport area (Y < viewport height).
 	// Use dynamic height since View() applies it at render time.
 	vpHeight := m.dynamicViewportHeight()
@@ -2908,9 +2917,9 @@ func (m *Model) handleMouseSelection(msg tea.MouseMsg) bool {
 		// Click outside viewport — clear selection if any.
 		if m.selection.hasSelection() || m.selection.finished {
 			m.selection.clear()
-			return true
+			return true, true
 		}
-		return false
+		return false, false
 	}
 
 	// Map screen Y to content line index.
@@ -2923,7 +2932,7 @@ func (m *Model) handleMouseSelection(msg tea.MouseMsg) bool {
 	vp.Height = vpHeight
 	styledLines := strings.Split(vp.View(), "\n")
 	if msg.Y < 0 {
-		return false
+		return false, false
 	}
 
 	var styledLine string
@@ -2934,34 +2943,38 @@ func (m *Model) handleMouseSelection(msg tea.MouseMsg) bool {
 
 	switch {
 	case msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft:
-		// Start selection.
+		// Start selection — need full refresh to ensure cache is current.
 		m.selection.active = true
 		m.selection.finished = false
 		m.selection.startLine = contentLine
 		m.selection.startCol = plainCol
 		m.selection.endLine = contentLine
 		m.selection.endCol = plainCol
-		return true
+		return true, true
 
 	case msg.Action == tea.MouseActionMotion && msg.Button == tea.MouseButtonLeft:
-		// Update selection while dragging.
+		// Update selection while dragging. Use cached messages content
+		// to avoid re-rendering all markdown on every pixel of movement.
 		if !m.selection.active {
-			return false
+			return false, false
 		}
 		m.selection.endLine = contentLine
 		m.selection.endCol = plainCol
-		return true
+		m.applySelectionOverlay()
+		return true, false
 
 	case msg.Action == tea.MouseActionRelease && msg.Button == tea.MouseButtonLeft:
-		// Finish selection.
+		// Finish selection — lightweight overlay refresh is sufficient
+		// since messages haven't changed.
 		if !m.selection.active {
-			return false
+			return false, false
 		}
 		m.selection.active = false
 		m.selection.finished = true
 		m.selection.endLine = contentLine
 		m.selection.endCol = plainCol
-		return true
+		m.applySelectionOverlay()
+		return true, false
 
 	case msg.Button == tea.MouseButtonWheelUp || msg.Button == tea.MouseButtonWheelDown:
 		// Allow viewport scrolling — clear selection on scroll.
@@ -2969,10 +2982,10 @@ func (m *Model) handleMouseSelection(msg tea.MouseMsg) bool {
 			m.selection.clear()
 			m.refreshViewport()
 		}
-		return false
+		return false, false
 	}
 
-	return false
+	return false, false
 }
 
 func (m *Model) refreshViewport() {
@@ -3041,8 +3054,9 @@ func (m Model) textareaWidth() int {
 }
 
 // renderViewportContent returns the full viewport content, with selection overlay if active.
-func (m Model) renderViewportContent() string {
+func (m *Model) renderViewportContent() string {
 	content := m.renderMessages()
+	m.cachedMessagesContent = content
 	if m.config.Alignment == "centered" {
 		content = centerContent(content, m.width)
 	}
@@ -3050,6 +3064,23 @@ func (m Model) renderViewportContent() string {
 		content = overlaySelection(content, m.selection)
 	}
 	return content
+}
+
+// applySelectionOverlay updates the viewport content by applying centering
+// and selection overlay to the cached rendered messages. This is a lightweight
+// alternative to refreshViewport used during mouse drag (Motion events), avoiding
+// the cost of re-rendering all messages via RenderMarkdown on every pixel of movement.
+func (m *Model) applySelectionOverlay() {
+	content := m.cachedMessagesContent
+	if m.config.Alignment == "centered" {
+		content = centerContent(content, m.width)
+	}
+	if m.selection.hasSelection() || m.selection.finished {
+		content = overlaySelection(content, m.selection)
+	}
+	m.viewport.Height = m.dynamicViewportHeight()
+	m.viewport.SetContent(content)
+	m.plainLines = strings.Split(stripANSI(content), "\n")
 }
 
 // centerContent center-aligns each line within the given width.
