@@ -1758,6 +1758,73 @@ func TestRenderMessages_AssistantContent(t *testing.T) {
 	}
 }
 
+func TestRenderMessages_AssistantStreamingUsesPlainText(t *testing.T) {
+	m := NewModel(&config.AgentConfig{HasAuthorizedProvider: true}, nil, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
+	m.width = 80
+	m.messages = append(m.messages, messageItem{role: "assistant", content: "**streaming**"})
+
+	got := stripANSI(m.renderMessages())
+	if !strings.Contains(got, "**streaming**") {
+		t.Fatalf("expected streaming markdown to remain plain text: %q", got)
+	}
+	if m.messages[0].markdownFinalized {
+		t.Fatal("expected streaming render not to finalize markdown cache")
+	}
+}
+
+func TestFinalizeLastAssistantMarkdownCachesRenderedContent(t *testing.T) {
+	m := NewModel(&config.AgentConfig{HasAuthorizedProvider: true}, nil, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
+	m.width = 80
+	m.messages = append(m.messages, messageItem{role: "assistant", content: "**done**"})
+
+	m.finalizeLastAssistantMarkdown()
+	if !m.messages[0].markdownFinalized {
+		t.Fatal("expected assistant markdown to be finalized")
+	}
+	if m.messages[0].renderWidth != 80 {
+		t.Fatalf("expected render width 80, got %d", m.messages[0].renderWidth)
+	}
+	if strings.Contains(stripANSI(m.messages[0].renderedContent), "**done**") {
+		t.Fatalf("expected cached markdown render, got raw markdown: %q", m.messages[0].renderedContent)
+	}
+
+	got := stripANSI(m.renderMessages())
+	if !strings.Contains(got, "done") || strings.Contains(got, "**done**") {
+		t.Fatalf("expected cached markdown content in render: %q", got)
+	}
+}
+
+func TestAssistantMarkdownCacheInvalidatedByDelta(t *testing.T) {
+	m := NewModel(&config.AgentConfig{HasAuthorizedProvider: true}, nil, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
+	m.width = 80
+	m.messages = append(m.messages, messageItem{role: "assistant", content: "cached"})
+	m.finalizeLastAssistantMarkdown()
+
+	_, _ = m.handleAgentEvent(agent.Event{Type: "text_delta", TextDelta: " update"})
+	if m.messages[0].markdownFinalized {
+		t.Fatal("expected text delta to invalidate markdown cache")
+	}
+	if m.messages[0].content != "cached update" {
+		t.Fatalf("expected delta appended, got %q", m.messages[0].content)
+	}
+}
+
+func TestRenderMessages_FinalizedAssistantRerendersWhenWidthChanges(t *testing.T) {
+	m := NewModel(&config.AgentConfig{HasAuthorizedProvider: true}, nil, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
+	m.width = 80
+	m.messages = append(m.messages, messageItem{role: "assistant", content: "content"})
+	m.finalizeLastAssistantMarkdown()
+
+	m.width = 100
+	_ = m.renderMessages()
+	if !m.messages[0].markdownFinalized {
+		t.Fatal("expected markdown to remain finalized")
+	}
+	if m.messages[0].renderWidth != 100 {
+		t.Fatalf("expected cache to rerender for width 100, got %d", m.messages[0].renderWidth)
+	}
+}
+
 func TestRenderMessages_BannerShown(t *testing.T) {
 	m := NewModel(&config.AgentConfig{ShowBanner: true}, nil, nil, nil, nil, nil, nil, nil, nil, nil, tuiStylesForTest())
 	m.messages = append(m.messages, messageItem{role: "user", content: "hi"})
@@ -3734,5 +3801,3 @@ func TestNewModel_InitializesPasteStore(t *testing.T) {
 		t.Fatalf("expected pasteCounter to be 0, got %d", m.pasteCounter)
 	}
 }
-
-

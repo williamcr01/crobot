@@ -66,6 +66,12 @@ type messageItem struct {
 	usageData *provider.Usage
 	toolCalls []toolRenderItem
 	ephemeral bool // if true, not sent to the agent as conversation history
+
+	// Cached terminal-rendered markdown for finalized assistant messages.
+	renderedContent   string
+	renderedReasoning string
+	renderWidth       int
+	markdownFinalized bool
 }
 
 // tea messages from the agent goroutine.
@@ -233,8 +239,10 @@ func NewModel(
 	if sess != nil {
 		if records, err := sess.Load(); err == nil {
 			for _, rec := range records {
-				if rec.Role == "user" || rec.Role == "assistant" {
+				if rec.Role == "user" {
 					messages = append(messages, messageItem{role: rec.Role, content: rec.Content, reasoning: rec.Reasoning})
+				} else if rec.Role == "assistant" {
+					messages = append(messages, messageItem{role: rec.Role, content: rec.Content, reasoning: rec.Reasoning, markdownFinalized: true})
 				}
 			}
 		}
@@ -406,6 +414,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Cancel pending agent if running.
 			if m.pending && m.agentCancel != nil {
 				m.agentCancel()
+				m.finalizeLastAssistantMarkdown()
+				m.refreshViewport()
 			}
 			return m, nil
 
@@ -419,6 +429,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.agentCancel()
 				m.pending = false
 				m.textarea.Focus()
+				m.finalizeLastAssistantMarkdown()
 				m.messages = append(m.messages, messageItem{role: "system", content: "Cancelled.", ephemeral: true})
 				m.refreshViewport()
 			}
@@ -717,6 +728,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case agentDoneMsg:
 		m.pending = false
+		m.textarea.Focus()
+		m.finalizeLastAssistantMarkdown()
+		m.refreshViewport()
 		// Check for auto-compaction after agent finishes.
 		if m.provider != nil && m.shouldAutoCompact() {
 			return m, m.runAutoCompactCmd()
@@ -996,6 +1010,7 @@ func (m Model) handleAgentEvent(ev agent.Event) (tea.Model, tea.Cmd) {
 		if ev.TextDelta != "" {
 			if len(m.messages) > 0 && m.messages[len(m.messages)-1].role == "assistant" {
 				m.messages[len(m.messages)-1].content += ev.TextDelta
+				m.messages[len(m.messages)-1].markdownFinalized = false
 				m.refreshViewport()
 			}
 		}
@@ -1004,6 +1019,7 @@ func (m Model) handleAgentEvent(ev agent.Event) (tea.Model, tea.Cmd) {
 		if ev.ReasoningDelta != "" {
 			if len(m.messages) > 0 && m.messages[len(m.messages)-1].role == "assistant" {
 				m.messages[len(m.messages)-1].reasoning += ev.ReasoningDelta
+				m.messages[len(m.messages)-1].markdownFinalized = false
 				m.refreshViewport()
 			}
 		}
@@ -1106,6 +1122,7 @@ func (m Model) handleAgentEvent(ev agent.Event) (tea.Model, tea.Cmd) {
 	case "message_end":
 		m.pending = false
 		m.textarea.Focus()
+		m.finalizeLastAssistantMarkdown()
 
 		if ev.MessageEnd != nil {
 			m.attachUsageToLastAssistant(ev.MessageEnd.Usage)
@@ -2831,8 +2848,33 @@ func (m Model) dynamicViewportHeight() int {
 	return vpHeight
 }
 
-func (m Model) renderMessages() string {
-	var b strings.Builder
+func (m *Model) finalizeAssistantMarkdown(msg *messageItem, wrapWidth int) {
+	if msg.role != "assistant" {
+		return
+	}
+	msg.renderedContent = ""
+	msg.renderedReasoning = ""
+	if msg.content != "" {
+		msg.renderedContent = RenderMarkdown(msg.content, wrapWidth, m.styles)
+	}
+	if msg.reasoning != "" {
+		msg.renderedReasoning = m.styles.ThinkingStyle.Render(wrapText(msg.reasoning, wrapWidth))
+	}
+	msg.renderWidth = wrapWidth
+	msg.markdownFinalized = true
+}
+
+func (m *Model) finalizeLastAssistantMarkdown() {
+	wrapWidth := m.messageWrapWidth()
+	for i := len(m.messages) - 1; i >= 0; i-- {
+		if m.messages[i].role == "assistant" {
+			m.finalizeAssistantMarkdown(&m.messages[i], wrapWidth)
+			return
+		}
+	}
+}
+
+func (m Model) messageWrapWidth() int {
 	wrapWidth := m.width
 	if m.config.Alignment == "centered" {
 		wrapWidth = wrapWidth * 3 / 4
@@ -2840,11 +2882,18 @@ func (m Model) renderMessages() string {
 	if wrapWidth < 40 {
 		wrapWidth = 40
 	}
+	return wrapWidth
+}
+
+func (m *Model) renderMessages() string {
+	var b strings.Builder
+	wrapWidth := m.messageWrapWidth()
 	if m.config.ShowBanner {
 		b.WriteString(Render(m.config.Model, version.Version))
 		b.WriteString("\n")
 	}
-	for _, msg := range m.messages {
+	for i := range m.messages {
+		msg := &m.messages[i]
 		switch msg.role {
 		case "user":
 			b.WriteString("  ")
@@ -2856,11 +2905,27 @@ func (m Model) renderMessages() string {
 			if msg.reasoning != "" && m.config.Reasoning {
 				b.WriteString(m.styles.ThinkingStyle.Render("thinking"))
 				b.WriteString("\n")
-				b.WriteString(m.styles.ThinkingStyle.Render(wrapText(msg.reasoning, wrapWidth)))
+				if msg.markdownFinalized && msg.renderWidth == wrapWidth {
+					b.WriteString(msg.renderedReasoning)
+				} else if msg.markdownFinalized {
+					m.finalizeAssistantMarkdown(msg, wrapWidth)
+					b.WriteString(msg.renderedReasoning)
+				} else {
+					b.WriteString(m.styles.ThinkingStyle.Render(wrapText(msg.reasoning, wrapWidth)))
+				}
 				b.WriteString("\n")
 			}
 			if msg.content != "" {
-				b.WriteString(RenderMarkdown(msg.content, wrapWidth, m.styles))
+				if msg.markdownFinalized && msg.renderWidth == wrapWidth {
+					b.WriteString(msg.renderedContent)
+				} else if msg.markdownFinalized {
+					m.finalizeAssistantMarkdown(msg, wrapWidth)
+					b.WriteString(msg.renderedContent)
+				} else {
+					b.WriteString("\n")
+					b.WriteString(m.styles.BodyTextStyle.Render(wrapText(msg.content, wrapWidth)))
+					b.WriteString("\n")
+				}
 			}
 			for _, tc := range msg.toolCalls {
 				tcWidth := m.width - 4
