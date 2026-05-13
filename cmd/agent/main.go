@@ -10,6 +10,8 @@ import (
 	"crobot/internal/commands"
 	"crobot/internal/config"
 	"crobot/internal/events"
+	"crobot/internal/mcpconfig"
+	"crobot/internal/mcpmanager"
 	pluginpkg "crobot/internal/plugins"
 	"crobot/internal/provider"
 	"crobot/internal/session"
@@ -128,6 +130,13 @@ func main() {
 
 	// Initialize events logger.
 	ev := events.NewLogger(cfg.SessionDir)
+
+	// Load MCP servers from ~/.crobot/mcp.json.
+	mcpMgr := loadMCP(ctx, toolReg)
+	if mcpMgr != nil {
+		defer mcpMgr.Close()
+		registerMCPCommand(cmdReg, mcpMgr)
+	}
 
 	// Initialize plugin manager and register plugin management commands.
 	pluginMgr := pluginpkg.NewManager(cfg.Plugins, toolReg, cmdReg, ev)
@@ -412,4 +421,63 @@ func getArg(args []string, idx int, fallback string) string {
 		return args[idx]
 	}
 	return fallback
+}
+
+// loadMCP loads MCP server configuration and registers tools.
+// Returns nil if MCP is not configured or disabled.
+func loadMCP(ctx context.Context, toolReg *tools.Registry) *mcpmanager.Manager {
+	mcpCfg, exists, err := mcpconfig.LoadIfExists()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: MCP config: %v\n", err)
+		return nil
+	}
+	if !exists {
+		return nil
+	}
+
+	cachePath, cacheErr := mcpconfig.CachePath()
+	if cacheErr != nil {
+		fmt.Fprintf(os.Stderr, "warning: MCP cache path: %v\n", cacheErr)
+		return nil
+	}
+
+	mgr := mcpmanager.New(mcpCfg, cachePath)
+	mgr.RegisterTools(toolReg)
+	return mgr
+}
+
+// registerMCPCommand registers the /mcp slash command.
+func registerMCPCommand(cmdReg *commands.Registry, mgr *mcpmanager.Manager) {
+	cmdReg.Register(commands.Command{
+		Name:        "mcp",
+		Description: "Show MCP server status",
+		Source:      "native",
+		Handler: func(args []string) (string, error) {
+			result, err := mgr.Status(context.Background())
+			if err != nil {
+				return "", err
+			}
+			m := result.(map[string]any)
+			var b strings.Builder
+			b.WriteString("MCP Status\n\n")
+			if cfgPath, ok := m["configPath"].(string); ok {
+				b.WriteString(fmt.Sprintf("Config: %s\n", cfgPath))
+			}
+			b.WriteString(fmt.Sprintf("Proxy tool: %v\n", m["proxyTool"]))
+			if servers, ok := m["servers"].([]any); ok {
+				b.WriteString(fmt.Sprintf("Servers: %d\n", len(servers)))
+				for _, s := range servers {
+					srv := s.(map[string]any)
+					status := "disconnected"
+					if v, ok := srv["connected"].(bool); ok && v {
+						status = "connected"
+					}
+					b.WriteString(fmt.Sprintf("  %s (%s, %d cached tools, %s)\n",
+						srv["server"], srv["command"],
+						srv["cachedTools"], status))
+				}
+			}
+			return b.String(), nil
+		},
+	})
 }
